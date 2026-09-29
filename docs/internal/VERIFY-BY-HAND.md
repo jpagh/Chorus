@@ -1,10 +1,28 @@
-# Verify by hand — 1.5.20
+# Verify by hand — 1.5.21
 
 What scripted input and the test suite cannot check, in the order that finds problems soonest. Run it on a quiet machine: scripted clicks in an earlier pass landed in Finder and MacWhisper because the dev machine was in use, and one `⌘2` reached the installed release copy.
 
 Record the result next to each item. An unrun item is not a passing item.
 
-## Start here: 1.5.20 is published
+## Start here: 1.5.21 is published
+
+**Done. 1.5.21 published on 2026-09-29** as `v1.5.21`, build 34, from tag commit `a8aa893`. Artifact `build/Chorus-1.5.21.dmg`, 9,038,047 bytes, sha256 `b7f6b56aa2c61d5ee6d0f4ede98ffd1cc76a813b615ce1ab1365dfef528d5a9a`, signed, notarised, stapled, Gatekeeper-accepted. Steps 6 to 9 all ran, and this time `brew style`, `brew livecheck` and `brew audit` ran too.
+
+Checked on **build 34 itself**, installed over `/Applications` and launched on real data:
+
+1. **The store came up clean.** Three spaces, every service, WhatsApp signed in, badges live, no warning banner.
+2. **About says 1.5.21 (34).**
+3. **Switching away and back.** `⌘4` to Gmail, which came up signed in, then `⌘1` back to WhatsApp.
+
+Checked on the Debug build, since it needs a signed-out Gmail or a layout change on the real store:
+
+4. **Gmail's Sign in link** loads `accounts.google.com` in the service's own view and opens no window. The same click on the old code opened "Sign in - Google Accounts" as a second window.
+5. **All services on the left** draws both spaces with their services, and a click on a service in the second space selects it and that space.
+6. **The nav row and passkey banner** clear the traffic lights in both left-rail layouts with names off.
+
+**Not checked.** A full Gmail sign-in, a drag between spaces in the new rail, and the popup user agent live. Blocks 1 to 7 below stand as ticked against build 32; 1.5.21 adds a layout and pads one row, and the other three layouts were looked at on the Debug build only.
+
+## The 1.5.20 record
 
 **Done. 1.5.20 published on 2026-09-23** as `v1.5.20`, build 33, from tag commit `4eee4e8`. Artifact `build/Chorus-1.5.20.dmg`, 8,932,297 bytes, sha256 `ca8c7dd436c35cb3241c15b45ee36c169a6e0f3cee4308da5faf277de24a82c6`, signed, notarised, stapled, Gatekeeper-accepted. Steps 6 to 9 all ran; both feeds serve 1.5.20 and the cask is bumped in the tap.
 

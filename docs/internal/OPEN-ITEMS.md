@@ -1,5 +1,22 @@
 # Open items
 
+## Shipped in 1.5.21: Gmail sign-in, the all-services rail, and the traffic lights
+
+**Shipped on 2026-09-29** as `v1.5.21`, build 34, tag on `a8aa893`. Both feeds serve it and the cask is bumped here and in the tap.
+
+**Gmail sign-in landed in a popup.** Signed out, Gmail's service URL ends on the marketing page at `workspace.google.com/gmail/`, and its Sign in link is `<a target="_blank">` to `accounts.google.com`. Case 4 of `decidePolicyFor` let the click through as an auth host, but `createWebViewWith` only loaded a new window in place when it belonged to the same service. So the sign-in opened in a popup, Gmail loaded there, and the service stayed on the marketing page. `shouldLoadNewWindowInPlace` now also folds a clicked link to an auth host into the opener. `window.open` popups keep their window, because OAuth popups report back to the page that opened them. Checked in a Debug build with a control: the old code opened a second window titled "Sign in - Google Accounts", and the new code keeps one window with the sign-in page in the service. Signing in all the way through was not tested, because there is no test account to use.
+
+**The popup ran on WebKit's default user agent.** `customUserAgent` belongs to the web view, not to the configuration the popup inherits, so Gmail in a popup showed "This browser version is no longer supported". Popups now copy the opener's agent. This was checked by reading the code, not live.
+
+**PR #34 merged.** MazzMat's fourth layout, `allServices`. It is a raw-string enum case, so no schema version. It moves a link between spaces the same way the existing `moveService` does, and CI passed on macOS 14 and 15.
+
+**The nav row sat under the traffic lights on a narrow rail.** That was true of Rail on the left with names off before #34, and #34 made it common. `WebContentView.trafficLightsOverhang` pads the nav row and the passkey banner with the same `barLeadingInset` rule the bars use. Checked live in both left-rail layouts.
+
+### Still open
+
+- The reporter has not confirmed the Gmail fix on her machine yet.
+- Installing build 34 restarted the release app, so the snapshot-memory measurement from 1.5.20 starts over from 2026-09-29 01:00.
+
 ## Shipped in 1.5.20: counting how many people run Chorus
 
 **Shipped in 1.5.20 on 2026-09-23.** Merged (`3033b9a`), released as `v1.5.20` on build 33, appcast live on both feeds, cask bumped. **The user-agent question is closed**: the first real pings parsed, and `stats.sh` reads `1.5.20 5` within the hour of release. Nothing about the counter is outstanding except watching the numbers. Watch the version row on the first real ping: no genuine Sparkle build has checked in yet, and if its user-agent does not parse, every version reads `unknown` and only the daily total survives.
