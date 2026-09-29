@@ -5,6 +5,18 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.5.21] - 2026-09-29
+
+### Added
+
+- A fourth layout, All services on the left, puts every space in one narrow rail with its services under it. Click a service in any space to go straight to it, or drag it to reorder it or move it to another space. In this layout, Command 1 to 9 and Command [ and ] step through the whole rail. MazzMat wrote it.
+
+### Fixed
+
+- You can now sign in to Gmail inside Chorus. Signed out, Gmail shows a page with a Sign in button, and that button opened a separate window. You signed in there, Gmail came up in that window, and the Gmail in Chorus still asked you to sign in. The sign-in page now opens in Chorus, and Gmail loads there when you finish. If this happened to you, click Sign in once more. Google already knows you from the other window, so you may only have to pick your account.
+- A window a site opens for you, such as Sign in with Google, now presents itself to the site as Safari, the way the rest of Chorus does. Gmail in one of those windows said your browser was no longer supported.
+- With service names turned off, the back button no longer sits under the green button in the corner of the window.
+
 ## [1.5.20] - 2026-09-22
 
 ### Added
