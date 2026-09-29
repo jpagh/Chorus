@@ -6,8 +6,8 @@
 # leaves an app that updated itself alone. Livecheck reads the same appcast the
 # app does, which is what makes `brew bump-cask-pr` work.
 cask "chorus" do
-  version "1.5.20"
-  sha256 "ca8c7dd436c35cb3241c15b45ee36c169a6e0f3cee4308da5faf277de24a82c6"
+  version "1.5.21"
+  sha256 "b7f6b56aa2c61d5ee6d0f4ede98ffd1cc76a813b615ce1ab1365dfef528d5a9a"
 
   url "https://github.com/nicojan/Chorus/releases/download/v#{version}/Chorus-#{version}.dmg"
   name "Chorus"
