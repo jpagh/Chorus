@@ -1,5 +1,19 @@
 # Open items
 
+## On branch `fix/paguro-findings`: fixes and features found in Paguro, not merged
+
+**Built on 2026-09-29.** Branch `fix/paguro-findings`, pushed, CI green on macOS 14 and 15. Not merged and not released. `CHANGELOG.md` has the entry under Unreleased.
+
+[Paguro](https://github.com/anguria-studio/Paguro) is an MIT fork of Chorus by Tommaso Laterza, taken at `43d590f` on 2026-08-19. It fixed bugs that Chorus still had. The branch rewrites those fixes for Chorus and adds four features: background audio with a speaker mark, a download list, one setting for outside links, and setup export and import. It also ships the license texts, and the source of the GPL blocklist, that Chorus had been missing. Two reviews found real bugs in the first pass, and the branch fixes all of them.
+
+### Still open
+
+- Merge the branch into `main`.
+- The by-hand block at the top of `VERIFY-BY-HAND.md` has not been run. The one that matters most is WhatsApp across a quit: the handoff runs, but nobody has seen a real session survive it.
+- `_isPlayingAudio` is private WebKit. A probe proved it on macOS 26 only. On 14 and 15 it is unchecked, though the `responds(to:)` guard makes the failure harmless.
+- If a setup import's second save fails, the import deletes what it added, and no test forces that failure.
+- The visual redesign that Paguro suggested is a separate piece of work. Most of the look works on macOS 14; Liquid Glass is one optional layer.
+
 ## Shipped in 1.5.21: Gmail sign-in, the all-services rail, and the traffic lights
 
 **Shipped on 2026-09-29** as `v1.5.21`, build 34, tag on `a8aa893`. Both feeds serve it and the cask is bumped here and in the tap.

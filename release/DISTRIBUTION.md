@@ -308,15 +308,11 @@ testers the notarized DMG directly.
 The ad/tracker blocker compiles a bundled rule list (`Chorus/Resources/hagezi-light.json`)
 at launch; there is no runtime download, so list updates ship with each release.
 
-To refresh it, run `scripts/convert_blocklist.sh` and commit the regenerated JSON.
-The script downloads a pinned HaGezi "Light" release and converts it to Safari
-content-blocker JSON with AdGuard's SafariConverterLib. Bump the pinned
-`HAGEZI_REF` / `CONVERTER_REF` in the script deliberately.
+To refresh it, run `HAGEZI_REF=<commit> scripts/convert_blocklist.sh`, where `<commit>` is a commit SHA from `hagezi/dns-blocklists`, not a tag. HaGezi deletes its old tags, and the tag the first lists came from is already gone. The script converts both lists with AdGuard's SafariConverterLib, and writes the exact source text of each into `vendor/blocklists` with a `manifest.json` of hashes. Commit the JSON and `vendor/blocklists` together: a test fails if the bundled JSON and the manifest disagree. If `curl` can't reach `raw.githubusercontent.com`, fetch the file with `gh api -H "Accept: application/vnd.github.raw" "repos/hagezi/dns-blocklists/contents/adblock/light.txt?ref=<commit>"` and pass it in as `HAGEZI_URL=file:///path/to/light.txt`.
 
 **Licensing:** SafariConverterLib is GPLv3 and is used **only as a build tool** —
 its JSON output is bundled; the library is never linked into the app. Do NOT add
-it to `project.yml` `packages`, or Chorus (MIT) becomes a GPL derivative. HaGezi's
-data is GPL-3.0; its attribution + source link ship in the About settings pane.
+it to `project.yml` `packages`, or Chorus (MIT) becomes a GPL derivative. HaGezi's data is GPL-3.0. The app ships `LICENSE`, `THIRD_PARTY_NOTICES.md` and the `licenses` folder, and each release tag keeps the source in `vendor/blocklists`, which is what the GPL asks of a converted file. Keep every release tag.
 
 ---
 

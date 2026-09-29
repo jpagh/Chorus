@@ -4,6 +4,19 @@ What scripted input and the test suite cannot check, in the order that finds pro
 
 Record the result next to each item. An unrun item is not a passing item.
 
+## Next: the Paguro branch (`fix/paguro-findings`)
+
+Run these on the build that will ship as 1.5.22. None has been run yet.
+
+1. **WhatsApp across a quit.** Sign in, send a message, press ⌘Q, and reopen. WhatsApp should come back signed in. Do it three times. The log should show `Released N pages for quit` each time (`/usr/bin/log stream --level info --predicate 'subsystem == "com.nicojan.Chorus"'`).
+2. **Music keeps playing.** Play Spotify or YouTube, then switch to another service. The music goes on and the rail shows a speaker. Right-click the row, choose Pause Audio, and the music stops. A service that was quiet when you left it stays quiet.
+3. **A call keeps its sound.** Start a Meet or Teams call and switch services. You should still hear the other person.
+4. **The download list.** Download a file from Slack or Teams. The button appears, the ring fills, and the row names the service. Cancel a large download partway, then hibernate that service: nothing should hang. Show in Finder, then Clear.
+5. **Outside links.** Turn on the switch in Settings, then click a link to a site no service covers: it opens in a Chorus window. Set one service to Browser in Edit Service, and its links go to the browser. A file link in the Chorus window downloads in the browser.
+6. **A Linear link in Slack** (or any link that another of your services covers, opened in a new window) switches to that service. A Sign in with Google window still opens as a window.
+7. **Export and import.** Export, then import the file into the Debug build. The confirmation lists the sites. Spaces with the same name merge, and each service asks you to sign in. Camera and microphone ask again.
+8. **About ▸ Show License Files in Finder** selects `THIRD_PARTY_NOTICES.md` inside the app.
+
 ## Start here: 1.5.21 is published
 
 **Done. 1.5.21 published on 2026-09-29** as `v1.5.21`, build 34, from tag commit `a8aa893`. Artifact `build/Chorus-1.5.21.dmg`, 9,038,047 bytes, sha256 `b7f6b56aa2c61d5ee6d0f4ede98ffd1cc76a813b615ce1ab1365dfef528d5a9a`, signed, notarised, stapled, Gatekeeper-accepted. Steps 6 to 9 all ran, and this time `brew style`, `brew livecheck` and `brew audit` ran too.
