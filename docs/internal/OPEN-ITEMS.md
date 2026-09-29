@@ -16,6 +16,8 @@
 
 - The reporter has not confirmed the Gmail fix on her machine yet.
 - Installing build 34 restarted the release app, so the snapshot-memory measurement from 1.5.20 starts over from 2026-09-29 01:00.
+- Nobody has dragged a service between spaces in the new rail by hand. The reorder logic has unit tests and CI passed, but the drag itself is unchecked.
+- MazzMat has not been thanked on PR #34.
 
 ## Shipped in 1.5.20: counting how many people run Chorus
 
