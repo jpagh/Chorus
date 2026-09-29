@@ -27,6 +27,8 @@ final class AppState {
     let dataStoreManager: DataStoreManager
     let userScriptManager: UserScriptManager
     let badgeManager: BadgeManager
+    /// Every download this session, for the toolbar's download list.
+    let downloadCenter = DownloadCenter()
 
     /// Navigation state (back/forward/loading) for the active service's web view,
     /// shared so the top tab bar can host the nav buttons.
@@ -498,6 +500,7 @@ final class AppState {
         setupSystemSleepHandling()
         setupNetworkHandling()
         setupExternalLinkRouting()
+        setupDownloads()
         setupMediaPermissions()
         setupTerminationRecording()
         let didSeedDefaults = seedDefaultDataIfNeeded()
@@ -545,6 +548,15 @@ final class AppState {
         webViewPool.serviceOwnsURL = { [weak self] url, sourceServiceID in
             guard let self, let host = url.host else { return false }
             return self.serviceOwning(host: host, excluding: sourceServiceID) != nil
+        }
+    }
+
+    /// Hands the download list to the pool, which passes it to each service's
+    /// coordinator, and names each row after its service.
+    private func setupDownloads() {
+        webViewPool.downloadCenter = downloadCenter
+        downloadCenter.serviceName = { [weak self] id in
+            self?.fetchService(id: id)?.label
         }
     }
 

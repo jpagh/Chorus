@@ -2285,6 +2285,71 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("example.com"))
     }
 
+    // MARK: - Download list
+
+    @MainActor
+    func testDownloadRowFollowsItsDownloadToTheEnd() async throws {
+        let center = DownloadCenter()
+        let service = UUID()
+        center.serviceName = { $0 == service ? "Slack" : nil }
+        let progress = Progress(totalUnitCount: 100)
+        let id = center.begin(serviceID: service, filename: "report", progress: progress, cancel: {})
+
+        XCTAssertEqual(center.items.first?.serviceName, "Slack")
+        XCTAssertTrue(center.hasRunning)
+
+        progress.completedUnitCount = 40
+        for _ in 0..<50 where center.items.first?.fraction != 0.4 { await Task.yield() }
+        XCTAssertEqual(center.items.first?.fraction, 0.4)
+
+        center.setDestination(URL(fileURLWithPath: "/tmp/report 2.pdf"), for: id)
+        XCTAssertEqual(center.items.first?.filename, "report 2.pdf", "the row shows the name the file was saved under")
+
+        center.finish(id)
+        XCTAssertEqual(center.items.first?.state, .finished)
+        XCTAssertEqual(center.items.first?.fraction, 1)
+        XCTAssertFalse(center.hasRunning)
+    }
+
+    /// Cancel stops the download and marks the row. WebKit then reports the
+    /// cancelled download as a failure, which must not repaint the row red.
+    @MainActor
+    func testCancelledDownloadStaysCancelled() {
+        let center = DownloadCenter()
+        var cancelled = false
+        let id = center.begin(serviceID: nil, filename: "big.zip", progress: nil, cancel: { cancelled = true })
+        center.cancel(id)
+        center.fail(id, message: "cancelled")
+        XCTAssertTrue(cancelled)
+        XCTAssertEqual(center.items.first?.state, .cancelled)
+    }
+
+    /// Clear takes the ended rows and leaves the running ones. The cap drops
+    /// the oldest ended rows and never a running one.
+    @MainActor
+    func testClearAndTheCapNeverDropARunningDownload() {
+        let center = DownloadCenter()
+        let running = center.begin(serviceID: nil, filename: "still going", progress: nil, cancel: {})
+        for n in 0..<DownloadCenter.maxItems {
+            let id = center.begin(serviceID: nil, filename: "file \(n)", progress: nil, cancel: {})
+            center.finish(id)
+        }
+        XCTAssertEqual(center.items.count, DownloadCenter.maxItems)
+        XCTAssertTrue(center.items.contains { $0.id == running }, "the running download must survive the cap")
+
+        center.clearFinished()
+        XCTAssertEqual(center.items.map(\.id), [running])
+    }
+
+    /// A download of unknown size reads 0 in `fractionCompleted`; that must
+    /// show as "unknown", not a ring stuck at empty.
+    func testUnknownSizeIsNotZeroProgress() {
+        XCTAssertNil(DownloadCenter.knownFraction(of: Progress(totalUnitCount: -1)))
+        let half = Progress(totalUnitCount: 10)
+        half.completedUnitCount = 5
+        XCTAssertEqual(DownloadCenter.knownFraction(of: half), 0.5)
+    }
+
     // MARK: - Third-party notices
 
     /// The GPL list and the libraries ask for their notices to travel with the

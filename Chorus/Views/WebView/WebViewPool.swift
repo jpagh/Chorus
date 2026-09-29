@@ -135,6 +135,8 @@ final class WebViewPool {
     var externalLinkHandler: ((URL, UUID?) -> Void)?
     /// Whether some Chorus service owns a URL. Passed to each coordinator.
     var serviceOwnsURL: ((URL, UUID?) -> Bool)?
+    /// The app-wide download list. Passed to each coordinator.
+    var downloadCenter: DownloadCenter?
 
     /// Wired up at AppState init and applied to every coordinator. Resolves a
     /// camera/microphone capture request to a WebKit decision from the persisted
@@ -674,6 +676,7 @@ final class WebViewPool {
         coordinator.fallbackURL = URL(string: instance.url)
         coordinator.externalLinkHandler = externalLinkHandler
         coordinator.serviceOwnsURL = serviceOwnsURL
+        coordinator.downloadCenter = downloadCenter
         coordinator.mediaCapturePolicyProvider = mediaCapturePolicyProvider
         coordinator.onNavigationFinished = { [weak self] id in
             self?.onNavigationFinished?(id)

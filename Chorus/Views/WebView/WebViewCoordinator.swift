@@ -968,14 +968,29 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     private var activeDownloads: Set<WKDownload> = []
     private var selfRetainWhileDownloading: WebViewCoordinator?
 
+    /// The app-wide download list, and each running download's row in it. Set
+    /// by `WebViewPool`.
+    var downloadCenter: DownloadCenter?
+    private var downloadItemIDs: [ObjectIdentifier: UUID] = [:]
+
     private func trackDownload(_ download: WKDownload) {
         activeDownloads.insert(download)
         selfRetainWhileDownloading = self
+        let guessedName = download.originalRequest?.url?.lastPathComponent
+        downloadItemIDs[ObjectIdentifier(download)] = downloadCenter?.begin(
+            serviceID: instanceID,
+            filename: Self.sanitizedDownloadFilename(guessedName ?? ""),
+            progress: download.progress,
+            cancel: { [weak download] in download?.cancel(nil) }
+        )
     }
 
-    private func untrackDownload(_ download: WKDownload) {
+    /// Takes the download off the books and returns its row in the list.
+    @discardableResult
+    private func untrackDownload(_ download: WKDownload) -> UUID? {
         activeDownloads.remove(download)
         if activeDownloads.isEmpty { selfRetainWhileDownloading = nil }
+        return downloadItemIDs.removeValue(forKey: ObjectIdentifier(download))
     }
 
     /// Cancels every in-flight download and clears the self-retain. Called when
@@ -985,8 +1000,14 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// an acceptable tradeoff (the user can retry).
     private func cancelActiveDownloads() {
         guard !activeDownloads.isEmpty else { return }
-        for download in activeDownloads { download.cancel(nil) }
+        for download in activeDownloads {
+            download.cancel(nil)
+            if let itemID = downloadItemIDs[ObjectIdentifier(download)] {
+                downloadCenter?.fail(itemID, message: "The page stopped responding")
+            }
+        }
         activeDownloads.removeAll()
+        downloadItemIDs.removeAll()
         downloadDestinations.removeAll()
         selfRetainWhileDownloading = nil
     }
@@ -1020,13 +1041,18 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             fileExists: { fileManager.fileExists(atPath: $0.path) }
         )
         downloadDestinations[ObjectIdentifier(download)] = destination
+        if let itemID = downloadItemIDs[ObjectIdentifier(download)] {
+            downloadCenter?.setDestination(destination, for: itemID)
+        }
         return destination
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         let key = ObjectIdentifier(download)
         let destination = downloadDestinations.removeValue(forKey: key)
-        untrackDownload(download)
+        if let itemID = untrackDownload(download) {
+            downloadCenter?.finish(itemID)
+        }
         guard let destination else { return }
         AppLogger.webView.info("Download finished: \(destination.lastPathComponent)")
         // Bounce the Downloads stack in the Dock — the standard macOS
@@ -1039,7 +1065,9 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
-        untrackDownload(download)
+        if let itemID = untrackDownload(download) {
+            downloadCenter?.fail(itemID, message: error.localizedDescription)
+        }
         AppLogger.webView.error("Download failed: \(error.localizedDescription)")
     }
 
