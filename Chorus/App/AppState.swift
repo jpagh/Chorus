@@ -551,6 +551,23 @@ final class AppState {
         }
     }
 
+    // MARK: - Setup export and import
+
+    /// The current setup as a file's contents. See `SetupArchive`.
+    func exportSetup() throws -> Data {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return try SetupArchive.capture(from: modelContainer.mainContext, appVersion: version).encoded()
+    }
+
+    /// Adds a checked archive to the store, then fetches icons for the new
+    /// services, which arrive without the favicon cache.
+    func importSetup(_ archive: SetupArchive) throws -> SetupArchive.ImportSummary {
+        let summary = try archive.apply(to: modelContainer.mainContext)
+        fetchMissingAndStaleFavicons()
+        AppLogger.dataStore.info("Imported a setup: \(summary.servicesAdded) services, \(summary.spacesAdded) new spaces")
+        return summary
+    }
+
     /// Hands the download list to the pool, which passes it to each service's
     /// coordinator, and names each row after its service.
     private func setupDownloads() {

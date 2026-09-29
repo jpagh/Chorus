@@ -2285,6 +2285,110 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("example.com"))
     }
 
+    // MARK: - Setup export and import
+
+    /// Every stored service field is either carried by the setup file or left
+    /// out on purpose. A field added later that is neither fails here, which is
+    /// the reminder to decide.
+    func testSetupArchiveAccountsForEveryStoredServiceField() throws {
+        let schema = Schema(versionedSchema: ChorusSchemaVCurrent.self)
+        let entity = try XCTUnwrap(schema.entities.first { $0.name == "ServiceInstance" })
+        let stored = Set(entity.attributes.map(\.name))
+        let exported = Set(SetupArchive.ServiceRecord.CodingKeys.allCases.map(\.rawValue))
+        XCTAssertTrue(exported.isDisjoint(with: SetupArchive.excludedServiceFields))
+        XCTAssertEqual(exported.union(SetupArchive.excludedServiceFields), stored)
+    }
+
+    /// Export from one store, import into another that already has a "Work"
+    /// space: Work merges, Personal is new, every service is new with its own
+    /// data store, settings survive, and merged services go after what was there.
+    @MainActor
+    func testSetupRoundTripsIntoAStoreThatAlreadyHasASpace() throws {
+        let source = try makeGroupingContainer()
+        let src = source.mainContext
+        let personal = Space(name: "Personal", emoji: "🏠", sortOrder: 0)
+        let work = Space(name: "Work", emoji: "💼", sortOrder: 1, isMuted: true)
+        let slack = ServiceInstance(label: "Slack", url: "https://app.slack.com", catalogEntryID: "slack", isMuted: true, customCSS: "body{}", hibernationPolicyRaw: "never")
+        let gmail = ServiceInstance(label: "Gmail", url: "https://mail.google.com", catalogEntryID: "gmail")
+        [personal, work].forEach(src.insert)
+        [slack, gmail].forEach(src.insert)
+        try src.save()
+        link(gmail, to: personal, sortOrder: 0, in: src)
+        link(slack, to: personal, sortOrder: 1, in: src)
+        link(slack, to: work, sortOrder: 0, in: src)
+        try src.save()
+
+        let data = try SetupArchive.capture(from: src, appVersion: "1.5.22").encoded()
+        let archive = try SetupArchive.decode(data)
+        XCTAssertEqual(archive.services.count, 2, "a service in two spaces is carried once")
+
+        let target = try makeGroupingContainer()
+        let dst = target.mainContext
+        let existingWork = Space(name: "Work", emoji: "🧰", sortOrder: 0)
+        let jira = ServiceInstance(label: "Jira", url: "https://example.atlassian.net")
+        dst.insert(existingWork)
+        dst.insert(jira)
+        try dst.save()
+        link(jira, to: existingWork, sortOrder: 0, in: dst)
+        try dst.save()
+
+        let summary = try archive.apply(to: dst)
+        XCTAssertEqual(summary, .init(spacesAdded: 1, spacesMerged: 1, servicesAdded: 2))
+
+        let spaces = try dst.fetch(FetchDescriptor<Space>())
+        XCTAssertEqual(Set(spaces.map(\.name)), ["Work", "Personal"])
+        XCTAssertEqual(spaces.first { $0.name == "Work" }?.emoji, "🧰", "a merged space keeps its own look")
+
+        let links = try dst.fetch(FetchDescriptor<SpaceServiceLink>()).compactMap(\.liveEnds)
+        let workMembers = links.filter { $0.space.name == "Work" }.map(\.service.label)
+        XCTAssertEqual(Set(workMembers), ["Jira", "Slack"])
+        let importedSlackLink = try dst.fetch(FetchDescriptor<SpaceServiceLink>())
+            .first { $0.liveEnds?.space.name == "Work" && $0.liveEnds?.service.label == "Slack" }
+        XCTAssertEqual(importedSlackLink?.sortOrder, 1, "merged services go after the ones already there")
+
+        let importedSlack = try XCTUnwrap(try dst.fetch(FetchDescriptor<ServiceInstance>()).first { $0.label == "Slack" })
+        XCTAssertNotEqual(importedSlack.id, slack.id)
+        XCTAssertNotEqual(importedSlack.dataStoreIdentifier, slack.dataStoreIdentifier, "an import never shares a data store")
+        XCTAssertEqual(importedSlack.isMuted, true)
+        XCTAssertEqual(importedSlack.customCSS, "body{}")
+        XCTAssertEqual(importedSlack.hibernationPolicyRaw, "never")
+        XCTAssertEqual(links.filter { $0.service.label == "Slack" }.count, 2, "Slack sits in both spaces again")
+    }
+
+    /// A setup file is something people send each other, so nothing in it is
+    /// trusted: an address that isn't a web page, a login in the address, a
+    /// dangling index, a newer format, or a file that isn't a setup at all.
+    func testSetupFileIsCheckedBeforeAnythingIsImported() throws {
+        func archive(url: String = "https://example.com", member: Int = 0, version: Int = 1, format: String = SetupArchive.format) throws -> Data {
+            let service = SetupArchive.ServiceRecord(
+                label: "X", url: url, catalogEntryID: nil, customIconData: nil, isMuted: false, showBadge: true,
+                neverHibernate: false, userAgent: nil, pageZoom: nil, osNotificationsEnabled: nil, customCSS: nil,
+                darkModeRaw: nil, cameraPolicyRaw: nil, microphonePolicyRaw: nil, openExternalLinksInApp: nil,
+                stayActiveInBackground: nil, hibernationPolicyRaw: nil, hibernateAfterMinutes: nil
+            )
+            return try SetupArchive(
+                format: format, version: version, exportedAt: Date(), appVersion: nil,
+                spaces: [.init(name: "S", emoji: "S", sortOrder: 0, isMuted: nil, members: [.init(service: member, sortOrder: 0)])],
+                services: [service]
+            ).encoded()
+        }
+        XCTAssertNoThrow(try SetupArchive.decode(archive()))
+        for bad in ["javascript:alert(1)", "file:///etc/passwd", "https://user:pass@example.com", "https://"] {
+            XCTAssertThrowsError(try SetupArchive.decode(archive(url: bad)), bad)
+        }
+        XCTAssertThrowsError(try SetupArchive.decode(archive(member: 5)))
+        XCTAssertThrowsError(try SetupArchive.decode(archive(version: 99))) { error in
+            XCTAssertEqual(error as? SetupArchive.ReadError, .newerVersion(99))
+        }
+        XCTAssertThrowsError(try SetupArchive.decode(archive(format: "something-else"))) { error in
+            XCTAssertEqual(error as? SetupArchive.ReadError, .notASetupFile)
+        }
+        XCTAssertThrowsError(try SetupArchive.decode(Data("not json".utf8)))
+        XCTAssertThrowsError(try SetupArchive.decode(Data(count: SetupArchive.Limit.fileBytes + 1))) { error in
+            XCTAssertEqual(error as? SetupArchive.ReadError, .tooLarge)
+        }
+    }
+
     // MARK: - Download list
 
     @MainActor

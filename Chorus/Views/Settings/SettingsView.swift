@@ -223,6 +223,7 @@ struct GeneralSettingsView: View {
                         appState.isShowingStoreRecovery = true
                     }
                 }
+                SetupTransferSection()
             }
 
             Section("Accessibility") {
