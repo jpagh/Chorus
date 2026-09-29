@@ -11,17 +11,25 @@
 # the app. Do NOT add it as a Swift Package dependency in project.yml, or Chorus
 # (MIT) becomes a GPL derivative. See the content-blocker design notes.
 #
-# Run this to bump the bundled lists, then commit the regenerated JSON.
-# Pin the refs below for reproducible builds; bump them deliberately.
+# Run this to bump the bundled lists, then commit the regenerated JSON together
+# with vendor/blocklists/, which it also rewrites. That folder keeps the exact
+# source text each JSON file was converted from, plus a manifest of hashes.
+# HaGezi's list is GPL-3.0, so the source of the file we ship has to stay
+# available; upstream deletes its release tags, and the tag the first lists
+# came from is already gone. So HaGezi is pinned by commit, not by tag.
 
 set -euo pipefail
 
-HAGEZI_REF="${HAGEZI_REF:-37522026.190.70475}"   # HaGezi release tag
+HAGEZI_REF="${HAGEZI_REF:?set HAGEZI_REF to a hagezi/dns-blocklists commit SHA}"
+HAGEZI_URL="${HAGEZI_URL:-https://raw.githubusercontent.com/hagezi/dns-blocklists/${HAGEZI_REF}/adblock/light.txt}"
+FANBOY_URL="${FANBOY_URL:-https://easylist-downloads.adblockplus.org/fanboy-annoyance.txt}"
 CONVERTER_REF="${CONVERTER_REF:-v4.3.0}"          # SafariConverterLib tag
 SAFARI_VERSION="${SAFARI_VERSION:-14}"            # matches app deployment target
 CAP=150000                                        # WKContentRuleList per-list rule cap
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENDOR="$REPO_ROOT/vendor/blocklists"
+mkdir -p "$VENDOR"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -31,11 +39,12 @@ git clone --quiet --depth 1 --branch "$CONVERTER_REF" \
 ( cd "$WORK/scl" && swift build -c release --product ConverterTool )
 TOOL="$WORK/scl/.build/release/ConverterTool"
 
-# convert <url> <output-path> <label>
+# convert <url> <output-path> <label> <snapshot-name>
 convert() {
-  local url="$1" out="$2" label="$3"
+  local url="$1" out="$2" label="$3" snapshot="$4"
   echo "==> Downloading ${label}"
   curl -fsSL "$url" -o "$WORK/src.txt"
+  cp "$WORK/src.txt" "$VENDOR/$snapshot"
   echo "==> Converting ${label} to WKContentRuleList JSON"
   "$TOOL" convert \
     --safari-version "$SAFARI_VERSION" \
@@ -54,13 +63,67 @@ convert() {
 }
 
 convert \
-  "https://raw.githubusercontent.com/hagezi/dns-blocklists/${HAGEZI_REF}/adblock/light.txt" \
+  "$HAGEZI_URL" \
   "$REPO_ROOT/Chorus/Resources/hagezi-light.json" \
-  "HaGezi Light @ ${HAGEZI_REF}"
+  "HaGezi Light @ ${HAGEZI_REF}" \
+  "hagezi-light.txt"
 
 convert \
-  "https://easylist-downloads.adblockplus.org/fanboy-annoyance.txt" \
+  "$FANBOY_URL" \
   "$REPO_ROOT/Chorus/Resources/fanboy-annoyance.json" \
-  "Fanboy Annoyance List (EasyList)"
+  "Fanboy Annoyance List (EasyList)" \
+  "fanboy-annoyance.txt"
 
-echo "==> Done. Remember to commit the regenerated JSON."
+echo "==> Writing $VENDOR/manifest.json"
+REPO_ROOT="$REPO_ROOT" HAGEZI_REF="$HAGEZI_REF" CONVERTER_REF="$CONVERTER_REF" \
+SAFARI_VERSION="$SAFARI_VERSION" python3 - <<'PY'
+import datetime, hashlib, json, os, re
+root = os.environ["REPO_ROOT"]
+def sha(path):
+    with open(os.path.join(root, path), "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+def header(path, key):
+    with open(os.path.join(root, path), encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if line.startswith("["):
+                continue
+            if not line.startswith("!"):
+                break
+            m = re.match(r"!\s*%s:\s*(.+)" % key, line)
+            if m:
+                return m.group(1).strip()
+    return None
+lists = [
+    ("hagezi-light", "https://github.com/hagezi/dns-blocklists/blob/%s/adblock/light.txt" % os.environ["HAGEZI_REF"], "GPL-3.0"),
+    ("fanboy-annoyance", "https://easylist-downloads.adblockplus.org/fanboy-annoyance.txt", "CC-BY-3.0"),
+]
+out = []
+for name, source, license_id in lists:
+    src = "vendor/blocklists/%s.txt" % name
+    dst = "Chorus/Resources/%s.json" % name
+    with open(os.path.join(root, dst)) as f:
+        count = len(json.load(f))
+    out.append({
+        "name": name,
+        "source": source,
+        "source_version": header(src, "Version"),
+        "source_file": src,
+        "source_sha256": sha(src),
+        "output_file": dst,
+        "output_sha256": sha(dst),
+        "rule_count": count,
+        "license": license_id,
+    })
+manifest = {
+    "retrieved": datetime.date.today().isoformat(),
+    "converter": "AdguardTeam/SafariConverterLib " + os.environ["CONVERTER_REF"],
+    "safari_version": os.environ["SAFARI_VERSION"],
+    "advanced_blocking": False,
+    "lists": out,
+}
+with open(os.path.join(root, "vendor/blocklists/manifest.json"), "w") as f:
+    json.dump(manifest, f, indent=2)
+    f.write("\n")
+PY
+
+echo "==> Done. Commit the regenerated JSON together with vendor/blocklists/."

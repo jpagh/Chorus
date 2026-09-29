@@ -167,7 +167,11 @@ struct AddServiceSheet: View {
         )
         modelContext.insert(link)
 
-        guard modelContext.saveOrRollBack("custom service") else { return }
+        do {
+            try modelContext.save()
+        } catch {
+            AppLogger.dataStore.error("Failed to save custom service: \(error.localizedDescription)")
+        }
 
         // Switch to the service the user just added.
         appState.selectedSpaceID = spaceID
@@ -183,7 +187,11 @@ struct AddServiceSheet: View {
             guard let svc = try? modelContext.fetch(desc).first else { return }
             svc.fetchedIconData = data
             svc.faviconFetchedAt = Date()
-            modelContext.saveOrRollBack("fetched favicon")
+            do {
+                try modelContext.save()
+            } catch {
+                AppLogger.dataStore.error("Failed to save fetched favicon: \(error.localizedDescription)")
+            }
         }
 
         dismiss()

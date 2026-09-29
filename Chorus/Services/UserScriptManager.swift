@@ -253,7 +253,7 @@ final class UserScriptManager {
                     value: function() {
                         if (released) { return; }
                         released = true;
-                        document.dispatchEvent(new Event('visibilitychange'));
+                        document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
                         window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
                     }
                 });

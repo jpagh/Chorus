@@ -6,9 +6,13 @@ extension ModelContext {
     ///
     /// Without the rollback a failed change stays pending in the context and
     /// rides along on the next unrelated save that succeeds — a setting the user
-    /// saw fail turns up later on its own. Callers that go on to act on what
-    /// they inserted (select a new service, open a new space) must stop on
-    /// `false`: the rollback has taken the insert back out.
+    /// saw fail turns up later on its own.
+    ///
+    /// For saves that edit properties. The sheets that insert models keep
+    /// logging and going on: rolling back a join row already wired to a live
+    /// `Space` can leave a dangling link, the class of fault that crashes
+    /// macOS 14, and an insert that rides along on a later save is the lesser
+    /// harm.
     @discardableResult
     func saveOrRollBack(_ context: String) -> Bool {
         do {

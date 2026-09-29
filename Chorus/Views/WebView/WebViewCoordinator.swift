@@ -36,7 +36,8 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// Whether some Chorus service owns a URL, so a page's `window.open` to it
     /// can switch to that service instead of opening a window. Set by
     /// `WebViewPool`. Nil ⇒ nothing is handed off.
-    var serviceOwnsURL: ((URL) -> Bool)?
+    /// The second argument is this service's id, which never counts as the owner.
+    var serviceOwnsURL: ((URL, UUID?) -> Bool)?
 
     /// The service this coordinator drives, set by `WebViewPool` so navigation
     /// callbacks can be attributed to a specific service.
@@ -327,7 +328,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         if isPopup(webView) { return }
 
         let nsError = error as NSError
-        guard !Self.keepsCurrentPage(afterProvisionalFailure: nsError) else {
+        guard !Self.keepsCurrentPage(afterProvisionalFailure: nsError, hasCommittedPage: webView.url != nil) else {
             // No error page, but the rail's loading ring has to come down, or it
             // spins forever.
             reportStoppedLoading(webView)
@@ -357,11 +358,17 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     }
 
     /// A load that failed after it committed. The page it committed is on
-    /// screen, part-loaded, so there is nothing to replace it with — but without
-    /// this the rail's ring kept spinning after Stop on a page still loading.
+    /// screen, part-loaded, so it stays — but without this the rail's ring kept
+    /// spinning. Stop is a stop; anything else, a connection lost mid-load, is a
+    /// failure the rail should show.
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if isPopup(webView) { return }
-        reportStoppedLoading(webView)
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+            reportStoppedLoading(webView)
+        } else if let instanceID {
+            onHealthEvent?(instanceID, .failed)
+        }
     }
 
     /// Tells the rail a load ended with neither a finish nor a failure worth an
@@ -381,8 +388,14 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// (Stop, or another navigation replaced it), a URL WebKit has no way to
     /// show, and a response WebKit handed to a download instead of rendering.
     /// Showing "Unable to connect" for a download that worked would be wrong.
-    nonisolated static func keepsCurrentPage(afterProvisionalFailure error: NSError) -> Bool {
+    ///
+    /// A cancel always keeps the page, even an empty one: the user pressed
+    /// Stop, or something replaced the load. The other two keep it only when a
+    /// page has committed. On a first load there is nothing to keep, and a
+    /// blank view with a healthy rail would hide a service that never came up.
+    nonisolated static func keepsCurrentPage(afterProvisionalFailure error: NSError, hasCommittedPage: Bool) -> Bool {
         if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled { return true }
+        guard hasCommittedPage else { return false }
         // WebKitErrorCannotShowURL (101) and
         // WebKitErrorFrameLoadInterruptedByPolicyChange (102), still reported
         // under the legacy domain.
@@ -538,7 +551,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
                requestedSize: windowFeatures.width != nil || windowFeatures.height != nil,
                targetURL: url,
                openerHost: webView.url?.host,
-               ownedByAnotherService: serviceOwnsURL?(url) ?? false
+               ownedByAnotherService: serviceOwnsURL?(url, instanceID) ?? false
            ) {
             if let handler = externalLinkHandler {
                 handler(url, instanceID)
@@ -1181,7 +1194,10 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// ask, a popup's own children are sign-in steps, and a host no service owns
     /// might be a company's own identity provider that Chorus doesn't list.
     /// Sending that to the browser would strand the sign-in there, which is a
-    /// worse failure than a link in a window.
+    /// worse failure than a link in a window. A URL shaped like a sign-in stays
+    /// too, even on a host a service owns: Linear's "Connect Slack" opens
+    /// Slack's OAuth page, and handing that to the Slack service would run the
+    /// consent in the wrong data store and lose the callback.
     nonisolated static func shouldHandOffScriptedWindow(
         navigationType: WKNavigationType,
         openerIsPopup: Bool,
@@ -1201,7 +1217,30 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         else { return false }
         return !belongsToService(targetHost, serviceHost: openerHost)
             && !isAuthHost(targetHost)
+            && !looksLikeSignIn(targetURL)
     }
+
+    /// Whether a URL reads as a step in a sign-in or an authorization, whatever
+    /// its host: OAuth and SAML parameters in the query, or a path segment such
+    /// as `oauth`, `authorize` or `login`. Errs toward yes; a false yes costs a
+    /// link its switch to another service, and a false no costs a sign-in.
+    nonisolated static func looksLikeSignIn(_ url: URL) -> Bool {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryKeys = Set((components?.queryItems ?? []).map { $0.name.lowercased() })
+        if !queryKeys.isDisjoint(with: signInQueryKeys) { return true }
+        let segments = url.pathComponents.map { $0.lowercased() }
+        return segments.contains { segment in
+            signInPathSegments.contains(segment)
+                || signInPathSegments.contains { segment.hasPrefix($0 + ".") }
+        }
+    }
+
+    nonisolated private static let signInQueryKeys: Set<String> = [
+        "client_id", "redirect_uri", "response_type", "samlrequest", "samlresponse", "code_challenge",
+    ]
+    nonisolated private static let signInPathSegments: Set<String> = [
+        "oauth", "oauth2", "authorize", "auth", "login", "signin", "sign-in", "sso", "saml", "openid",
+    ]
 
     /// Whether `targetHost` belongs to the service whose current (or home) host
     /// is `serviceHost`. Same registrable domain counts as the same service — so

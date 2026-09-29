@@ -134,7 +134,7 @@ final class WebViewPool {
     /// service's "open links in Chorus" choice.
     var externalLinkHandler: ((URL, UUID?) -> Void)?
     /// Whether some Chorus service owns a URL. Passed to each coordinator.
-    var serviceOwnsURL: ((URL) -> Bool)?
+    var serviceOwnsURL: ((URL, UUID?) -> Bool)?
 
     /// Wired up at AppState init and applied to every coordinator. Resolves a
     /// camera/microphone capture request to a WebKit decision from the persisted

@@ -106,7 +106,11 @@ struct SpaceEditorSheet: View {
             createdSpace = space
         }
 
-        guard modelContext.saveOrRollBack("space") else { return }
+        do {
+            try modelContext.save()
+        } catch {
+            AppLogger.dataStore.error("Failed to save space: \(error.localizedDescription)")
+        }
 
         // Switch to a freshly created space. It has no services yet, so clear the
         // service selection — the content area shows the empty state for it.

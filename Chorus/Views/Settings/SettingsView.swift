@@ -74,6 +74,7 @@ struct GeneralSettingsView: View {
     @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
     /// The same, for the hybrid layout's strip of spaces — see `SpaceStripMetrics`.
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
+    @AppStorage(OutsideLinkDefault.defaultsKey) private var linksOpenInChorus = false
 
     private let presenceManager = AppPresenceManager()
 
@@ -162,6 +163,11 @@ struct GeneralSettingsView: View {
                     }
                 ))
                 Text("This accepts consent pop-ups for you. That includes advertising and tracking cookies, so turn it off to answer each site's banner yourself.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Open outside links in a Chorus window", isOn: $linksOpenInChorus)
+                Text("A link to a site no service covers opens here instead of in your browser. A link to a site one of your services covers still switches to it. You can change this for each service when you edit it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -608,6 +614,7 @@ struct AboutSettingsView: View {
 
     private let repoURL = URL(string: "https://github.com/nicojan/Chorus")!
     private let licenseURL = URL(string: "https://github.com/nicojan/Chorus/blob/main/LICENSE")!
+    private let noticesURL = URL(string: "https://github.com/nicojan/Chorus/blob/main/THIRD_PARTY_NOTICES.md")!
     private let authorURL = URL(string: "https://nicojan.com/")!
     private let blocklistURL = URL(string: "https://github.com/hagezi/dns-blocklists")!
     private let annoyanceListURL = URL(string: "https://easylist.to/")!
@@ -639,6 +646,14 @@ struct AboutSettingsView: View {
             Section {
                 Link("GitHub Repository", destination: repoURL)
                 Link("MIT License", destination: licenseURL)
+                Link("Third-Party Notices", destination: noticesURL)
+                // The copies that ship inside the app, for anyone offline or on
+                // an older release than GitHub's main branch describes.
+                Button("Show License Files in Finder") {
+                    if let notices = Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md") {
+                        NSWorkspace.shared.activateFileViewerSelecting([notices])
+                    }
+                }
             }
 
             Section("Content blocking") {

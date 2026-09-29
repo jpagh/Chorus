@@ -503,6 +503,7 @@ final class AppState {
         let didSeedDefaults = seedDefaultDataIfNeeded()
         backfillPasskeyNoticeIfNeeded(freshInstall: didSeedDefaults)
         reapOrphanedServices()
+        OutsideLinkDefault.clearUnchosenPins(in: modelContainer.mainContext)
         restoreWindowState()
         let didUpdate = Self.recordLaunchVersionAndCheckUpdate()
         fetchMissingAndStaleFavicons(force: didUpdate)
@@ -541,9 +542,9 @@ final class AppState {
         webViewPool.externalLinkHandler = { [weak self] url, sourceServiceID in
             self?.handleExternalLink(url, from: sourceServiceID)
         }
-        webViewPool.serviceOwnsURL = { [weak self] url in
+        webViewPool.serviceOwnsURL = { [weak self] url, sourceServiceID in
             guard let self, let host = url.host else { return false }
-            return self.findServiceMatching(host: host, preferringSpace: nil) != nil
+            return self.serviceOwning(host: host, excluding: sourceServiceID) != nil
         }
     }
 
@@ -869,13 +870,23 @@ final class AppState {
 
         // No Chorus service owns this link. Open it in an in-app window when the
         // source service opted into that; otherwise hand it to the browser.
+        let globalDefault = OutsideLinkDefault.opensInChorus()
         let optedIn = sourceServiceID
             .flatMap { fetchService(id: $0) }?
-            .opensExternalLinksInAppEffective ?? false
+            .opensExternalLinksInApp(globalDefault: globalDefault) ?? globalDefault
         if WebViewCoordinator.shouldOpenInAppBrowser(sourceOptedIn: optedIn, url: url) {
             InAppBrowserWindow.open(url)
         } else {
             WebViewCoordinator.openExternally(url)
+        }
+    }
+
+    /// Some service other than `excluded` whose home URL covers `host`.
+    private func serviceOwning(host: String, excluding excluded: UUID?) -> ServiceInstance? {
+        let services = (try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? []
+        return services.first { service in
+            guard service.id != excluded, let serviceHost = URL(string: service.url)?.host else { return false }
+            return WebViewCoordinator.belongsToService(host, serviceHost: serviceHost)
         }
     }
 
@@ -1002,7 +1013,7 @@ final class AppState {
 
         var seen = Set<ObjectIdentifier>()
         let stores = webViews
-            .map(\.configuration.websiteDataStore)
+            .map { $0.configuration.websiteDataStore }
             .filter { seen.insert(ObjectIdentifier($0)).inserted }
         await withDeadline(seconds: 0.5, fallback: ()) {
             let flushes = stores.map { store in
@@ -2002,11 +2013,11 @@ final class AppState {
     ///   store's diminished content overwrite the record before the restore
     ///   actually applies: if that restore then failed to take effect, the
     ///   record would agree with the diminished store, and the banner that
-    ///   depends on the mismatch would never come back. On the ordinary path
-    ///   `NSApp.terminate(nil)` never returns, so the offer is never actually
-    ///   cleared before `willTerminate` fires — this guard is what keeps that
-    ///   correct on purpose rather than by that accident, for whenever
-    ///   termination is deferred or cancelled. `applyPendingRestore` clears the
+    ///   depends on the mismatch would never come back. Termination is
+    ///   deferred now — `ChorusAppDelegate` holds a quit for up to a second
+    ///   while pages save, so `NSApp.terminate(nil)` returns and the offer can
+    ///   be cleared before `willTerminate` fires. This guard is what keeps the
+    ///   record correct through that window. `applyPendingRestore` clears the
     ///   pending key at the top of the next `init`, so the launch-time record
     ///   write right after is unaffected.
     static func shouldRecordContent(

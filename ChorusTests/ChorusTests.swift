@@ -3,6 +3,7 @@ import SwiftData
 import SQLite3
 import JavaScriptCore
 import WebKit
+import CryptoKit
 @testable import Chorus
 
 @MainActor
@@ -1800,14 +1801,39 @@ final class ChorusTests: XCTestCase {
         }
     }
 
-    func testOpensExternalLinksInAppDefaultsToOff() {
-        // A legacy row (nil) keeps opening external links in the system browser.
-        XCTAssertFalse(ServiceInstance(label: "S", url: "https://s.example")
-            .opensExternalLinksInAppEffective)
-        XCTAssertTrue(ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: true)
-            .opensExternalLinksInAppEffective)
-        XCTAssertFalse(ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: false)
-            .opensExternalLinksInAppEffective)
+    /// A service with no choice of its own follows the global setting; its own
+    /// choice beats the global either way.
+    func testOutsideLinksFollowTheGlobalDefaultUnlessTheServiceChose() {
+        let unset = ServiceInstance(label: "S", url: "https://s.example")
+        XCTAssertFalse(unset.opensExternalLinksInApp(globalDefault: false))
+        XCTAssertTrue(unset.opensExternalLinksInApp(globalDefault: true))
+        let chorus = ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: true)
+        XCTAssertTrue(chorus.opensExternalLinksInApp(globalDefault: false))
+        let browser = ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: false)
+        XCTAssertFalse(browser.opensExternalLinksInApp(globalDefault: true))
+    }
+
+    /// The old editor wrote `false` on every save. Those are cleared once so the
+    /// services follow the global setting; a `true` was a choice and stays. The
+    /// cleanup runs once only, so a `false` chosen afterwards survives.
+    @MainActor
+    func testUnchosenOutsideLinkPinsAreClearedOnce() throws {
+        let container = try ModelContainer(for: ServiceInstance.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let pinnedOff = ServiceInstance(label: "A", url: "https://a.example", openExternalLinksInApp: false)
+        let chosenOn = ServiceInstance(label: "B", url: "https://b.example", openExternalLinksInApp: true)
+        context.insert(pinnedOff)
+        context.insert(chosenOn)
+        try context.save()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "outside-link-test-\(UUID().uuidString)"))
+
+        OutsideLinkDefault.clearUnchosenPins(in: context, defaults: defaults)
+        XCTAssertNil(pinnedOff.openExternalLinksInApp)
+        XCTAssertEqual(chosenOn.openExternalLinksInApp, true)
+
+        pinnedOff.openExternalLinksInApp = false
+        OutsideLinkDefault.clearUnchosenPins(in: context, defaults: defaults)
+        XCTAssertEqual(pinnedOff.openExternalLinksInApp, false, "a later, real choice must not be cleared")
     }
 
     // MARK: - OS-notification gate + per-service notify flag
@@ -2259,6 +2285,44 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("example.com"))
     }
 
+    // MARK: - Third-party notices
+
+    /// The GPL list and the libraries ask for their notices to travel with the
+    /// app, not only to sit in the repository.
+    func testLicenseNoticesShipInTheApp() {
+        XCTAssertNotNil(Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "LICENSE", withExtension: nil))
+        for name in ["GPL-3.0", "CC-BY-3.0", "DarkReader-MIT", "Sparkle"] {
+            XCTAssertNotNil(
+                Bundle.main.url(forResource: name, withExtension: "txt", subdirectory: "licenses"),
+                "licenses/\(name).txt is missing from the app"
+            )
+        }
+    }
+
+    /// `vendor/blocklists` is the source of the GPL list the app ships, so it has
+    /// to describe the JSON actually bundled. Regenerating a list by any route
+    /// other than `convert_blocklist.sh` would leave the two apart.
+    func testBlocklistManifestMatchesTheBundledLists() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let manifestURL = root.appendingPathComponent("vendor/blocklists/manifest.json")
+        let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
+        let lists = try XCTUnwrap(manifest?["lists"] as? [[String: Any]])
+        XCTAssertEqual(lists.count, 2)
+        for list in lists {
+            let name = try XCTUnwrap(list["name"] as? String)
+            for (fileKey, hashKey) in [("source_file", "source_sha256"), ("output_file", "output_sha256")] {
+                let path = try XCTUnwrap(list[fileKey] as? String)
+                let data = try Data(contentsOf: root.appendingPathComponent(path))
+                let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                XCTAssertEqual(digest, list[hashKey] as? String, "\(name): \(path) no longer matches the manifest")
+            }
+            let bundled = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "json"))
+            let bundledDigest = SHA256.hash(data: try Data(contentsOf: bundled)).map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(bundledDigest, list["output_sha256"] as? String, "\(name): the app ships a different list")
+        }
+    }
+
     // MARK: - Scripted new windows and the popup chain
 
     private func handOff(
@@ -2295,6 +2359,18 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(handOff("https://files.slack.com/x"), "the service's own host")
         XCTAssertFalse(handOff("https://linear.app/x", type: .linkActivated), "clicks were routed in decidePolicyFor")
         XCTAssertFalse(handOff("about:blank"), "not a web URL")
+    }
+
+    /// A sign-in on a host another service owns stays in its window: Linear's
+    /// "Connect Slack" opening Slack's consent page must not land in the Slack
+    /// service, where the callback would go to the wrong data store.
+    func testScriptedSignInToAnOwnedHostKeepsItsWindow() {
+        XCTAssertFalse(handOff("https://slack.com/oauth/v2/authorize?client_id=1&redirect_uri=https%3A%2F%2Flinear.app"))
+        XCTAssertFalse(handOff("https://github.com/login/oauth/authorize?client_id=1"))
+        XCTAssertFalse(handOff("https://notion.so/install-integration?response_type=code&client_id=1"))
+        XCTAssertFalse(handOff("https://discord.com/login"))
+        XCTAssertFalse(handOff("https://idp.example.com/saml/sso?SAMLRequest=abc"))
+        XCTAssertTrue(handOff("https://github.com/nicojan/Chorus/pull/34"), "an ordinary link still switches")
     }
 
     /// The service opening a popup replaces the chain; a popup opening one
@@ -2999,10 +3075,22 @@ final class ChorusTests: XCTestCase {
         let download = NSError(domain: "WebKitErrorDomain", code: 102)
         let cannotShow = NSError(domain: "WebKitErrorDomain", code: 101)
         let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
-        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cancelled))
-        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: download))
-        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cannotShow))
-        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: offline))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cancelled, hasCommittedPage: true))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: download, hasCommittedPage: true))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cannotShow, hasCommittedPage: true))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: offline, hasCommittedPage: true))
+    }
+
+    /// On a first load there is no page to keep, so a download or an unshowable
+    /// URL there is a service that never came up and must say so. A Stop is
+    /// still a Stop.
+    func testWithNoCommittedPageOnlyACancelKeepsTheBlankView() {
+        let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        let download = NSError(domain: "WebKitErrorDomain", code: 102)
+        let cannotShow = NSError(domain: "WebKitErrorDomain", code: 101)
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cancelled, hasCommittedPage: false))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: download, hasCommittedPage: false))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cannotShow, hasCommittedPage: false))
     }
 
     func testServiceHealthFailureWins() {
