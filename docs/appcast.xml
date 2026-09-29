@@ -3,6 +3,26 @@
     <channel>
         <title>Chorus</title>
         <item>
+            <title>1.5.21</title>
+            <pubDate>Tue, 29 Sep 2026 01:00:00 -0700</pubDate>
+            <sparkle:version>34</sparkle:version>
+            <sparkle:shortVersionString>1.5.21</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>A fourth layout, All services on the left, puts every space in one narrow rail with its services under it. Click a service in any space to go straight to it, or drag it to reorder it or move it to another space. In this layout, Command 1 to 9 and Command [ and ] step through the whole rail. MazzMat wrote it.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>You can now sign in to Gmail inside Chorus. Signed out, Gmail shows a page with a Sign in button, and that button opened a separate window. You signed in there, Gmail came up in that window, and the Gmail in Chorus still asked you to sign in. The sign-in page now opens in Chorus, and Gmail loads there when you finish. If this happened to you, click Sign in once more. Google already knows you from the other window, so you may only have to pick your account.</li>
+<li>A window a site opens for you, such as Sign in with Google, now presents itself to the site as Safari, the way the rest of Chorus does. Gmail in one of those windows said your browser was no longer supported.</li>
+<li>With service names turned off, the back button no longer sits under the green button in the corner of the window.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/nicojan/Chorus/releases/download/v1.5.21/Chorus-1.5.21.dmg" length="9038047" type="application/octet-stream" sparkle:edSignature="Hxu8yX9eqOzO6qg7IOrmr2oW0Ivg27laZhSJwM0ZGec7G4JbieRNOMo51jFmZRZDq2h+ur+vBrEpzU5NnG6CDw=="/>
+        </item>
+        <item>
             <title>1.5.20</title>
             <pubDate>Mon, 22 Sep 2026 23:55:00 -0700</pubDate>
             <sparkle:version>33</sparkle:version>
