@@ -241,7 +241,7 @@ struct ContentView: View {
         // The title bar is hidden, so content runs to the top edge. Reserve the
         // top-left for the traffic lights: push the leftmost top elements clear.
         let lightsHeight: CGFloat = 28
-        let lightsWidth: CGFloat = 72
+        let lightsWidth = SpaceStripMetrics.trafficLightsWidth
 
         switch appState.railLayout {
         case .sidebar:

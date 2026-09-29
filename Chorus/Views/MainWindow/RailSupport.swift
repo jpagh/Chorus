@@ -164,6 +164,9 @@ enum SpaceStripMetrics {
         showingNames ? namedWidth : compactWidth
     }
 
+    /// How far the window's traffic lights reach in from the leading edge.
+    static let trafficLightsWidth: CGFloat = 72
+
     /// Leading inset the service bar needs so the window's traffic lights,
     /// which sit over the strip, do not land on the first tab. The lights are
     /// 72 points wide; the named strip swallows them whole and the bar starts
