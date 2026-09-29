@@ -71,6 +71,14 @@ final class WebViewPool {
     private(set) var mediaCaptureStates: [UUID: MediaCaptureState] = [:]
     private var mediaObservations: [UUID: [NSKeyValueObservation]] = [:]
 
+    /// Services whose page is making sound right now, from WebKit's own
+    /// `_isPlayingAudio` — the flag Safari draws its tab speaker from. It is
+    /// false for muted media (a looping sticker video), goes false on pause, and
+    /// is pushed through KVO, so nothing has to poll the page. Drives the rail's
+    /// speaker mark and keeps the service playing when you switch away.
+    private(set) var audibleServiceIDs: Set<UUID> = []
+    private var audioObservers: [UUID: PlayingAudioObserver] = [:]
+
     /// Per-service page health, so the rail can mark a service that is still
     /// coming up or that failed — including one you are not looking at, which is
     /// the whole point. Absent ⇒ `.live`, so a healthy service costs no entry.
@@ -125,6 +133,8 @@ final class WebViewPool {
     /// second argument is the source service's id, so AppState can honour that
     /// service's "open links in Chorus" choice.
     var externalLinkHandler: ((URL, UUID?) -> Void)?
+    /// Whether some Chorus service owns a URL. Passed to each coordinator.
+    var serviceOwnsURL: ((URL) -> Bool)?
 
     /// Wired up at AppState init and applied to every coordinator. Resolves a
     /// camera/microphone capture request to a WebKit decision from the persisted
@@ -354,34 +364,22 @@ final class WebViewPool {
     }
 
     /// Check if a service currently has an active WebRTC call.
+    ///
+    /// Bounded at 2s: without a real timeout a wedged WebContent process would
+    /// leave the id in `evictionInFlight` and out of every future eviction
+    /// pass, so the pool would grow past maxLoaded. "No answer" reads as "no
+    /// call", so eviction proceeds — a process that can't answer a one-property
+    /// read in 2s is wedged and should be reclaimed anyway.
     func hasActiveCall(for instanceID: UUID) async -> Bool {
         guard webViews[instanceID] != nil else { return false }
-        // Bound the JS check. A wedged WebContent process can leave
-        // evaluateJavaScript's continuation pending forever; without a real
-        // timeout the id would stay in `evictionInFlight` and be excluded from
-        // every future eviction pass, so the pool would grow past maxLoaded.
-        // Treat "no answer within the window" as "no call" so eviction proceeds
-        // (a process that can't answer a one-property read in 2s is wedged and
-        // should be reclaimed anyway).
-        //
-        // A structured `withTaskGroup` can't deliver this: it implicitly awaits
-        // every child before returning, and evaluateJavaScript isn't
-        // cancellation-aware, so `cancelAll()` wouldn't unstick the wedged probe
-        // and the group would hang. So race two unstructured main-actor tasks —
-        // the probe and a 2s timer — and resume the continuation with whichever
-        // answers first, abandoning (not awaiting) the loser. A leaked wedged
-        // probe just lingers until the OS reaps the process.
-        return await withCheckedContinuation { continuation in
-            let gate = CallProbeGate()
-            Task { @MainActor in
-                let hasCall = await self.probeCallDetection(instanceID)
-                if gate.claim() { continuation.resume(returning: hasCall) }
-            }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if gate.claim() { continuation.resume(returning: false) }
-            }
+        return await withDeadline(seconds: 2, fallback: false) {
+            await self.probeCallDetection(instanceID)
         }
+    }
+
+    /// Every live service web view, for the quit handoff.
+    var liveWebViews: [WKWebView] {
+        Array(webViews.values)
     }
 
     /// Runs the call-detection JS for a service on the main actor, returning
@@ -462,7 +460,12 @@ final class WebViewPool {
     private func softHibernateService(_ id: UUID) {
         guard let webView = webViews[id] else { return }
         guard !neverHibernateIDs.contains(id) else { return }
-        webView.setAllMediaPlaybackSuspended(true)
+        if Self.suspendsMediaOnSwitchAway(
+            isCapturing: mediaCaptureStates[id]?.isCapturing ?? false,
+            isPlayingAudio: audibleServiceIDs.contains(id)
+        ) {
+            webView.setAllMediaPlaybackSuspended(true)
+        }
         webView.takeSnapshot(with: nil) { [weak self] image, _ in
             guard let image else { return }
             Task { @MainActor [weak self] in
@@ -476,6 +479,29 @@ final class WebViewPool {
         }
         AppLogger.webView.debug("Soft-hibernated service \(id)")
         onServiceSoftHibernated?(id)
+    }
+
+    /// Whether leaving a service suspends its media. A service in a call keeps
+    /// it: suspending would silence the other person while the microphone kept
+    /// sending. A service making sound keeps it too, so music and a voice
+    /// message carry on while you read something else, as in a browser tab.
+    /// Anything else is paused, which stops a background page from starting
+    /// autoplay. A page that begins to play only after you left gains nothing,
+    /// because the check runs once, at the switch.
+    nonisolated static func suspendsMediaOnSwitchAway(isCapturing: Bool, isPlayingAudio: Bool) -> Bool {
+        !isCapturing && !isPlayingAudio
+    }
+
+    /// Whether a service's page is making sound. See `audibleServiceIDs`.
+    func isPlayingAudio(_ id: UUID) -> Bool {
+        audibleServiceIDs.contains(id)
+    }
+
+    /// Pauses every media element on a service's page, from the rail's context
+    /// menu. A pause rather than a suspend: the page's own controls and the
+    /// media keys can start it again.
+    func pauseAudio(for id: UUID) {
+        webViews[id]?.pauseAllMediaPlayback(completionHandler: nil)
     }
 
     /// Resumes media playback when a service becomes active again.
@@ -566,6 +592,16 @@ final class WebViewPool {
                 }
             },
         ]
+        audioObservers[id]?.invalidate()
+        audioObservers[id] = PlayingAudioObserver(webView: webView) { [weak self] isPlaying in
+            guard let self, let live = self.webViews[id],
+                  ObjectIdentifier(live) == token else { return }
+            if isPlaying {
+                self.audibleServiceIDs.insert(id)
+            } else {
+                self.audibleServiceIDs.remove(id)
+            }
+        }
     }
 
     /// Recomputes and stores a service's capture state from its live web view,
@@ -615,6 +651,9 @@ final class WebViewPool {
         mediaObservations[instanceID]?.forEach { $0.invalidate() }
         mediaObservations.removeValue(forKey: instanceID)
         mediaCaptureStates.removeValue(forKey: instanceID)
+        audioObservers[instanceID]?.invalidate()
+        audioObservers.removeValue(forKey: instanceID)
+        audibleServiceIDs.remove(instanceID)
         // A hibernated service has no page, so it has no health to report; the
         // rail draws the moon for it instead. Leaving a stale failed dot on a
         // service that was torn down would outlive the failure.
@@ -634,6 +673,7 @@ final class WebViewPool {
         coordinator.instanceID = instance.id
         coordinator.fallbackURL = URL(string: instance.url)
         coordinator.externalLinkHandler = externalLinkHandler
+        coordinator.serviceOwnsURL = serviceOwnsURL
         coordinator.mediaCapturePolicyProvider = mediaCapturePolicyProvider
         coordinator.onNavigationFinished = { [weak self] id in
             self?.onNavigationFinished?(id)
@@ -819,6 +859,11 @@ final class WebViewPool {
             AppLogger.webView.info("Skipping hibernation of \(id) — active call detected")
             return false
         }
+        // Tearing the page down would stop the music the user left playing.
+        if audibleServiceIDs.contains(id) {
+            AppLogger.webView.info("Skipping hibernation of \(id) — playing audio")
+            return false
+        }
 
         hibernate(id)
         return true
@@ -848,15 +893,39 @@ final class WebViewPool {
     }
 }
 
-/// One-shot guard that lets exactly one of `hasActiveCall`'s two racing tasks
-/// resume the continuation. Both racers are `@MainActor`, so the plain flag is
-/// only ever touched on the main actor and needs no lock.
+/// Watches WebKit's private `_isPlayingAudio` on one web view. The property is
+/// not in the public headers, so it can't go through a `KeyPath` observation;
+/// this is the string-keyed form, behind a `responds(to:)` check so a WebKit
+/// that drops it leaves the speaker mark off instead of crashing. Each change
+/// hops to the main actor before `onChange` runs.
 @MainActor
-private final class CallProbeGate {
-    private var used = false
-    func claim() -> Bool {
-        if used { return false }
-        used = true
-        return true
+final class PlayingAudioObserver: NSObject {
+    private static let key = "_isPlayingAudio"
+    private weak var webView: WKWebView?
+    private let onChange: @MainActor (Bool) -> Void
+
+    init(webView: WKWebView, onChange: @escaping @MainActor (Bool) -> Void) {
+        self.onChange = onChange
+        super.init()
+        guard webView.responds(to: NSSelectorFromString(Self.key)) else { return }
+        self.webView = webView
+        webView.addObserver(self, forKeyPath: Self.key, options: [.initial, .new], context: nil)
+    }
+
+    func invalidate() {
+        webView?.removeObserver(self, forKeyPath: Self.key)
+        webView = nil
+    }
+
+    nonisolated override func observeValue(
+        forKeyPath keyPath: String?,
+        of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer?
+    ) {
+        let isPlaying = (change?[.newKey] as? NSNumber)?.boolValue ?? false
+        Task { @MainActor [weak self] in
+            self?.onChange(isPlaying)
+        }
     }
 }

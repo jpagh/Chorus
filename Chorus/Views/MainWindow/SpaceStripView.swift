@@ -75,7 +75,9 @@ struct SpaceStripView: View {
 
             // Scroll the cells so more spaces than fit the window height stay
             // reachable; the divider and add button below stay pinned.
-            ScrollView {
+            // No scroller: with "Always show scroll bars" on, it took width from
+            // the fixed-width cells and pushed them off the rail's centre line.
+            ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 2) {
                     ForEach(spaces) { space in
                         spaceCell(space)
@@ -222,11 +224,7 @@ struct SpaceStripView: View {
     }
 
     private func save(_ context: String) {
-        do {
-            try modelContext.save()
-        } catch {
-            AppLogger.dataStore.error("Failed to save (\(context)): \(error.localizedDescription)")
-        }
+        modelContext.saveOrRollBack(context)
     }
 
     /// ↑/↓ move the space selection along the strip; ⌥+arrow reorders the

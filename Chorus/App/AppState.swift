@@ -541,6 +541,10 @@ final class AppState {
         webViewPool.externalLinkHandler = { [weak self] url, sourceServiceID in
             self?.handleExternalLink(url, from: sourceServiceID)
         }
+        webViewPool.serviceOwnsURL = { [weak self] url in
+            guard let self, let host = url.host else { return false }
+            return self.findServiceMatching(host: host, preferringSpace: nil) != nil
+        }
     }
 
     /// Wires the WebViewPool's media-capture handler so every service's
@@ -967,6 +971,56 @@ final class AppState {
         })
     }
 
+    /// Gives every live page a save point before the app quits, then lets it
+    /// go. Called from `applicationShouldTerminate`, so every way out — the
+    /// menu, ⌘Q, a relaunch, a Sparkle install — passes through it.
+    ///
+    /// Pages save when they go hidden, and a quit kills them with no
+    /// `visibilitychange` or `pagehide` at all. Chorus pins every page to
+    /// visible besides, so WhatsApp Web never reached the point where it writes
+    /// its session, and could come back signed out. Three steps, each capped so
+    /// a wedged page can't hold the quit hostage, about a second in all:
+    /// release every page to hidden, give the pages a moment to write, then read
+    /// each data store's records — a round trip through the storage process that
+    /// lands behind the writes just queued. That last step is best effort.
+    func releasePagesForQuit() async {
+        let webViews = webViewPool.liveWebViews
+        guard !webViews.isEmpty else { return }
+
+        // Started together, awaited in turn: all the pages get the signal at
+        // once, and the deadline bounds the wait for the slowest.
+        await withDeadline(seconds: 0.3, fallback: ()) {
+            let releases = webViews.map { webView in
+                Task { @MainActor in
+                    _ = try? await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+                }
+            }
+            for release in releases { await release.value }
+        }
+
+        try? await Task.sleep(for: Self.quitWriteWindow)
+
+        var seen = Set<ObjectIdentifier>()
+        let stores = webViews
+            .map(\.configuration.websiteDataStore)
+            .filter { seen.insert(ObjectIdentifier($0)).inserted }
+        await withDeadline(seconds: 0.5, fallback: ()) {
+            let flushes = stores.map { store in
+                Task { @MainActor in
+                    _ = await store.dataRecords(ofTypes: [
+                        WKWebsiteDataTypeLocalStorage,
+                        WKWebsiteDataTypeIndexedDBDatabases,
+                    ])
+                }
+            }
+            for flush in flushes { await flush.value }
+        }
+        AppLogger.webView.info("Released \(webViews.count) pages for quit")
+    }
+
+    /// How long pages get to write after going hidden before quit goes on.
+    static let quitWriteWindow: Duration = .milliseconds(250)
+
     /// Pauses or resumes polling when network connectivity toggles. While
     /// offline every poll (active, background, and hibernated) would only fire
     /// doomed requests, draining battery for nothing; on reconnect we restart
@@ -1058,7 +1112,7 @@ final class AppState {
     func reloadActiveService() {
         guard let id = webViewPool.activeServiceID,
               let webView = webViewPool.liveWebView(for: id) else { return }
-        webView.reload()
+        WebViewCoordinator.reload(webView, fallbackURL: fetchService(id: id).flatMap { URL(string: $0.url) })
     }
 
     /// Applies user edits to a service: persists label/URL/keep-loaded, syncs
@@ -2531,6 +2585,20 @@ final class AppState {
     /// room to work.
     static let maxCrossSpaceCriticalServices = 5
 
+    /// Whether the transient badge sweep renders `service` in a hidden web view.
+    /// A live web view already runs a poll that covers the badge, and muted or
+    /// badge-hidden services never show a count. Chat services are left out too:
+    /// a second, hidden copy of WhatsApp Web on the same data store competes with
+    /// the real one for the session and can sign it out. A chat service past the
+    /// cross-space cap therefore shows no count until it is opened, which is the
+    /// cheaper failure.
+    static func badgeSweepIncludes(_ service: ServiceInstance, hasLiveWebView: Bool) -> Bool {
+        !hasLiveWebView
+            && !service.isNotificationCritical
+            && !service.isEffectivelyMuted
+            && service.showBadge
+    }
+
     /// Wires the transient badge fetcher's collaborators and starts its
     /// launch + slow-periodic sweep. The fetcher renders each service that has no
     /// live web view (everything outside the active space, plus anything the pool
@@ -2551,12 +2619,10 @@ final class AppState {
                 return []
             }
             return services.compactMap { service in
-                // A live web view already runs a poll that covers the badge, so
-                // skip it; muted / badge-hidden services never show a count.
-                guard !self.webViewPool.hasWebView(for: service.id),
-                      !service.isEffectivelyMuted,
-                      service.showBadge
-                else { return nil }
+                guard Self.badgeSweepIncludes(
+                    service,
+                    hasLiveWebView: self.webViewPool.hasWebView(for: service.id)
+                ) else { return nil }
                 let badgeJS = service.catalogEntryID
                     .flatMap { ServiceCatalog.shared.entry(for: $0) }?.badgeJS
                 return TransientBadgeFetcher.Target(

@@ -82,11 +82,7 @@ struct CatalogGridView: View {
         )
         modelContext.insert(link)
 
-        do {
-            try modelContext.save()
-        } catch {
-            AppLogger.dataStore.error("Failed to save catalog service: \(error.localizedDescription)")
-        }
+        guard modelContext.saveOrRollBack("catalog service") else { return }
 
         // Switch to the service the user just added.
         appState.selectedSpaceID = spaceID
@@ -110,11 +106,7 @@ struct CatalogGridView: View {
             guard let svc = try? modelContext.fetch(desc).first else { return }
             svc.fetchedIconData = data
             svc.faviconFetchedAt = Date()
-            do {
-                try modelContext.save()
-            } catch {
-                AppLogger.dataStore.error("Failed to save fetched favicon: \(error.localizedDescription)")
-            }
+            modelContext.saveOrRollBack("fetched favicon")
         }
 
         onAdd()

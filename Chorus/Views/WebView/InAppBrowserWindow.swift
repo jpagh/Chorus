@@ -43,6 +43,9 @@ final class InAppBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         webView = WKWebView(frame: size, configuration: config)
+        // WebKit's default agent makes Google and others call the browser
+        // unsupported. The service web views and their popups carry Safari's.
+        webView.customUserAgent = UserAgentProvider.safariDefault
         window = NSWindow(
             contentRect: size,
             styleMask: [.titled, .closable, .resizable, .miniaturizable],

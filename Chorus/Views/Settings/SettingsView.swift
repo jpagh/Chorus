@@ -243,11 +243,7 @@ struct GeneralSettingsView: View {
     private static let zoomLevels: [Double] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5]
 
     private func save(_ context: String) {
-        do {
-            try modelContext.save()
-        } catch {
-            AppLogger.dataStore.error("Failed to save setting (\(context)): \(error.localizedDescription)")
-        }
+        modelContext.saveOrRollBack("setting: \(context)")
     }
 
     private func ensurePrefs() -> AppPreferences {
@@ -471,11 +467,7 @@ struct NotificationSettingsView: View {
     }
 
     private func save(_ context: String) {
-        do {
-            try modelContext.save()
-        } catch {
-            AppLogger.dataStore.error("Failed to save setting (\(context)): \(error.localizedDescription)")
-        }
+        modelContext.saveOrRollBack("setting: \(context)")
     }
 }
 
@@ -595,11 +587,7 @@ struct PrivacySettingsView: View {
     }
 
     private func save(_ context: String) {
-        do {
-            try modelContext.save()
-        } catch {
-            AppLogger.dataStore.error("Failed to save setting (\(context)): \(error.localizedDescription)")
-        }
+        modelContext.saveOrRollBack("setting: \(context)")
     }
 }
 

@@ -7,6 +7,7 @@ import Sparkle
 @main
 struct ChorusApp: App {
     @State private var appState: AppState
+    @NSApplicationDelegateAdaptor(ChorusAppDelegate.self) private var appDelegate
 
     #if canImport(Sparkle)
     /// Owns the Sparkle updater for the app's lifetime: drives the
@@ -31,6 +32,9 @@ struct ChorusApp: App {
                 .environment(appState)
                 .modelContainer(appState.modelContainer)
                 .preferredColorScheme(appState.appearanceColorScheme)
+                .onAppear {
+                    appDelegate.appState = appState
+                }
                 .onDisappear {
                     saveWindowState()
                 }

@@ -23,8 +23,8 @@ struct WebNavButtons: View {
             Button {
                 if webViewState.isLoading {
                     webViewState.webView?.stopLoading()
-                } else {
-                    webViewState.webView?.reload()
+                } else if let webView = webViewState.webView {
+                    WebViewCoordinator.reload(webView, fallbackURL: homeURL)
                 }
             } label: {
                 Image(systemName: webViewState.isLoading ? "xmark" : "arrow.clockwise")

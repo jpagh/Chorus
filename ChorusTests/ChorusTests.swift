@@ -2259,6 +2259,54 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("example.com"))
     }
 
+    // MARK: - Scripted new windows and the popup chain
+
+    private func handOff(
+        _ url: String,
+        type: WKNavigationType = .other,
+        fromPopup: Bool = false,
+        sized: Bool = false,
+        opener: String? = "app.slack.com",
+        owned: Bool = true
+    ) -> Bool {
+        WebViewCoordinator.shouldHandOffScriptedWindow(
+            navigationType: type,
+            openerIsPopup: fromPopup,
+            requestedSize: sized,
+            targetURL: URL(string: url)!,
+            openerHost: opener,
+            ownedByAnotherService: owned
+        )
+    }
+
+    /// Slack opens a Linear link with `window.open`. When Linear is a Chorus
+    /// service, that is a switch to it, the same as a clicked link.
+    func testScriptedWindowToAnotherServiceIsHandedOff() {
+        XCTAssertTrue(handOff("https://linear.app/team/issue/ABC-1"))
+    }
+
+    /// Everything that could be a sign-in keeps its window, and so does a host
+    /// no Chorus service owns: it might be a company's own identity provider.
+    func testScriptedWindowsThatKeepTheirWindow() {
+        XCTAssertFalse(handOff("https://linear.app/x", owned: false), "no service owns it")
+        XCTAssertFalse(handOff("https://linear.app/x", sized: true), "a sized window is how sign-in popups ask")
+        XCTAssertFalse(handOff("https://linear.app/x", fromPopup: true), "a popup's child is a sign-in step")
+        XCTAssertFalse(handOff("https://accounts.google.com/o/oauth2", owned: true), "a sign-in gateway")
+        XCTAssertFalse(handOff("https://files.slack.com/x"), "the service's own host")
+        XCTAssertFalse(handOff("https://linear.app/x", type: .linkActivated), "clicks were routed in decidePolicyFor")
+        XCTAssertFalse(handOff("about:blank"), "not a web URL")
+    }
+
+    /// The service opening a popup replaces the chain; a popup opening one
+    /// replaces only its own children. Closing a popup closes what it opened.
+    func testPopupChainRanges() {
+        XCTAssertEqual(PopupChain.closedWhenOpening(fromPopupAt: nil, count: 2), 0..<2)
+        XCTAssertEqual(PopupChain.closedWhenOpening(fromPopupAt: 0, count: 1), 1..<1, "the parent stays open")
+        XCTAssertEqual(PopupChain.closedWhenOpening(fromPopupAt: 0, count: 3), 1..<3)
+        XCTAssertEqual(PopupChain.closedWhenClosing(at: 1, count: 3), 1..<3)
+        XCTAssertEqual(PopupChain.closedWhenClosing(at: 0, count: 1), 0..<1)
+    }
+
     // MARK: - New-window requests (shouldLoadNewWindowInPlace)
 
     func testClickedSameServiceLinkLoadsInPlace() {
@@ -2636,6 +2684,39 @@ final class ChorusTests: XCTestCase {
         XCTFail("Fake Gmail page never finished loading")
     }
 
+    /// The page is pinned to visible, and a real `visibilitychange` is
+    /// swallowed, until the quit release. Then it reads hidden and gets both the
+    /// `visibilitychange` and the `pagehide` it saves its state on.
+    func testVisibilityOverrideReleasesThePageForQuit() async throws {
+        let config = WKWebViewConfiguration()
+        config.userContentController.addUserScript(WKUserScript(
+            source: UserScriptManager.makeVisibilityOverrideScript(),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.loadHTMLString("""
+        <html><body><div role="main"></div><script>
+        window.seen = [];
+        document.addEventListener('visibilitychange', () => seen.push('visibility:' + document.visibilityState));
+        window.addEventListener('pagehide', () => seen.push('pagehide'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        </script></body></html>
+        """, baseURL: URL(string: "https://web.whatsapp.com/"))
+        try await waitForFixture(webView)
+
+        let before = try await webView.evaluateJavaScript("[document.hidden, seen.join(',')].join('|')") as? String
+        XCTAssertEqual(before, "false|", "pinned visible, and a visibilitychange before the release is swallowed")
+
+        _ = try await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+        let after = try await webView.evaluateJavaScript("[document.hidden, seen.join(',')].join('|')") as? String
+        XCTAssertEqual(after, "true|visibility:hidden,pagehide")
+
+        _ = try await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+        let again = try await webView.evaluateJavaScript("seen.length") as? Int
+        XCTAssertEqual(again, 2, "a second release sends nothing more")
+    }
+
     func testGmailBadgeInRealWebViewIgnoresCachedRowsFromOtherLabels() async throws {
         // The JSC tests above check the expression's logic; this one runs it
         // through the real path — WebKit's engine, the catalog string, and
@@ -2903,6 +2984,27 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(ServiceHealth.live.next(.finishedLoading), .live)
     }
 
+    /// Stop, a replacing navigation or a download ends a load with neither
+    /// callback. The ring must come down, and an earlier failure must stay.
+    func testServiceHealthStoppingALoadClearsTheRingButNotAFailure() {
+        XCTAssertEqual(ServiceHealth.loading.next(.stoppedLoading), .live)
+        XCTAssertEqual(ServiceHealth.live.next(.stoppedLoading), .live)
+        XCTAssertEqual(ServiceHealth.failed.next(.stoppedLoading), .failed)
+    }
+
+    /// A download or a URL WebKit can't show is not a connection failure, so the
+    /// page stays instead of "Unable to connect". A real network error does not.
+    func testProvisionalFailuresThatKeepTheCurrentPage() {
+        let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        let download = NSError(domain: "WebKitErrorDomain", code: 102)
+        let cannotShow = NSError(domain: "WebKitErrorDomain", code: 101)
+        let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cancelled))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: download))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cannotShow))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: offline))
+    }
+
     func testServiceHealthFailureWins() {
         XCTAssertEqual(ServiceHealth.loading.next(.failed), .failed)
         XCTAssertEqual(ServiceHealth.live.next(.failed), .failed)
@@ -2950,6 +3052,24 @@ final class ChorusTests: XCTestCase {
             ServiceAccessibility.label(name: "Slack", badgeCount: 0, isHibernated: false, isMuted: true, health: .signedOut),
             "Slack, muted, signed out"
         )
+    }
+
+    func testSpokenLabelSaysWhenAServiceIsPlayingAudio() {
+        XCTAssertEqual(
+            ServiceAccessibility.label(name: "Spotify", badgeCount: 0, isHibernated: false, isMuted: false, isPlayingAudio: true),
+            "Spotify, playing audio"
+        )
+    }
+
+    // MARK: - Media on switch-away
+
+    /// Leaving a service in a call must not silence it: the other person would
+    /// go quiet while the microphone kept sending. Leaving one that is playing
+    /// music must not stop the music. Anything else is paused.
+    func testSwitchingAwayKeepsCallsAndAudioPlaying() {
+        XCTAssertFalse(WebViewPool.suspendsMediaOnSwitchAway(isCapturing: true, isPlayingAudio: false), "a call keeps its sound")
+        XCTAssertFalse(WebViewPool.suspendsMediaOnSwitchAway(isCapturing: false, isPlayingAudio: true), "music keeps playing")
+        XCTAssertTrue(WebViewPool.suspendsMediaOnSwitchAway(isCapturing: false, isPlayingAudio: false), "a quiet page is paused")
     }
 
     // MARK: - Space header and palette (build step 4)
@@ -5609,6 +5729,21 @@ final class ChorusTests: XCTestCase {
 
         let shuffled = AppState.criticalServicesToKeepLive(among: services.shuffled(), covered: [], limit: 5)
         XCTAssertEqual(first.map(\.id), shuffled.map(\.id), "the same services must win the cap regardless of fetch order")
+    }
+
+    /// The badge sweep renders a hidden copy of each service it covers. For a
+    /// chat service that copy is a second client on the same session, which can
+    /// sign WhatsApp Web out, so chat services must never be swept.
+    func testBadgeSweepSkipsChatServices() {
+        let whatsapp = makeService(label: "WhatsApp", catalogID: "whatsapp")
+        let reddit = makeService(label: "Reddit", catalogID: "reddit")
+        let hidden = makeService(label: "Reddit (no badge)", catalogID: "reddit")
+        hidden.showBadge = false
+
+        XCTAssertFalse(AppState.badgeSweepIncludes(whatsapp, hasLiveWebView: false), "a chat service must not get a hidden copy")
+        XCTAssertTrue(AppState.badgeSweepIncludes(reddit, hasLiveWebView: false))
+        XCTAssertFalse(AppState.badgeSweepIncludes(reddit, hasLiveWebView: true), "a live web view already polls its badge")
+        XCTAssertFalse(AppState.badgeSweepIncludes(hidden, hasLiveWebView: false))
     }
 
     // MARK: - Protecting a live service's cookies

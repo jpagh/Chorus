@@ -185,7 +185,9 @@ struct UnifiedRailView: View {
         VStack(spacing: 0) {
             Spacer().frame(height: 6 + contentInset)
 
-            ScrollView {
+            // No scroller: with "Always show scroll bars" on, it took width from
+            // the fixed-width cells and pushed them off the rail's centre line.
+            ScrollView(.vertical, showsIndicators: false) {
                 // A plain VStack, not lazy: a membership that moves between
                 // spaces would keep the same `link.id`, and a lazy stack
                 // matches that id across groups and reuses the cell. The cell
@@ -547,7 +549,9 @@ struct UnifiedRailView: View {
                 .padding(.top, 10 + contentInset)
                 .padding(.bottom, 6)
 
-            ScrollView {
+            // No scroller: with "Always show scroll bars" on, it took width from
+            // the fixed-width cells and pushed them off the rail's centre line.
+            ScrollView(.vertical, showsIndicators: false) {
                 // 2 points between 34 point rows is the drawn 36 point pitch.
                 LazyVStack(spacing: 2) {
                     ForEach(filteredLinks) { link in
@@ -822,6 +826,7 @@ struct UnifiedRailView: View {
             cameraActive: media?.cameraActive ?? false,
             micActive: media?.micActive ?? false,
             micMuted: media?.micMuted ?? false,
+            isPlayingAudio: appState.webViewPool.isPlayingAudio(service.id),
             health: health,
             showsName: showsName ?? showServiceNames,
             spaceName: spaceName,
@@ -941,6 +946,12 @@ struct UnifiedRailView: View {
             }
         ))
 
+        if appState.webViewPool.isPlayingAudio(service.id) {
+            Button("Pause Audio") {
+                appState.webViewPool.pauseAudio(for: service.id)
+            }
+        }
+
         Divider()
 
         Button("Open in Safari") {
@@ -1002,18 +1013,10 @@ struct UnifiedRailView: View {
     // rollback on failure) are load-bearing.
 
     @discardableResult
+    /// Destructive callers skip their irreversible teardown on `false`, when
+    /// the store didn't actually change.
     private func save(_ context: String) -> Bool {
-        do {
-            try modelContext.save()
-            return true
-        } catch {
-            AppLogger.dataStore.error("Failed to save (\(context)): \(error.localizedDescription)")
-            // Discard the failed mutation so it can't ride along on the next
-            // unrelated successful save, and so destructive callers can skip
-            // their irreversible teardown when the store didn't actually change.
-            modelContext.rollback()
-            return false
-        }
+        modelContext.saveOrRollBack(context)
     }
 
     /// Opens the service's current page in the system default browser,
