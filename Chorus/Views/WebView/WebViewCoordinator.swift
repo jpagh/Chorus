@@ -453,8 +453,9 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         // If the new-window request is for the same service — e.g. Slack opening
-        // a workspace via a target=_blank link — load it in the existing web
-        // view instead of spawning a separate NSWindow. Only genuinely
+        // a workspace via a target=_blank link — or is a clicked sign-in link
+        // (Gmail's "Sign in" to accounts.google.com), load it in the existing
+        // web view instead of spawning a separate NSWindow. Only genuinely
         // cross-service popups (real OAuth sign-in windows to another domain)
         // fall through and get their own window below.
         //
@@ -495,6 +496,10 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         let popup = WKWebView(frame: .zero, configuration: configuration)
         popup.navigationDelegate = self
         popup.uiDelegate = self
+        // The user agent is a web view property, not part of the configuration,
+        // so the popup does not inherit it. Left at WebKit's default, Gmail in a
+        // popup shows "This browser version is no longer supported".
+        popup.customUserAgent = webView.customUserAgent
 
         // Honor the page's requested popup size when reasonable; otherwise
         // default to a comfortable 1100×800 (the previous 800×600 was too
@@ -1059,6 +1064,15 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// detect a popup blocker, and a nil answer makes them abandon the flow
     /// silently — no window, no error, no request. Factored out so the rule is
     /// unit-testable without a live `WKWebView`.
+    ///
+    /// A clicked link to a sign-in gateway collapses too. Signed-out Gmail shows
+    /// a marketing page whose "Sign in" is `<a target="_blank">` to
+    /// accounts.google.com. Given its own window, the sign-in finished there and
+    /// Gmail loaded in that window, while the service stayed on the marketing
+    /// page behind it. Loaded in place, the gateway's `continue` URL brings the
+    /// service itself back. Such a link has no opener to report to (Google marks
+    /// it `noopener`), so nothing waits on the window; the OAuth popups that do
+    /// wait come from `window.open`, which never reaches this branch.
     nonisolated static func shouldLoadNewWindowInPlace(
         navigationType: WKNavigationType,
         targetHost: String?,
@@ -1069,6 +1083,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
               let openerHost
         else { return false }
         return belongsToService(targetHost, serviceHost: openerHost)
+            || isAuthHost(targetHost)
     }
 
     /// Whether `targetHost` belongs to the service whose current (or home) host

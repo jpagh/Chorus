@@ -2158,8 +2158,34 @@ final class ChorusTests: XCTestCase {
     func testCrossServicePopupGetsItsOwnWindow() {
         XCTAssertFalse(WebViewCoordinator.shouldLoadNewWindowInPlace(
             navigationType: .linkActivated,
+            targetHost: "portal.azure.com",
+            openerHost: "teams.cloud.microsoft"
+        ))
+    }
+
+    func testClickedSignInLinkLoadsInPlace() {
+        // Signed-out Gmail's "Sign in" is a target=_blank link from the
+        // marketing page to accounts.google.com. In its own window, Gmail
+        // loaded there and the service stayed on the marketing page.
+        XCTAssertTrue(WebViewCoordinator.shouldLoadNewWindowInPlace(
+            navigationType: .linkActivated,
+            targetHost: "accounts.google.com",
+            openerHost: "workspace.google.com"
+        ))
+        XCTAssertTrue(WebViewCoordinator.shouldLoadNewWindowInPlace(
+            navigationType: .linkActivated,
             targetHost: "login.microsoftonline.com",
             openerHost: "teams.cloud.microsoft"
+        ))
+    }
+
+    func testProgrammaticSignInPopupGetsItsOwnWindow() {
+        // "Sign in with Google" popups come from window.open and report back
+        // to the opener, so they must keep a real window.
+        XCTAssertFalse(WebViewCoordinator.shouldLoadNewWindowInPlace(
+            navigationType: .other,
+            targetHost: "accounts.google.com",
+            openerHost: "app.slack.com"
         ))
     }
 
