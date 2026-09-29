@@ -981,8 +981,22 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             serviceID: instanceID,
             filename: Self.sanitizedDownloadFilename(guessedName ?? ""),
             progress: download.progress,
-            cancel: { [weak download] in download?.cancel(nil) }
+            cancel: { [weak self, weak download] in
+                guard let self, let download else { return }
+                self.cancelDownload(download)
+            }
         )
+    }
+
+    /// Cancel from the download list. WebKit sends no failure callback for a
+    /// download it was told to cancel (`DownloadProxy::didFail` returns early
+    /// once cancelled), so the bookkeeping the failure handler would do has to
+    /// happen here — otherwise the self-retain above keeps this coordinator
+    /// alive for the rest of the run.
+    private func cancelDownload(_ download: WKDownload) {
+        download.cancel(nil)
+        downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
+        untrackDownload(download)
     }
 
     /// Takes the download off the books and returns its row in the list.
@@ -1066,12 +1080,22 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
         if let itemID = untrackDownload(download) {
-            downloadCenter?.fail(itemID, message: error.localizedDescription)
+            downloadCenter?.fail(itemID, message: Self.downloadFailureMessage(error))
         }
         AppLogger.webView.error("Download failed: \(error.localizedDescription)")
     }
 
     // MARK: - Helpers
+
+    /// What the download list says went wrong. URL-loading errors already read
+    /// as plain words ("The Internet connection appears to be offline."); what
+    /// WebKit reports in its own domain reads as "WebKitErrorDomain error 102",
+    /// which means nothing to anyone, so that gets one plain line instead.
+    nonisolated static func downloadFailureMessage(_ error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain { return nsError.localizedDescription }
+        return "The download stopped before it finished."
+    }
 
     /// Reduces a server-suggested filename to a safe single path component:
     /// strips any directory parts and path separators so a crafted name can't

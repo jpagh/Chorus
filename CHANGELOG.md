@@ -5,6 +5,28 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- A download button joins the navigation buttons once something downloads. While files come in it fills a ring, and a click lists every download since Chorus opened, from every service: which service it came from, how far along it is, and how it ended. You can stop one that is still running, show a finished file in Finder, or double-click it to open it. Before this, the only sign of a download was the Downloads stack bouncing in the Dock.
+- Music and video keep playing when you switch to another service, as they would in a browser tab. A service making sound shows a speaker in the rail, and right-clicking it offers Pause Audio. A page that was quiet when you left it still pauses, so a background page can't start playing on its own.
+- Settings has one switch for where outside links open, a Chorus window or your browser. Each service can follow it or make its own choice when you edit it.
+- Settings can save your spaces and services to a file, and add them back from one, on this Mac or another. Sign-ins stay behind, so you sign in to each service again after an import. An import only adds: a space merges into yours when the names match, and it removes nothing you have. Before you say yes it lists the sites the file would add, and camera and microphone choices stay behind, so each imported service asks again.
+- The app now carries the license texts for the parts other people wrote, and About links to them. The HaGezi blocklist is GPL-3.0, and Chorus shipped it with only a link. The exact list text each release blocks from now sits in the source code. I also brought both blocklists up to date.
+
+### Fixed
+
+- A call keeps its sound when you switch to another service. Chorus paused the sound of every service you left, so the other person went quiet while your microphone kept sending.
+- WhatsApp should stay signed in when you quit and reopen Chorus. Pages save their state when they go out of view, and a quit gave them no warning. Chorus now tells every open page it is going away and gives it a moment to save before it quits. I have not yet seen this work on a real WhatsApp account, so tell me if you still get signed out.
+- Chorus no longer loads a hidden second copy of WhatsApp or another chat app to read its unread count. Two copies on one sign-in can sign WhatsApp out.
+- The grey loading ring on a service stops when you press Stop or a download starts. It used to spin forever. A download no longer puts up "Unable to connect", and Reload now works on a service whose first page never loaded.
+- A link that opens another of your services in a new window, such as a Linear link in Slack, now switches to that service. Sign-in windows still open as windows.
+- A sign-in window that opens a second window stays open. It used to close, which broke some company sign-ins partway through.
+- The window Chorus opens for an outside link now presents itself to sites as Safari, so Google and others stop calling your browser unsupported. A file link in that window now downloads in your browser. It used to do nothing.
+- With "Always show scroll bars" on, the rail's scroll bar no longer pushes its icons off centre.
+- A setting that fails to save stays unsaved. Before, it turned up later, when something else saved.
+
+Paguro, a fork of Chorus by Tommaso Laterza, found most of these bugs first. Thank you.
+
 ## [1.5.21] - 2026-09-29
 
 ### Added

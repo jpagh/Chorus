@@ -111,8 +111,32 @@ final class InAppBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
         // Web content loads in this window; a non-web scheme (mailto:, tel:, …)
         // goes to the system handler, gated by the same vetted-scheme rule the
         // main views use. Anything else is dropped.
-        if scheme == "http" || scheme == "https" { return .allow }
+        if scheme == "http" || scheme == "https" {
+            // An `<a download>` click: hand the file to the browser, below.
+            if navigationAction.shouldPerformDownload {
+                WebViewCoordinator.openExternally(url)
+                return .cancel
+            }
+            return .allow
+        }
         WebViewCoordinator.openExternally(url)
+        return .cancel
+    }
+
+    /// A file this window can't show goes to the user's browser to download.
+    /// This window has no download handling of its own, so without this a
+    /// click on a zip did nothing at all. The browser fetches it again with its
+    /// own session; the throwaway one here has nothing worth keeping.
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse
+    ) async -> WKNavigationResponsePolicy {
+        let isFile = WebViewCoordinator.isAttachment(navigationResponse.response)
+            || !navigationResponse.canShowMIMEType
+        guard navigationResponse.isForMainFrame, isFile else { return .allow }
+        if let url = navigationResponse.response.url {
+            WebViewCoordinator.openExternally(url)
+        }
         return .cancel
     }
 

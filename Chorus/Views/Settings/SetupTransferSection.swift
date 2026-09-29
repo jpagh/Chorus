@@ -20,7 +20,7 @@ struct SetupTransferSection: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Move your setup")
-                Text("Save your spaces and services to a file, or add them from one. Sign-ins stay on this Mac, so you sign in to each service again after an import.")
+                Text("Save your spaces and services to a file, or add them from one. The file holds each service's address and settings, but no sign-ins, so you sign in again after an import.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -41,14 +41,29 @@ struct SetupTransferSection: View {
         ) { archive in
             Button("Add") { runImport(archive) }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Chorus merges a space into yours when you already have one by that name. It removes and changes nothing you have now.")
+        } message: { archive in
+            Text(Self.importDetails(archive))
         }
     }
 
     private var importTitle: String {
         guard let archive = pendingImport else { return "" }
-        return "Add \(Self.count(archive.services.count, "service")) in \(Self.count(archive.spaces.count, "space"))?"
+        return "Add \(Self.count(archive.listedServiceIndices.count, "service")) in \(Self.count(archive.spaces.count, "space"))?"
+    }
+
+    /// The sites the file points at, since a file can call a service "Slack"
+    /// and send it anywhere; a warning when it brings CSS, which runs inside
+    /// those sites; and what happens to spaces you already have.
+    static func importDetails(_ archive: SetupArchive) -> String {
+        let hosts = archive.hosts
+        let shown = hosts.prefix(6).joined(separator: ", ")
+        let more = hosts.count > 6 ? ", and \(hosts.count - 6) more" : ""
+        var lines = ["Sites: \(shown)\(more)."]
+        if archive.hasCustomCSS {
+            lines.append("Some of these services bring their own CSS, which changes what their pages show. Add this only if you trust whoever made the file.")
+        }
+        lines.append("If you already have a space with one of these names, its new services go into yours. Nothing you have now is removed.")
+        return lines.joined(separator: "\n\n")
     }
 
     private func export() {

@@ -506,7 +506,14 @@ final class AppState {
         let didSeedDefaults = seedDefaultDataIfNeeded()
         backfillPasskeyNoticeIfNeeded(freshInstall: didSeedDefaults)
         reapOrphanedServices()
-        OutsideLinkDefault.clearUnchosenPins(in: modelContainer.mainContext)
+        // Only on a store that is really the user's. On a damaged, restored or
+        // in-memory launch the flag is cleared instead, so the store that comes
+        // back gets its pins cleared at the next clean launch.
+        if isSafeToReclaim {
+            OutsideLinkDefault.clearUnchosenPins(in: modelContainer.mainContext)
+        } else {
+            UserDefaults.standard.removeObject(forKey: OutsideLinkDefault.pinsClearedKey)
+        }
         restoreWindowState()
         let didUpdate = Self.recordLaunchVersionAndCheckUpdate()
         fetchMissingAndStaleFavicons(force: didUpdate)

@@ -1,6 +1,7 @@
 {
   "retrieved": "2026-09-29",
   "converter": "AdguardTeam/SafariConverterLib v4.3.0",
+  "converter_commit": "7a2e93f0afa70479cc59985f332025236c3f0c39",
   "safari_version": "14",
   "advanced_blocking": false,
   "lists": [

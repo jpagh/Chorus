@@ -24,7 +24,7 @@ HAGEZI_REF="${HAGEZI_REF:?set HAGEZI_REF to a hagezi/dns-blocklists commit SHA}"
 HAGEZI_URL="${HAGEZI_URL:-https://raw.githubusercontent.com/hagezi/dns-blocklists/${HAGEZI_REF}/adblock/light.txt}"
 FANBOY_URL="${FANBOY_URL:-https://easylist-downloads.adblockplus.org/fanboy-annoyance.txt}"
 CONVERTER_REF="${CONVERTER_REF:-v4.3.0}"          # SafariConverterLib tag
-SAFARI_VERSION="${SAFARI_VERSION:-14}"            # matches app deployment target
+SAFARI_VERSION="${SAFARI_VERSION:-14}"            # rule format; 14 is older than any Safari Chorus runs on
 CAP=150000                                        # WKContentRuleList per-list rule cap
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,6 +37,7 @@ echo "==> Building SafariConverterLib ConverterTool @ ${CONVERTER_REF} (build-on
 git clone --quiet --depth 1 --branch "$CONVERTER_REF" \
   https://github.com/AdguardTeam/SafariConverterLib "$WORK/scl"
 ( cd "$WORK/scl" && swift build -c release --product ConverterTool )
+CONVERTER_COMMIT="$(git -C "$WORK/scl" rev-parse HEAD)"
 TOOL="$WORK/scl/.build/release/ConverterTool"
 
 # convert <url> <output-path> <label> <snapshot-name>
@@ -75,7 +76,7 @@ convert \
   "fanboy-annoyance.txt"
 
 echo "==> Writing $VENDOR/manifest.json"
-REPO_ROOT="$REPO_ROOT" HAGEZI_REF="$HAGEZI_REF" CONVERTER_REF="$CONVERTER_REF" \
+REPO_ROOT="$REPO_ROOT" HAGEZI_REF="$HAGEZI_REF" CONVERTER_REF="$CONVERTER_REF" CONVERTER_COMMIT="$CONVERTER_COMMIT" \
 SAFARI_VERSION="$SAFARI_VERSION" python3 - <<'PY'
 import datetime, hashlib, json, os, re
 root = os.environ["REPO_ROOT"]
@@ -117,6 +118,7 @@ for name, source, license_id in lists:
 manifest = {
     "retrieved": datetime.date.today().isoformat(),
     "converter": "AdguardTeam/SafariConverterLib " + os.environ["CONVERTER_REF"],
+    "converter_commit": os.environ["CONVERTER_COMMIT"],
     "safari_version": os.environ["SAFARI_VERSION"],
     "advanced_blocking": False,
     "lists": out,

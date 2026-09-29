@@ -56,8 +56,6 @@ struct SetupArchive: Codable, Equatable {
         var osNotificationsEnabled: Bool?
         var customCSS: String?
         var darkModeRaw: String?
-        var cameraPolicyRaw: String?
-        var microphonePolicyRaw: String?
         var openExternalLinksInApp: Bool?
         var stayActiveInBackground: Bool?
         var hibernationPolicyRaw: String?
@@ -66,7 +64,7 @@ struct SetupArchive: Codable, Equatable {
         enum CodingKeys: String, CodingKey, CaseIterable {
             case label, url, catalogEntryID, customIconData, isMuted, showBadge, neverHibernate
             case userAgent, pageZoom, osNotificationsEnabled, customCSS, darkModeRaw
-            case cameraPolicyRaw, microphonePolicyRaw, openExternalLinksInApp
+            case openExternalLinksInApp
             case stayActiveInBackground, hibernationPolicyRaw, hibernateAfterMinutes
         }
     }
@@ -78,9 +76,14 @@ struct SetupArchive: Codable, Equatable {
     /// - `forceDarkMode`: the retired flag; `darkModeRaw` carries its meaning.
     /// - `hasSeenPasskeyNotice`: about this Mac's copy, not the service.
     /// - `createdAt`, `lastAccessedAt`: set fresh by the import.
+    /// - `cameraPolicyRaw`, `microphonePolicyRaw`: a permission is granted by a
+    ///   person on a Mac, not carried in a file. A file that could grant camera
+    ///   access to an address of its choosing, under a familiar name and icon,
+    ///   would be a way in. An imported service asks, as a new one does.
     static let excludedServiceFields: Set<String> = [
         "id", "dataStoreIdentifier", "fetchedIconData", "faviconFetchedAt",
         "forceDarkMode", "hasSeenPasskeyNotice", "createdAt", "lastAccessedAt",
+        "cameraPolicyRaw", "microphonePolicyRaw",
     ]
 
     // MARK: - Limits
@@ -93,7 +96,8 @@ struct SetupArchive: Codable, Equatable {
         static let services = 1000
         static let iconBytes = 1024 * 1024
         static let cssBytes = 256 * 1024
-        static let textLength = 2048
+        static let textLength = 8192
+        static let zoom: ClosedRange<Double> = 0.5...3.0
     }
 
     enum ReadError: LocalizedError, Equatable {
@@ -114,6 +118,29 @@ struct SetupArchive: Codable, Equatable {
                 return "The setup file is damaged: \(reason)."
             }
         }
+    }
+
+    // MARK: - What an import would add
+
+    /// The services that will actually be added: those at least one space
+    /// lists. A service no space lists would have nowhere to show.
+    var listedServiceIndices: [Int] {
+        Set(spaces.flatMap { $0.members.map(\.service) }).sorted()
+    }
+
+    /// The sites the import would open, so the person can see them before
+    /// saying yes. A file can name a service "Slack" and point it anywhere.
+    var hosts: [String] {
+        var seen = Set<String>()
+        return listedServiceIndices
+            .compactMap { URL(string: services[$0].url)?.host }
+            .filter { seen.insert($0).inserted }
+    }
+
+    /// Whether any service brings its own CSS, which runs inside that site's
+    /// pages and can change what they show.
+    var hasCustomCSS: Bool {
+        listedServiceIndices.contains { !(services[$0].customCSS ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     // MARK: - Reading and writing
@@ -151,13 +178,13 @@ struct SetupArchive: Codable, Equatable {
             guard Self.isWebURL(service.url) else { throw ReadError.invalid("a service has an address that isn't a web page") }
             guard service.label.count <= Limit.textLength, service.url.count <= Limit.textLength,
                   (service.userAgent?.count ?? 0) <= Limit.textLength
-            else { throw ReadError.invalid("a service has text too long to be real") }
+            else { throw ReadError.invalid("a service has a name or address longer than Chorus allows") }
             guard (service.customIconData?.count ?? 0) <= Limit.iconBytes else { throw ReadError.invalid("a service icon is too large") }
             guard (service.customCSS?.utf8.count ?? 0) <= Limit.cssBytes else { throw ReadError.invalid("a service's CSS is too large") }
         }
         for space in spaces {
             guard space.name.count <= Limit.textLength, space.emoji.count <= Limit.textLength
-            else { throw ReadError.invalid("a space has text too long to be real") }
+            else { throw ReadError.invalid("a space has a name longer than Chorus allows") }
             for member in space.members where !services.indices.contains(member.service) {
                 throw ReadError.invalid("a space lists a service that isn't in the file")
             }
@@ -195,9 +222,12 @@ struct SetupArchive: Codable, Equatable {
                 if let known = indexByID[service.id] {
                     index = known
                 } else {
+                    // A service whose address can't go in a file (not a web
+                    // page) is left out rather than making the file unreadable.
+                    guard let record = ServiceRecord(exporting: service) else { continue }
                     index = records.count
                     indexByID[service.id] = index
-                    records.append(ServiceRecord(service))
+                    records.append(record)
                 }
                 members.append(Member(service: index, sortOrder: sortOrder))
             }
@@ -237,23 +267,31 @@ struct SetupArchive: Codable, Equatable {
     /// services commit first, and only then are the links between them built.
     /// A link made while either end is still pending is what trips macOS 14,
     /// and a link whose ends are both in the context is already registered, so
-    /// it is inserted only when it isn't. On any failure the context is rolled
-    /// back to where it started.
+    /// it is inserted only when it isn't.
+    ///
+    /// If the second save fails, the first has already committed, and a
+    /// rollback can't reach it. So the catch deletes what the import created
+    /// and saves that, rather than leave empty spaces and services in no space
+    /// that a retry would then add to a second time.
     @MainActor
     func apply(to context: ModelContext) throws -> ImportSummary {
-        let existing = try context.fetch(FetchDescriptor<Space>())
+        // Oldest first, so a store that already holds two spaces of one name
+        // merges into the same one every time.
+        let existing = try context.fetch(FetchDescriptor<Space>(sortBy: [SortDescriptor(\.sortOrder)]))
         var nextSpaceOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
-        var existingByName: [String: Space] = [:]
-        for space in existing where existingByName[space.name] == nil {
-            existingByName[space.name] = space
+        var byName: [String: Space] = [:]
+        for space in existing where byName[space.name] == nil {
+            byName[space.name] = space
         }
 
         var summary = ImportSummary(spacesAdded: 0, spacesMerged: 0, servicesAdded: 0)
+        var newSpaces: [Space] = []
         var targets: [Space] = []
-        for record in spaces.sorted(by: { $0.sortOrder < $1.sortOrder }) {
-            if let match = existingByName[record.name] {
+        let orderedSpaces = spaces.sorted { $0.sortOrder < $1.sortOrder }
+        for record in orderedSpaces {
+            if let match = byName[record.name] {
                 targets.append(match)
-                summary.spacesMerged += 1
+                if !newSpaces.contains(where: { $0 === match }) { summary.spacesMerged += 1 }
             } else {
                 let space = Space(
                     name: record.name, emoji: record.emoji,
@@ -261,35 +299,50 @@ struct SetupArchive: Codable, Equatable {
                 )
                 nextSpaceOrder += 1
                 context.insert(space)
-                existingByName[record.name] = space
+                byName[record.name] = space
+                newSpaces.append(space)
                 targets.append(space)
                 summary.spacesAdded += 1
             }
         }
-        let created = services.map { record -> ServiceInstance in
-            let service = record.makeService()
+        var created: [Int: ServiceInstance] = [:]
+        for index in listedServiceIndices {
+            let service = services[index].makeService()
             context.insert(service)
-            return service
+            created[index] = service
         }
         summary.servicesAdded = created.count
 
         do {
             try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+
+        do {
             let linksBySpace = try Self.liveLinksBySpace(in: context)
-            let sortedRecords = spaces.sorted(by: { $0.sortOrder < $1.sortOrder })
             var nextOrder: [UUID: Int] = [:]
-            for (record, space) in zip(sortedRecords, targets) {
+            var linked: [UUID: Set<Int>] = [:]
+            for (record, space) in zip(orderedSpaces, targets) {
                 // Two records can merge into one space; each continues the order.
-                let base = nextOrder[space.id] ?? ((linksBySpace[space.id]?.last?.0 ?? -1) + 1)
-                nextOrder[space.id] = base + record.members.count
-                for (offset, member) in record.members.sorted(by: { $0.sortOrder < $1.sortOrder }).enumerated() {
-                    let link = SpaceServiceLink(sortOrder: base + offset, space: space, service: created[member.service])
+                var order = nextOrder[space.id] ?? ((linksBySpace[space.id]?.last?.0 ?? -1) + 1)
+                for member in record.members.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+                    // A service listed twice in one space gets one link.
+                    guard linked[space.id, default: []].insert(member.service).inserted,
+                          let service = created[member.service] else { continue }
+                    let link = SpaceServiceLink(sortOrder: order, space: space, service: service)
                     if link.modelContext == nil { context.insert(link) }
+                    order += 1
                 }
+                nextOrder[space.id] = order
             }
             try context.save()
         } catch {
             context.rollback()
+            created.values.forEach(context.delete)
+            newSpaces.forEach(context.delete)
+            try? context.save()
             throw error
         }
         return summary
@@ -297,10 +350,18 @@ struct SetupArchive: Codable, Equatable {
 }
 
 private extension SetupArchive.ServiceRecord {
-    init(_ service: ServiceInstance) {
+    /// The record for one service, or nil when its address is not a web page.
+    /// A login written into the address (`https://me:secret@nas.local`) is
+    /// taken out: the file is something people share, and a password in it
+    /// would travel with it. An import then refuses nothing Chorus wrote.
+    init?(exporting service: ServiceInstance) {
+        guard var components = URLComponents(string: service.url) else { return nil }
+        components.user = nil
+        components.password = nil
+        guard let url = components.string, SetupArchive.isWebURL(url) else { return nil }
         self.init(
             label: service.label,
-            url: service.url,
+            url: url,
             catalogEntryID: service.catalogEntryID,
             customIconData: service.customIconData,
             isMuted: service.isMuted,
@@ -311,8 +372,6 @@ private extension SetupArchive.ServiceRecord {
             osNotificationsEnabled: service.osNotificationsEnabled,
             customCSS: service.customCSS,
             darkModeRaw: service.darkMode.rawValue,
-            cameraPolicyRaw: service.cameraPolicyRaw,
-            microphonePolicyRaw: service.microphonePolicyRaw,
             openExternalLinksInApp: service.openExternalLinksInApp,
             stayActiveInBackground: service.stayActiveInBackground,
             hibernationPolicyRaw: service.hibernationPolicyRaw,
@@ -331,12 +390,10 @@ private extension SetupArchive.ServiceRecord {
             showBadge: showBadge,
             neverHibernate: neverHibernate,
             userAgent: userAgent,
-            pageZoom: pageZoom,
+            pageZoom: pageZoom.map { min(max($0, SetupArchive.Limit.zoom.lowerBound), SetupArchive.Limit.zoom.upperBound) },
             osNotificationsEnabled: osNotificationsEnabled,
             customCSS: customCSS,
             darkModeRaw: darkModeRaw,
-            cameraPolicyRaw: cameraPolicyRaw,
-            microphonePolicyRaw: microphonePolicyRaw,
             openExternalLinksInApp: openExternalLinksInApp,
             stayActiveInBackground: stayActiveInBackground,
             hibernationPolicyRaw: hibernationPolicyRaw,

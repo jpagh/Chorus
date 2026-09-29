@@ -2363,7 +2363,7 @@ final class ChorusTests: XCTestCase {
             let service = SetupArchive.ServiceRecord(
                 label: "X", url: url, catalogEntryID: nil, customIconData: nil, isMuted: false, showBadge: true,
                 neverHibernate: false, userAgent: nil, pageZoom: nil, osNotificationsEnabled: nil, customCSS: nil,
-                darkModeRaw: nil, cameraPolicyRaw: nil, microphonePolicyRaw: nil, openExternalLinksInApp: nil,
+                darkModeRaw: nil, openExternalLinksInApp: nil,
                 stayActiveInBackground: nil, hibernationPolicyRaw: nil, hibernateAfterMinutes: nil
             )
             return try SetupArchive(
@@ -2387,6 +2387,39 @@ final class ChorusTests: XCTestCase {
         XCTAssertThrowsError(try SetupArchive.decode(Data(count: SetupArchive.Limit.fileBytes + 1))) { error in
             XCTAssertEqual(error as? SetupArchive.ReadError, .tooLarge)
         }
+    }
+
+    /// What a shared file could otherwise smuggle in or leak: a camera grant
+    /// for an address of its choosing, a password written into an address, an
+    /// absurd zoom, one service listed twice, a service no space shows.
+    @MainActor
+    func testSetupImportAndExportCloseTheGapsAFileCouldUse() throws {
+        let source = try makeGroupingContainer()
+        let src = source.mainContext
+        let space = Space(name: "Home", emoji: "🏠", sortOrder: 0)
+        let nas = ServiceInstance(label: "NAS", url: "https://me:secret@nas.local/ui", pageZoom: 40, cameraPolicyRaw: "allow")
+        src.insert(space)
+        src.insert(nas)
+        try src.save()
+        link(nas, to: space, sortOrder: 0, in: src)
+        try src.save()
+
+        var archive = try SetupArchive.decode(SetupArchive.capture(from: src, appVersion: nil).encoded())
+        XCTAssertEqual(archive.services.first?.url, "https://nas.local/ui", "the login in the address stays behind")
+
+        // A second, unlisted service, and the first one listed twice.
+        archive.services.append(archive.services[0])
+        archive.spaces[0].members.append(.init(service: 0, sortOrder: 5))
+        XCTAssertEqual(archive.listedServiceIndices, [0])
+        XCTAssertEqual(archive.hosts, ["nas.local"])
+
+        let target = try makeGroupingContainer()
+        let summary = try archive.apply(to: target.mainContext)
+        XCTAssertEqual(summary.servicesAdded, 1, "a service no space lists is not created")
+        let imported = try XCTUnwrap(try target.mainContext.fetch(FetchDescriptor<ServiceInstance>()).first)
+        XCTAssertNil(imported.cameraPolicyRaw, "an imported service asks for the camera again")
+        XCTAssertEqual(imported.pageZoom, 3.0, "zoom is held to what Chorus offers")
+        XCTAssertEqual(try target.mainContext.fetch(FetchDescriptor<SpaceServiceLink>()).count, 1, "one link, not two")
     }
 
     // MARK: - Download list
@@ -2415,15 +2448,16 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(center.hasRunning)
     }
 
-    /// Cancel stops the download and marks the row. WebKit then reports the
-    /// cancelled download as a failure, which must not repaint the row red.
+    /// Cancel runs the coordinator's cancel (which does its own cleanup, since
+    /// WebKit sends no callback for a cancelled download) and marks the row. A
+    /// finish that crosses the Cancel must not flip the row back.
     @MainActor
     func testCancelledDownloadStaysCancelled() {
         let center = DownloadCenter()
         var cancelled = false
         let id = center.begin(serviceID: nil, filename: "big.zip", progress: nil, cancel: { cancelled = true })
         center.cancel(id)
-        center.fail(id, message: "cancelled")
+        center.finish(id)
         XCTAssertTrue(cancelled)
         XCTAssertEqual(center.items.first?.state, .cancelled)
     }

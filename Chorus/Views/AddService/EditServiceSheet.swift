@@ -110,11 +110,11 @@ struct EditServiceSheet: View {
                     .help("Loads this service as if on an iPhone, so it serves its mobile web layout. Applied on save.")
 
                 Picker("Open outside links in", selection: $openLinksInApp) {
-                    Text(linksOpenInChorusByDefault ? "Default (Chorus window)" : "Default (browser)").tag(Bool?.none)
+                    Text(linksOpenInChorusByDefault ? "Follow global setting (Chorus window)" : "Follow global setting (browser)").tag(Bool?.none)
                     Text("Chorus window").tag(Bool?.some(true))
                     Text("Browser").tag(Bool?.some(false))
                 }
-                .help("Where a link opens when it points somewhere no Chorus service covers. Default follows the setting in Settings. A link that another service covers still switches to that service.")
+                .help("Where a link opens when it points somewhere no Chorus service covers. A link that another service covers still switches to that service.")
 
                 Toggle("Always appear active", isOn: $stayActive)
                     .help("Keeps this service from showing you as away or idle while Chorus is in the background, so your status stays active even when you work in other apps. Useful for Microsoft Teams. May hold back some of this service's notifications, since it now thinks you're looking at it.")

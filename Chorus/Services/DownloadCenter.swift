@@ -93,8 +93,8 @@ final class DownloadCenter {
         }
     }
 
-    /// A row ends once. After Cancel, the failure WebKit reports for the
-    /// cancelled download finds the row already ended and leaves it be.
+    /// A row ends once. A late report for a row that already ended, such as a
+    /// finish that crosses a Cancel, leaves it as it is.
     func finish(_ id: UUID) {
         guard item(id)?.isRunning == true else { return }
         end(id, as: .finished)
