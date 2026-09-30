@@ -632,6 +632,7 @@ struct UnifiedRailView: View {
             emoji: space?.emoji ?? "🏠",
             axis: axis,
             badgeCount: badgeCount,
+            needsAttention: !muted && appState.badgeManager.needsAttention(anyOf: serviceIDs),
             isMuted: muted,
             showsName: axis == .horizontal || showServiceNames,
             isPaletteOpen: showingPalette
@@ -805,6 +806,7 @@ struct UnifiedRailView: View {
             isSelected: isSelected,
             axis: axis,
             badgeCount: badge,
+            needsAttention: appState.badgeManager.needsAttention(service.id),
             isHibernated: hibernated,
             isMuted: muted,
             cameraActive: media?.cameraActive ?? false,

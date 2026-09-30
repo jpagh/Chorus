@@ -357,9 +357,14 @@ enum RailWidth {
     /// `ServiceRowView.railWidth`, written out: a View's statics are main-actor
     /// isolated and these are not. A test holds the two together.
     static let defaultNamed: CGFloat = 240
-    static let collapseBelow: CGFloat = 120
-    /// 36 points past the icon column's 52 (`ServiceRowView.compactRailWidth`).
-    static let expandAbove: CGFloat = 52 + 36
+    /// Where the edge has to be pulled to give up the names: 50 points past
+    /// the narrowest named width, so it is a deliberate pull and not the end of
+    /// a resize.
+    static let collapseBelow: CGFloat = 100
+    /// Where it has to be pushed to bring them back. Above `collapseBelow`, so
+    /// the two never overlap: between them the rail stays as it is, and it
+    /// cannot flip back and forth as the pointer wavers.
+    static let expandAbove: CGFloat = 125
 
     static func clampNamed(_ width: CGFloat) -> CGFloat {
         Swift.min(Swift.max(width, minNamed), maxNamed)

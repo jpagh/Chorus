@@ -2363,21 +2363,58 @@ final class ChorusTests: XCTestCase {
     /// out past the expand point.
     func testRailWidthFollowsTheDragAndCollapsesToIcons() {
         XCTAssertEqual(RailWidth.defaultNamed, ServiceRowView.railWidth)
-        XCTAssertEqual(RailWidth.expandAbove, ServiceRowView.compactRailWidth + 36)
-        XCTAssertLessThan(RailWidth.collapseBelow, RailWidth.minNamed)
-        XCTAssertGreaterThan(RailWidth.collapseBelow, RailWidth.expandAbove)
+        // A dead zone between the two thresholds, so the rail cannot flip
+        // back and forth as the pointer wavers.
+        XCTAssertLessThan(RailWidth.collapseBelow, RailWidth.expandAbove)
+        XCTAssertLessThan(RailWidth.expandAbove, RailWidth.minNamed)
+        XCTAssertGreaterThan(RailWidth.collapseBelow, ServiceRowView.compactRailWidth)
 
         let within = RailWidth.resolve(proposed: 190, namesOn: true)
         XCTAssertTrue(within.namesOn); XCTAssertEqual(within.namedWidth, 190)
         let pinnedLow = RailWidth.resolve(proposed: 130, namesOn: true)
         XCTAssertTrue(pinnedLow.namesOn); XCTAssertEqual(pinnedLow.namedWidth, RailWidth.minNamed)
-        let pinnedHigh = RailWidth.resolve(proposed: 500, namesOn: true)
-        XCTAssertEqual(pinnedHigh.namedWidth, RailWidth.maxNamed)
-        XCTAssertFalse(RailWidth.resolve(proposed: 110, namesOn: true).namesOn)
+        XCTAssertEqual(RailWidth.resolve(proposed: 500, namesOn: true).namedWidth, RailWidth.maxNamed)
 
-        XCTAssertFalse(RailWidth.resolve(proposed: 80, namesOn: false).namesOn)
-        let out = RailWidth.resolve(proposed: 100, namesOn: false)
+        // Inside the dead zone nothing changes, whichever state it is in.
+        let middle = (RailWidth.collapseBelow + RailWidth.expandAbove) / 2
+        XCTAssertTrue(RailWidth.resolve(proposed: middle, namesOn: true).namesOn)
+        XCTAssertFalse(RailWidth.resolve(proposed: middle, namesOn: false).namesOn)
+        // Past either threshold, it changes.
+        XCTAssertFalse(RailWidth.resolve(proposed: RailWidth.collapseBelow - 1, namesOn: true).namesOn)
+        let out = RailWidth.resolve(proposed: RailWidth.expandAbove + 1, namesOn: false)
         XCTAssertTrue(out.namesOn); XCTAssertEqual(out.namedWidth, RailWidth.minNamed)
+    }
+
+    /// A count that goes up while you are elsewhere waits to be seen; opening
+    /// the service, or the count reaching zero, lets it go. Going up on the
+    /// service you are looking at does not wait.
+    @MainActor
+    func testACountThatGoesUpElsewhereWaitsUntilTheServiceIsOpened() {
+        let badges = BadgeManager()
+        let away = UUID(), here = UUID()
+        badges.activeServiceID = here
+
+        badges.updateBadge(for: away, count: 2, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.updateBadge(for: here, count: 3, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(here))
+        XCTAssertTrue(badges.needsAttention(anyOf: [here, away]))
+
+        // Going down does not ask for attention; zero lets it go.
+        badges.updateBadge(for: away, count: 1, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.updateBadge(for: away, count: 0, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(away))
+
+        // Opening it lets it go.
+        badges.updateBadge(for: away, count: 4, isMuted: false)
+        badges.activeServiceID = away
+        XCTAssertFalse(badges.needsAttention(away))
+
+        // A muted service never pulses.
+        let muted = UUID()
+        badges.updateBadge(for: muted, count: 5, isMuted: true)
+        XCTAssertFalse(badges.needsAttention(muted))
     }
 
     /// The web card's corner follows a page's scroll bar: an 11 point thumb

@@ -33,6 +33,8 @@ struct SpaceHeaderView: View {
     let emoji: String
     var axis: Axis = .vertical
     var badgeCount: Int = 0
+    /// A service in this space has a count waiting to be seen.
+    var needsAttention: Bool = false
     var isMuted: Bool = false
     /// Whether the header carries the space's name. It follows the rail's
     /// service rows: a 224 point header cannot sit above a 52 point column of
@@ -103,7 +105,7 @@ struct SpaceHeaderView: View {
             .opacity(isMuted ? 0.5 : 1.0)
             .accessibilityHidden(true)
             .frame(width: Self.compactWidth, height: Self.headerHeight)
-            .cornerBadge(badgeCount)
+            .cornerBadge(badgeCount, needsAttention: needsAttention)
     }
 
     private var namedContent: some View {
@@ -124,9 +126,9 @@ struct SpaceHeaderView: View {
 
             if badgeCount > 0 {
                 if axis == .vertical {
-                    SidebarCount(count: badgeCount)
+                    SidebarCount(count: badgeCount, needsAttention: needsAttention)
                 } else {
-                    BadgeCountView(count: badgeCount)
+                    BadgeCountView(count: badgeCount, needsAttention: needsAttention)
                 }
             } else if isMuted {
                 Image(systemName: "bell.slash.fill")

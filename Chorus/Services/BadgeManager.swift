@@ -15,11 +15,53 @@ final class BadgeManager {
     /// show-badge toggle off. Their real count still lives in `counts`.
     private var maskedIDs: Set<UUID> = []
 
+    /// Services whose count went up while you were looking at something else,
+    /// and that you have not opened since. Their count pulses in the rail until
+    /// you open them or the count reaches zero.
+    private(set) var attentionIDs: Set<UUID> = []
+
+    /// The service on screen, from `AppState.selectedServiceID`. Opening a
+    /// service clears its attention, and a count that goes up on screen only
+    /// flashes.
+    var activeServiceID: UUID? {
+        didSet {
+            if let activeServiceID { attentionIDs.remove(activeServiceID) }
+        }
+    }
+
+    /// Whether a service's count is waiting to be seen.
+    func needsAttention(_ id: UUID) -> Bool {
+        attentionIDs.contains(id) && !maskedIDs.contains(id) && !doNotDisturb
+    }
+
+    /// Whether any of these services' counts is waiting to be seen.
+    func needsAttention(anyOf ids: [UUID]) -> Bool {
+        ids.contains(where: needsAttention)
+    }
+
+    /// Records a change of count for the attention rule: up while elsewhere
+    /// asks for attention, down to zero lets it go.
+    private func noteCountChange(_ id: UUID, from old: Int, to new: Int) {
+        if new == 0 {
+            attentionIDs.remove(id)
+        } else if new > old, id != activeServiceID {
+            attentionIDs.insert(id)
+        }
+    }
+
     #if DEBUG
     /// Made-up counts for looking at the badges in a Debug build, laid over
     /// the real ones so polling cannot wipe them. See `AppState.applyDebugMockBadges`.
     var mockCounts: [UUID: Int] = [:] {
         didSet { updateDockBadge() }
+    }
+
+    /// Raises one made-up count by one, so a Debug build can show a count
+    /// going up and the attention pulse that follows.
+    func bumpMockCount(for id: UUID) {
+        let old = mockCounts[id] ?? 0
+        mockCounts[id] = old + 1
+        noteCountChange(id, from: old, to: old + 1)
     }
     #endif
 
@@ -81,6 +123,7 @@ final class BadgeManager {
         // garbage-large value would corrupt totalCount/aggregateCount — one
         // negative can zero out or hide the dock badge for every other service.
         let clamped = max(0, min(count, 999))
+        noteCountChange(instanceID, from: counts[instanceID] ?? 0, to: clamped)
         // Always store the (clamped) true count; muting / show-badge only
         // toggles the display mask. Storing the real value (rather than 0) keeps
         // adaptive polling's delta detection correct for muted services and
@@ -96,6 +139,7 @@ final class BadgeManager {
 
     func removeBadge(for instanceID: UUID) {
         counts.removeValue(forKey: instanceID)
+        attentionIDs.remove(instanceID)
         maskedIDs.remove(instanceID)
         updateDockBadge()
     }

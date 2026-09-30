@@ -120,6 +120,7 @@ struct SpaceStripView: View {
             space: space,
             isSelected: selectedSpaceID == space.id,
             badgeCount: badgeCount,
+            needsAttention: !muted && appState.badgeManager.needsAttention(anyOf: serviceIDs),
             isMuted: muted,
             showsName: showsNames
         ) {
@@ -288,6 +289,8 @@ private struct SpaceButton: View {
     let space: Space
     let isSelected: Bool
     var badgeCount: Int = 0
+    /// A service in this space has a count waiting to be seen.
+    var needsAttention: Bool = false
     var isMuted: Bool = false
     /// Whether the cell carries the space's name, which the strip decides from
     /// its own width.
@@ -328,7 +331,7 @@ private struct SpaceButton: View {
                 .opacity(isMuted ? 0.5 : 1.0)
                 .frame(width: side, height: side)
                 .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-                .cornerBadge(badgeCount)
+                .cornerBadge(badgeCount, needsAttention: needsAttention)
 
             if isMuted {
                 muteGlyph
@@ -356,7 +359,7 @@ private struct SpaceButton: View {
             Spacer(minLength: 0)
 
             if badgeCount > 0 {
-                SidebarCount(count: badgeCount, isSelected: isSelected)
+                SidebarCount(count: badgeCount, isSelected: isSelected, needsAttention: needsAttention)
             } else if isMuted {
                 Image(systemName: "bell.slash.fill")
                     .font(.system(size: 9))

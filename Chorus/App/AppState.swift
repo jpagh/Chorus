@@ -38,7 +38,10 @@ final class AppState {
     let networkMonitor: NetworkMonitor
 
     var selectedSpaceID: UUID?
-    var selectedServiceID: UUID?
+    var selectedServiceID: UUID? {
+        // Opening a service clears the pulse on its count.
+        didSet { badgeManager.activeServiceID = selectedServiceID }
+    }
     var showAddService = false
     var showQuickSwitcher = false
 
@@ -3324,6 +3327,22 @@ extension AppState {
             mock[service.id] = Self.debugMockBadgePattern[index % Self.debugMockBadgePattern.count]
         }
         badgeManager.mockCounts = mock
+        startDebugMockTicker(serviceIDs: services.map(\.id))
+    }
+
+    /// Every six seconds one made-up count goes up by one, so the flash and
+    /// the pulse can be seen without waiting for real mail.
+    private func startDebugMockTicker(serviceIDs: [UUID]) {
+        guard !serviceIDs.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(6))
+                guard let self, UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey),
+                      let id = serviceIDs.randomElement()
+                else { return }
+                self.badgeManager.bumpMockCount(for: id)
+            }
+        }
     }
 }
 #endif

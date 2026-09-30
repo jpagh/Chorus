@@ -19,6 +19,8 @@ struct ServiceRowView: View {
     let isSelected: Bool
     var axis: Axis = .vertical
     var badgeCount: Int = 0
+    /// The count went up while you were elsewhere. See `BadgeManager.attentionIDs`.
+    var needsAttention: Bool = false
     var isHibernated: Bool = false
     var isMuted: Bool = false
     var cameraActive: Bool = false
@@ -161,7 +163,7 @@ struct ServiceRowView: View {
         )
         // On the cell, not the icon, so it sits over the corner that the
         // selection fill and the focus ring are drawn on.
-        .cornerBadge(badgeCount, visible: instance.showBadge)
+        .cornerBadge(badgeCount, visible: instance.showBadge, needsAttention: needsAttention)
     }
 
     private var namedContent: some View {
@@ -248,9 +250,9 @@ struct ServiceRowView: View {
                 // Down the side, a Notes-style number; in the tab bar the red
                 // badge, which reads at a glance across a row of tabs.
                 if axis == .vertical {
-                    SidebarCount(count: badgeCount, isSelected: isSelected)
+                    SidebarCount(count: badgeCount, isSelected: isSelected, needsAttention: needsAttention)
                 } else {
-                    BadgeCountView(count: badgeCount)
+                    BadgeCountView(count: badgeCount, needsAttention: needsAttention)
                 }
             }
         }
