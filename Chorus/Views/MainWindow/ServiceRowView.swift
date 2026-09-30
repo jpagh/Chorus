@@ -66,9 +66,6 @@ struct ServiceRowView: View {
     /// Width of the vertical rail when the rows carry no name: the gutter, and
     /// a 44 point card round the 32 point cell.
     static let compactRailWidth: CGFloat = 52
-    /// Roughly what a labelled tab measures. Used only as the drop-midpoint
-    /// fallback before the first geometry pass records a real width.
-    static let tabTypicalWidth: CGFloat = 120
 
     /// The rail card's width: the rail's footprint less the gutter beside it.
     static func railCardWidth(showsName: Bool) -> CGFloat {

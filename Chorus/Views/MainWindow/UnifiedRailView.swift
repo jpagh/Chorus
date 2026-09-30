@@ -62,20 +62,10 @@ struct UnifiedRailView: View {
     /// The all-services rail can show one service in more than one space, so
     /// focus follows the membership link rather than the shared service id.
     @FocusState private var focusedAllServicesLinkID: UUID?
-    // Fallback drop midpoints, used only until the first geometry pass records a
-    // cell's real size. Both are half of what `ServiceRowView` draws: a 28 point
-    // row in the vertical rail, and a labelled tab of roughly 120 points in the
-    // horizontal bar. A wrong (too large) value would make every drop on that
-    // axis resolve `.before` and leave the last slot unreachable.
-    private static let serviceDropMidpoint: CGFloat = ServiceRowView.rowHeight / 2
-    private static let serviceDropMidpointHorizontal: CGFloat = ServiceRowView.tabTypicalWidth / 2
-    /// The same fallback for a bar of nameless tabs, which are a fixed width.
-    private static let compactDropMidpointHorizontal: CGFloat = ServiceRowView.compactCellWidth / 2
-    /// Measured size of each drop cell, so the before/after split uses the target's
-    /// true midpoint instead of a hardcoded guess.
-    @State private var cellSizes: [UUID: CGSize] = [:]
     /// The space being dragged in the all-services rail. See `LiveReorder`.
     @State private var draggingSpaceID: UUID?
+    /// The service membership being dragged. See `LiveReorder`.
+    @State private var draggingLinkID: UUID?
 
     /// The horizontal bar is the top band: a 32 point header and 32 point tabs
     /// with 10 points clear above and below.
@@ -286,7 +276,7 @@ struct UnifiedRailView: View {
         // `LiveReorder`.
         .onDrag {
             draggingSpaceID = space.id
-            return LiveReorder.itemProvider(forSpace: space.id)
+            return LiveReorder.itemProvider(for: space.id, type: LiveReorder.spaceType)
         } preview: {
             Text(space.emoji)
                 .font(.title3)
@@ -294,14 +284,10 @@ struct UnifiedRailView: View {
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .onDrop(of: [LiveReorder.spaceType, .plainText, .utf8PlainText], delegate: LiveSpaceDropDelegate(
-            targetID: space.id,
-            draggingID: draggingSpaceID,
-            move: liveMoveSpace,
-            onOtherDrop: { info in
-                dropService(from: info, into: space)
-            }
-        ))
+        .liveReorderDrop([
+            .init(type: LiveReorder.spaceType, draggingID: draggingSpaceID) { liveMoveSpace($0, over: space.id) },
+            .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, toTopOf: space) },
+        ])
         .contextMenu { spaceContextMenu(for: space) }
         .accessibilityAction(named: "Move up") { moveSpace(space, forward: false) }
         .accessibilityAction(named: "Move down") { moveSpace(space, forward: true) }
@@ -339,15 +325,9 @@ struct UnifiedRailView: View {
         .buttonStyle(.plain)
         .help("\(space.name), empty")
         .accessibilityLabel("\(space.name), empty")
-        .dropDestination(for: String.self) { items, _ in
-            guard let raw = items.first, let droppedID = UUID(uuidString: raw) else { return false }
-            return placeService(
-                droppedLinkID: droppedID,
-                in: space,
-                relativeTo: nil,
-                placement: .before
-            )
-        }
+        .liveReorderDrop([
+            .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, toTopOf: space) },
+        ])
     }
 
     @ViewBuilder
@@ -382,34 +362,20 @@ struct UnifiedRailView: View {
                 focusedAllServicesLinkID = link.id
             }
         )
-        .draggable(link.id.uuidString) {
+        // Live reorder, within a space or into another one. See `LiveReorder`.
+        .onDrag {
+            draggingLinkID = link.id
+            return LiveReorder.itemProvider(for: link.id, type: LiveReorder.serviceType)
+        } preview: {
             Text(service.label)
                 .font(ChorusType.caption)
                 .padding(6)
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .dropDestination(for: String.self) { items, location in
-            guard let raw = items.first,
-                  let droppedID = UUID(uuidString: raw),
-                  droppedID != link.id
-            else { return false }
-
-            let midpoint = (cellSizes[link.id]?.height).map { $0 / 2 } ?? Self.serviceDropMidpoint
-            return placeService(
-                droppedLinkID: droppedID,
-                in: space,
-                relativeTo: link,
-                placement: location.y < midpoint ? .before : .after
-            )
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size, initial: true) {
-                    cellSizes[link.id] = proxy.size
-                }
-            }
-        )
+        .liveReorderDrop([
+            .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, over: link, in: space) },
+        ])
         .accessibilityAction(named: "Move up") { moveServiceWithinSpace(link, forward: false) }
         .accessibilityAction(named: "Move down") { moveServiceWithinSpace(link, forward: true) }
         .contextMenu { serviceContextMenu(for: link) }
@@ -783,45 +749,20 @@ struct UnifiedRailView: View {
         let health = hibernated ? ServiceHealth.live : appState.webViewPool.health(for: service.id)
 
         cell(for: link, service: service, isSelected: isSel, badge: badge, hibernated: hibernated, muted: muted, media: media, health: health, focused: focusedServiceID == service.id && focusVisibility.isVisible)
-            .draggable(link.id.uuidString) {
-                // Custom drag preview. Source-dimming is left to SwiftUI:
-                // manually tracking a "dragging" id can't be cleared reliably —
-                // a drop on itself or a cancelled drag never fires the drop
-                // handler — which left the row stuck at 0.4 opacity.
+            // Live reorder along the rail or the bar. See `LiveReorder`.
+            .onDrag {
+                draggingLinkID = link.id
+                return LiveReorder.itemProvider(for: link.id, type: LiveReorder.serviceType)
+            } preview: {
                 Text(service.label)
                     .font(ChorusType.caption)
                     .padding(6)
                     .background(.ultraThickMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
             }
-            .dropDestination(for: String.self) { items, location in
-                guard let droppedIDString = items.first,
-                      let droppedID = UUID(uuidString: droppedIDString),
-                      droppedID != link.id
-                else { return false }
-                let placement: ServiceReorderPlacement = {
-                    let size = cellSizes[link.id]
-                    if axis == .vertical {
-                        let mid = (size?.height).map { $0 / 2 } ?? Self.serviceDropMidpoint
-                        return location.y < mid ? .before : .after
-                    }
-                    let fallback = showServiceNames ? Self.serviceDropMidpointHorizontal : Self.compactDropMidpointHorizontal
-                    let mid = (size?.width).map { $0 / 2 } ?? fallback
-                    return location.x < mid ? .before : .after
-                }()
-                return reorderService(
-                    droppedLinkID: droppedID,
-                    relativeTo: link,
-                    placement: placement
-                )
-            }
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.onChange(of: proxy.size, initial: true) {
-                        cellSizes[link.id] = proxy.size
-                    }
-                }
-            )
+            .liveReorderDrop([
+                .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLinkInSpace($0, over: link) },
+            ])
             .accessibilityAction(named: "Move up") { moveServiceUp(link) }
             .accessibilityAction(named: "Move down") { moveServiceDown(link) }
             .contextMenu { serviceContextMenu(for: link) }
@@ -1252,21 +1193,49 @@ struct UnifiedRailView: View {
         save("reorder spaces")
     }
 
-    /// A service dropped on a space's heading goes to the top of that space.
-    /// The drop carries the service's link id as text, which loads
-    /// asynchronously, so the move runs once it has arrived.
-    private func dropService(from info: DropInfo, into space: Space) -> Bool {
-        guard let provider = info.itemProviders(for: [.plainText, .utf8PlainText]).first else { return false }
-        // The id crosses into the callback, not the model, which is not Sendable.
-        let spaceID = space.id
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let raw = object as? String, let linkID = UUID(uuidString: raw) else { return }
-            Task { @MainActor in
-                guard let target = spaces.first(where: { $0.modelContext != nil && $0.id == spaceID }) else { return }
-                _ = placeService(droppedLinkID: linkID, in: target, relativeTo: nil, placement: .before)
-            }
+    /// Moves the dragged service into the slot of the one under the pointer,
+    /// in the rail or the bar that shows one space. Saves at once.
+    private func liveMoveLinkInSpace(_ dragged: UUID, over target: SpaceServiceLink) {
+        let links = filteredLinks
+        guard let ids = LiveReorder.moving(dragged, over: target.id, in: links.map(\.id)) else { return }
+        let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
+        for (index, id) in ids.enumerated() {
+            linksByID[id]?.sortOrder = index
         }
-        return true
+        save("reorder services")
+    }
+
+    /// In the all-services rail: over a row of the same space, the dragged
+    /// service takes its slot; over a row of another space, it moves into that
+    /// space at that row. `placeService` keeps the membership and its data and
+    /// refuses a second copy of a service in one space.
+    private func liveMoveLink(_ dragged: UUID, over target: SpaceServiceLink, in space: Space) {
+        guard dragged != target.id,
+              let draggedLink = allLinks.first(where: { $0.id == dragged }),
+              let source = draggedLink.liveSpace
+        else { return }
+        if source.id == space.id {
+            let links = links(in: space.id)
+            guard let ids = LiveReorder.moving(dragged, over: target.id, in: links.map(\.id)) else { return }
+            let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
+            for (index, id) in ids.enumerated() {
+                linksByID[id]?.sortOrder = index
+            }
+            save("reorder services")
+        } else {
+            placeService(droppedLinkID: dragged, in: space, relativeTo: target, placement: .before)
+        }
+    }
+
+    /// Over a space's heading or its empty slot: the dragged service goes to
+    /// the top of that space.
+    private func liveMoveLink(_ dragged: UUID, toTopOf space: Space) {
+        let links = links(in: space.id)
+        if let first = links.first {
+            liveMoveLink(dragged, over: first, in: space)
+        } else {
+            placeService(droppedLinkID: dragged, in: space, relativeTo: nil, placement: .before)
+        }
     }
 
     private func moveServiceWithinSpace(_ link: SpaceServiceLink, forward: Bool) {
@@ -1385,32 +1354,6 @@ struct UnifiedRailView: View {
         links.swapAt(index, index + 1)
         for (i, l) in links.enumerated() { l.sortOrder = i }
         save("move service down")
-    }
-
-    @discardableResult
-    private func reorderService(
-        droppedLinkID: UUID,
-        relativeTo target: SpaceServiceLink,
-        placement: ServiceReorderPlacement
-    ) -> Bool {
-        var links = filteredLinks
-        let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
-        guard let reorderedIDs = ServiceReorder.reorderedIDs(
-            links.map(\.id),
-            moving: droppedLinkID,
-            relativeTo: target.id,
-            placement: placement
-        ) else {
-            return false
-        }
-        links = reorderedIDs.compactMap { linksByID[$0] }
-        guard links.count == reorderedIDs.count else { return false }
-
-        for (index, link) in links.enumerated() {
-            link.sortOrder = index
-        }
-        save("reorder services")
-        return true
     }
 
     private func deleteService(link: SpaceServiceLink) {

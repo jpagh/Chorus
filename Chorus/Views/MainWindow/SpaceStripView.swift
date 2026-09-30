@@ -132,7 +132,7 @@ struct SpaceStripView: View {
         // and the order is saved as it goes. See `LiveReorder`.
         .onDrag {
             draggingSpaceID = space.id
-            return LiveReorder.itemProvider(forSpace: space.id)
+            return LiveReorder.itemProvider(for: space.id, type: LiveReorder.spaceType)
         } preview: {
             Text(space.emoji)
                 .font(.title3)
@@ -140,11 +140,9 @@ struct SpaceStripView: View {
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .onDrop(of: [LiveReorder.spaceType], delegate: LiveSpaceDropDelegate(
-            targetID: space.id,
-            draggingID: draggingSpaceID,
-            move: liveMoveSpace
-        ))
+        .liveReorderDrop([
+            .init(type: LiveReorder.spaceType, draggingID: draggingSpaceID) { liveMoveSpace($0, over: space.id) },
+        ])
         .accessibilityAction(named: "Move up") { moveSpaceUp(space) }
         .accessibilityAction(named: "Move down") { moveSpaceDown(space) }
         .focusable()

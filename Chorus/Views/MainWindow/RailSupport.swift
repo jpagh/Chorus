@@ -214,15 +214,18 @@ final class FocusVisibility {
     }
 }
 
-/// Spaces reorder live while you drag one: as the pointer enters another
-/// space's slot, the dragged space moves into it, and the order is saved as
-/// it goes. The old drop-to-place version decided before or after from where
-/// the drop landed, and a drag downward never reached its drop handler.
+/// Spaces and services reorder live while you drag one: as the pointer
+/// enters another row's slot, the dragged row moves into it, and the order is
+/// saved as it goes. The old drop-to-place version decided before or after
+/// from where the drop landed, and a drag downward never reached its drop
+/// handler.
 ///
-/// The drag carries a type of Chorus's own, visible only inside the app, so a
-/// service tab or a link dragged over the space list can never move a space.
+/// Each drag carries a type of Chorus's own, visible only inside the app, so a
+/// link or a file dragged over the rail can never move anything, and a space
+/// drag and a service drag never mistake each other.
 enum LiveReorder {
     static let spaceType = UTType(exportedAs: "com.nicojan.chorus.space-id")
+    static let serviceType = UTType(exportedAs: "com.nicojan.chorus.service-link-id")
 
     /// The order after `dragged` takes the slot of `target`: it lands after
     /// the target when it came from above, and before it when it came from
@@ -238,10 +241,10 @@ enum LiveReorder {
         return moved
     }
 
-    /// What a space drag carries: its id, under the Chorus-only type.
-    static func itemProvider(forSpace id: UUID) -> NSItemProvider {
+    /// What a drag carries: an id, under one of the Chorus-only types.
+    static func itemProvider(for id: UUID, type: UTType) -> NSItemProvider {
         let provider = NSItemProvider()
-        provider.registerDataRepresentation(forTypeIdentifier: spaceType.identifier, visibility: .ownProcess) { completion in
+        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
             completion(Data(id.uuidString.utf8), nil)
             return nil
         }
@@ -249,37 +252,46 @@ enum LiveReorder {
     }
 }
 
-/// The drop side of `LiveReorder`, put on each space's row. `onOtherDrop`
-/// takes anything that is not a space, such as a service dropped on a
-/// heading in the all-services rail; leave it nil where only spaces belong.
-struct LiveSpaceDropDelegate: DropDelegate {
-    let targetID: UUID
-    /// The space being dragged, set by the row that started the drag.
-    let draggingID: UUID?
-    let move: (_ dragged: UUID, _ target: UUID) -> Void
-    var onOtherDrop: ((DropInfo) -> Bool)? = nil
+/// The drop side of `LiveReorder`, put on each row. A row lists the kinds of
+/// drag it takes, one `Lane` each: a space's heading in the all-services rail
+/// takes a space (to reorder spaces) and a service (to move it into that
+/// space). The lane's `move` runs as a drag of its kind enters the row.
+struct LiveReorderDropDelegate: DropDelegate {
+    struct Lane {
+        let type: UTType
+        /// What is being dragged, set by the row that started the drag.
+        let draggingID: UUID?
+        let move: (_ dragged: UUID) -> Void
+    }
 
-    private func carriesSpace(_ info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [LiveReorder.spaceType])
+    let lanes: [Lane]
+
+    private func lane(for info: DropInfo) -> Lane? {
+        lanes.first { info.hasItemsConforming(to: [$0.type]) }
     }
 
     func validateDrop(info: DropInfo) -> Bool {
-        carriesSpace(info) || onOtherDrop != nil
+        lane(for: info) != nil
     }
 
     func dropEntered(info: DropInfo) {
-        guard carriesSpace(info), let draggingID, draggingID != targetID else { return }
-        move(draggingID, targetID)
+        guard let lane = lane(for: info), let dragged = lane.draggingID else { return }
+        lane.move(dragged)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: .move)
     }
 
+    /// The order was saved as the drag went, so a drop has nothing left to do.
     func performDrop(info: DropInfo) -> Bool {
-        // The order was saved as the drag went, so a space drop has nothing
-        // left to do.
-        if carriesSpace(info) { return true }
-        return onOtherDrop?(info) ?? false
+        lane(for: info) != nil
+    }
+}
+
+extension View {
+    /// Makes this row a live-reorder drop target for the given lanes.
+    func liveReorderDrop(_ lanes: [LiveReorderDropDelegate.Lane]) -> some View {
+        onDrop(of: lanes.map(\.type), delegate: LiveReorderDropDelegate(lanes: lanes))
     }
 }

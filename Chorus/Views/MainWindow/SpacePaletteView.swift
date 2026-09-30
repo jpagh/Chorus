@@ -153,7 +153,7 @@ struct SpacePaletteView: View {
         // Live reorder, as in the strip. See `LiveReorder`.
         .onDrag {
             draggingSpaceID = space.id
-            return LiveReorder.itemProvider(forSpace: space.id)
+            return LiveReorder.itemProvider(for: space.id, type: LiveReorder.spaceType)
         } preview: {
             Text(space.emoji)
                 .font(.title3)
@@ -161,11 +161,9 @@ struct SpacePaletteView: View {
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .onDrop(of: [LiveReorder.spaceType], delegate: LiveSpaceDropDelegate(
-            targetID: space.id,
-            draggingID: draggingSpaceID,
-            move: liveMoveSpace
-        ))
+        .liveReorderDrop([
+            .init(type: LiveReorder.spaceType, draggingID: draggingSpaceID) { liveMoveSpace($0, over: space.id) },
+        ])
         .accessibilityAction(named: "Move up") { move(space, forward: false) }
         .accessibilityAction(named: "Move down") { move(space, forward: true) }
         .contextMenu {
