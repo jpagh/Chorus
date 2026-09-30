@@ -164,13 +164,14 @@ enum SpaceStripMetrics {
         showingNames ? namedWidth : compactWidth
     }
 
-    /// How far the window's traffic lights reach in from the leading edge.
-    static let trafficLightsWidth: CGFloat = 72
+    /// How far the window's traffic lights reach in from the leading edge,
+    /// with room after them. Centred in the 52 point band, they end at x 73.
+    static let trafficLightsWidth: CGFloat = 82
 
     /// Leading inset the service bar needs so the window's traffic lights,
     /// which sit over the strip, do not land on the first tab. The lights are
-    /// 72 points wide; the named strip swallows them whole and the bar starts
-    /// flush, while the compact one leaves 20 points of them overhanging.
+    /// 82 points wide; the named strip swallows them whole and the bar starts
+    /// flush, while the compact one leaves 30 points of them overhanging.
     static func barLeadingInset(stripWidth: CGFloat, lightsWidth: CGFloat) -> CGFloat {
         Swift.max(0, lightsWidth - stripWidth)
     }

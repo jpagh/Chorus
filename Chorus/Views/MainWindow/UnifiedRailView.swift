@@ -74,9 +74,9 @@ struct UnifiedRailView: View {
     @State private var cellSizes: [UUID: CGSize] = [:]
     @State private var spaceSeparatorSizes: [UUID: CGSize] = [:]
 
-    /// The horizontal bar: a 32 point header and 32 point tabs with 5 points
-    /// clear above and below. The drawn frame says 42.
-    static let barHeight: CGFloat = 42
+    /// The horizontal bar is the top band: a 32 point header and 32 point tabs
+    /// with 10 points clear above and below.
+    static let barHeight: CGFloat = ChorusCard.topBand
     /// How much of the scrolling tab row's trailing edge is softened to say the
     /// row runs past the window.
     private static let overflowFadeFraction: CGFloat = 0.06
@@ -604,7 +604,7 @@ struct UnifiedRailView: View {
         HStack(spacing: 8) {
             if showsSpaceHeader {
                 spaceHeader
-                    // 72 points of traffic light, then 8, puts the header at x 80.
+                    // 82 points of traffic light, then 8, puts the header at x 90.
                     .padding(.leading, 8 + contentInset)
 
                 Divider().frame(width: 1, height: 20)

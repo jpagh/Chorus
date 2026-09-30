@@ -3208,6 +3208,24 @@ final class ChorusTests: XCTestCase {
         )
     }
 
+    /// The lights sit on the band's centre line, as far in from the side as
+    /// down from the top, at AppKit's own spacing, and end inside the width
+    /// the bars leave for them.
+    func testTrafficLightsAreCentredInTheTopBand() {
+        let origins = TrafficLightsLayout.origins(
+            bandHeight: ChorusCard.topBand,
+            buttonSize: CGSize(width: 14, height: 16),
+            pitch: 20
+        )
+        XCTAssertEqual(origins.count, 3)
+        XCTAssertEqual(origins.map(\.y), [18, 18, 18])
+        XCTAssertEqual(origins.map(\.x), [19, 39, 59])
+        // The first light's centre is 26 in from the side and 26 down.
+        XCTAssertEqual(origins[0].x + 7, ChorusCard.topBand / 2)
+        XCTAssertLessThan(origins[2].x + 14, SpaceStripMetrics.trafficLightsWidth)
+        XCTAssertEqual(UnifiedRailView.barHeight, ChorusCard.topBand)
+    }
+
     // MARK: - Notice shape, radius scale, selection against focus (build step 7)
 
     /// Eight radii down to three. The point of the scale is that there is

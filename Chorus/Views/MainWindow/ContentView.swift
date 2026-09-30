@@ -148,6 +148,7 @@ struct ContentView: View {
         // WindowDragHandles move the window instead. The sidebar keeps the
         // normal title-bar drag.
         .background(WindowMovableConfigurator(isMovable: !appState.railLayout.hasTopBar))
+        .background(TrafficLightsPositioner(bandHeight: ChorusCard.topBand))
         // Ask for macOS notification permission here, not in AppState.init:
         // requesting during App.init (before the scene exists) can fail with
         // "Notifications are not allowed for this application" and leave the app
@@ -336,18 +337,11 @@ struct ContentView: View {
             .accessibilityLabel("Web content")
     }
 
-    /// Centres the donation button's 20 point chip in whatever the layout puts
-    /// along the top: the left rails' 32 point band, and the unified rail's
-    /// bar, 42. The overhang comes off because the chip is centred inside a
-    /// larger click target.
+    /// Centres the donation button's 20 point chip in the 52 point band, which
+    /// every layout has along its top. The overhang comes off because the chip
+    /// is centred inside a larger click target.
     private var supportButtonTopInset: CGFloat {
-        let overhang = SupportButtonMetrics.targetOverhang
-        switch appState.railLayout {
-        case .sidebar, .allServices: return (ChorusCard.topBand - SupportButtonMetrics.chipSize) / 2 - overhang
-        // The hybrid layout puts the same 42 point bar along the top, so the
-        // button is centred in it the same way.
-        case .topBars, .hybrid: return (UnifiedRailView.barHeight - SupportButtonMetrics.chipSize) / 2 - overhang
-        }
+        (ChorusCard.topBand - SupportButtonMetrics.chipSize) / 2 - SupportButtonMetrics.targetOverhang
     }
 
     private func selectFirstService(in spaceID: UUID) {

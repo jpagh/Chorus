@@ -45,8 +45,9 @@ struct WebContentView: View {
                 // The two left-rail layouts have no top bar, so they get a slim
                 // navigation row above the card, on the canvas.
                 if !appState.railLayout.hasTopBar {
+                    // The gutter puts the first circle on the web card's edge.
                     WebNavButtons(webViewState: webViewState, homeURL: URL(string: service.url))
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, ChorusCard.gutter)
                         .padding(.leading, trafficLightsOverhang)
                         .frame(maxWidth: .infinity, minHeight: ChorusCard.topBand, alignment: .leading)
                 }

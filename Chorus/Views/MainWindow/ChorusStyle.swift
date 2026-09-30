@@ -228,15 +228,52 @@ enum ChorusCard {
     /// The gap between the window edge, the rail card and the web card.
     static let gutter: CGFloat = 8
     static let cornerRadius = ChorusRadius.surface
-    /// The band along the top of the two left-rail layouts: the traffic lights
-    /// on the left, the nav row and the donation button on the right. Both
-    /// cards start under it, so their top edges line up.
-    static let topBand: CGFloat = 32
+    /// The band along the top of every layout: the traffic lights, centred in
+    /// it by `TrafficLightsPositioner`, then the bar or the nav row, and the
+    /// donation button. The cards start under it, so their top edges line up.
+    static let topBand: CGFloat = 52
     /// Space between the rail card's edge and the rows inside it.
     static let railPadding: CGFloat = 4
 }
 
+/// The nav buttons in the top band.
+enum ChorusNav {
+    /// Each button's circle.
+    static let buttonSize: CGFloat = 28
+    /// Space between two circles.
+    static let spacing: CGFloat = 6
+}
+
 extension View {
+    /// A nav button's 28 point circle: Liquid Glass on macOS 26, a material
+    /// below it, and a hairline edge on both. Both follow Reduce Transparency
+    /// on their own. The glass does not depend on the window's glass style:
+    /// that setting is about the window's backdrop, and a button reads the same
+    /// on either. The hairline is what keeps the circle there on the Regular
+    /// backdrop, where glass sits on glass and has nothing to show.
+    @ViewBuilder
+    func navCircle() -> some View {
+        let sized = frame(width: ChorusNav.buttonSize, height: ChorusNav.buttonSize)
+            .contentShape(Circle())
+        #if compiler(>=6.2)
+        if #available(macOS 26, *) {
+            sized.glassEffect(.regular.interactive(), in: Circle()).circleEdge()
+        } else {
+            sized.background(.regularMaterial, in: Circle()).circleEdge()
+        }
+        #else
+        sized.background(.regularMaterial, in: Circle()).circleEdge()
+        #endif
+    }
+
+    fileprivate func circleEdge() -> some View {
+        overlay(
+            Circle()
+                .strokeBorder(ChorusColor.hairline, lineWidth: 1)
+                .allowsHitTesting(false)
+        )
+    }
+
     /// Draws this view as the rail card: the translucent surface behind it,
     /// continuous 14 point corners and a hairline edge. Neither layer takes
     /// clicks, so a window-drag handle behind the card still gets them.

@@ -12,7 +12,7 @@ struct WebNavButtons: View {
     @State private var didCopy = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: ChorusNav.spacing) {
             navButton("chevron.left", label: "Back", enabled: webViewState.canGoBack) {
                 webViewState.webView?.goBack()
             }
@@ -30,6 +30,7 @@ struct WebNavButtons: View {
                 Image(systemName: webViewState.isLoading ? "xmark" : "arrow.clockwise")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16, height: 14)
+                    .navCircle()
             }
             .buttonStyle(.plain)
             .disabled(webViewState.webView == nil)
@@ -60,6 +61,8 @@ struct WebNavButtons: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            // Outside the menu, because a menu's label draws only its image.
+            .navCircle()
             .disabled(currentPageURL == nil)
             .help(didCopy ? "Copied" : "Share this page")
             .accessibilityLabel(didCopy ? "Link copied" : "Share this page")
@@ -106,6 +109,7 @@ struct WebNavButtons: View {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
                 .frame(width: 16, height: 14)
+                .navCircle()
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
