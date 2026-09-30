@@ -16,7 +16,9 @@ Found and fixed: Pause Audio on a service in the background did not hold. YouTub
 
 Part done: 13 (Trello's Log in and its Continue with Google both load inside the service; nobody signed in) and 4 (the button and its ring appear; the file waits on macOS asking whether this build may use the Downloads folder, which nobody answered).
 
-Not run: 1, 3, 6, 7 and 11 need accounts or a call, 12 needs Wi-Fi off, and 9 needs macOS 14 or 15. The UTM virtual machine started but showed no window, and it would want a password.
+Item 1 is not needed. The user reports that quitting has never signed WhatsApp out, so the change is a safeguard. Item 9 is checked by `testTrafficLightsLandInTheBandOnARealWindow`, which CI runs on macOS 14 and 15.
+
+Not run: 3, 6, 7 and 11 need accounts or a call, and 12 needs Wi-Fi off.
 
 1. **WhatsApp across a quit.** Sign in, send a message, press ⌘Q, and reopen. WhatsApp should come back signed in. Do it three times. The log should show `Released N pages for quit` each time (`/usr/bin/log stream --level info --predicate 'subsystem == "com.nicojan.Chorus"'`).
 2. **Music keeps playing.** Play Spotify or YouTube, then switch to another service. The music goes on and the rail shows a speaker. Right-click the row, choose Pause Audio, and the music stops. A service that was quiet when you left it stays quiet.
