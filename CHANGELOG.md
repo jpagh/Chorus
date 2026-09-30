@@ -12,6 +12,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 - Settings has one switch for where outside links open, a Chorus window or your browser. Each service can follow it or make its own choice when you edit it.
 - Settings can save your spaces and services to a file, and add them back from one, on this Mac or another. Sign-ins stay behind, so you sign in to each service again after an import. An import only adds: a space merges into yours when the names match, and it removes nothing you have. Before you say yes it lists the sites the file would add, and camera and microphone choices stay behind, so each imported service asks again.
 - The app now carries the license texts for the parts other people wrote, and About links to them. The HaGezi blocklist is GPL-3.0, and Chorus shipped it with only a link. The exact list text each release blocks from now sits in the source code. I also brought both blocklists up to date.
+- You can add all of LinkedIn as a service now, with your feed, jobs and notifications. The one that shows only your messages is still there, as LinkedIn Messaging.
 
 ### Changed
 
@@ -19,6 +20,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ### Fixed
 
+- Trello can sign in inside Chorus. Its Log in button goes to an Atlassian page on another domain, and Chorus sent that page to your browser, where signing in did nothing for Chorus. Chorus now keeps a sign-in page in the service when it says it will come back there, which should help other services that sign in on another domain too. Jira and Confluence use the same Atlassian page.
 - A call keeps its sound when you switch to another service. Chorus paused the sound of every service you left, so the other person went quiet while your microphone kept sending.
 - WhatsApp should stay signed in when you quit and reopen Chorus. Pages save their state when they go out of view, and a quit gave them no warning. Chorus now tells every open page it is going away and gives it a moment to save before it quits. I have not yet seen this work on a real WhatsApp account, so tell me if you still get signed out.
 - Chorus no longer loads a hidden second copy of WhatsApp or another chat app to read its unread count. Two copies on one sign-in can sign WhatsApp out.

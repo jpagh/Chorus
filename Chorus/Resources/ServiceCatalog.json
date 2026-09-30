@@ -106,14 +106,24 @@
         "firstParty": true
     },
     {
-        "id": "linkedin",
+        "id": "linkedin-feed",
         "name": "LinkedIn",
+        "url": "https://www.linkedin.com/feed/",
+        "icon": "linkedin-icon",
+        "category": "Social",
+        "badgeJS": null,
+        "userAgent": null,
+        "description": "Your feed, jobs and notifications"
+    },
+    {
+        "id": "linkedin",
+        "name": "LinkedIn Messaging",
         "url": "https://www.linkedin.com/messaging/",
         "icon": "linkedin-icon",
         "category": "Messaging",
         "badgeJS": "(()=>document.querySelectorAll('.msg-conversation-card__convo-item-container--unread').length)()",
         "userAgent": null,
-        "description": "Professional networking and messaging"
+        "description": "Just your messages, set out like a chat app"
     },
     {
         "id": "x",

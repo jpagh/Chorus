@@ -1967,6 +1967,20 @@ final class ChorusTests: XCTestCase {
         XCTAssertTrue(css?.contains(".scaffold-layout__aside") == true)
     }
 
+    /// The whole of LinkedIn is its own entry beside the messaging-only one,
+    /// and it must not get the CSS that hides LinkedIn's navigation.
+    func testGeneralLinkedInIsItsOwnEntryWithoutTheMessagingCSS() throws {
+        let entries = ServiceCatalog.shared.entries
+        let general = try XCTUnwrap(entries.first { $0.id == "linkedin-feed" })
+        XCTAssertEqual(general.name, "LinkedIn")
+        XCTAssertEqual(URL(string: general.url)?.host, "www.linkedin.com")
+        XCTAssertEqual(URL(string: general.url)?.path, "/feed")
+        XCTAssertNil(ServiceCSSDefaults.css(forCatalogID: "linkedin-feed"))
+        XCTAssertEqual(entries.first { $0.id == "linkedin" }?.name, "LinkedIn Messaging")
+        XCTAssertEqual(Set(entries.map(\.id)).count, entries.count, "catalog ids must be unique")
+        XCTAssertNotNil(NSImage(named: "brand-linkedin-feed"))
+    }
+
     func testServiceInstanceCustomCSSDefaultsNil() {
         let service = ServiceInstance(label: "X", url: "https://x.test", catalogEntryID: "linkedin")
         // A fresh instance carries no override, so it tracks the baked-in default.
@@ -2283,6 +2297,45 @@ final class ChorusTests: XCTestCase {
         // An ordinary link target does not.
         XCTAssertFalse(WebViewCoordinator.isAuthHost("teams.cloud.microsoft"))
         XCTAssertFalse(WebViewCoordinator.isAuthHost("example.com"))
+    }
+
+    /// Signed-out Trello's "Log in" is a plain link to id.atlassian.com with a
+    /// `continue` back to trello.com. Routed out as a link that leaves the
+    /// service, the sign-in went to the browser and Trello could never sign in.
+    func testTrelloLogInStaysInTheService() throws {
+        let login = try XCTUnwrap(URL(string: "https://id.atlassian.com/login?application=trello--direct-signup&continue=https%3A%2F%2Ftrello.com%2Fauth%2Fatlassian%2Fcallback"))
+        XCTAssertFalse(WebViewCoordinator.routesClickedLinkOut(login, currentHost: "trello.com"))
+        XCTAssertTrue(WebViewCoordinator.isAuthHost("id.atlassian.com"))
+        // Jira and Confluence sign in through the same page.
+        let jira = try XCTUnwrap(URL(string: "https://id.atlassian.com/login?continue=https%3A%2F%2Facme.atlassian.net%2Fjira"))
+        XCTAssertFalse(WebViewCoordinator.routesClickedLinkOut(jira, currentHost: "acme.atlassian.net"))
+        // Atlassian's marketing site is not a gateway.
+        XCTAssertFalse(WebViewCoordinator.isAuthHost("www.atlassian.com"))
+    }
+
+    /// A sign-in page on a host Chorus doesn't list still stays when it says it
+    /// will come back to this service, which is what a sign-in round trip is.
+    func testSignInThatReturnsToTheServiceStays() throws {
+        let sso = try XCTUnwrap(URL(string: "https://idp.example.org/sso/start?return_to=https%3A%2F%2Fwww.notion.so%2Flogin%2Fcallback"))
+        XCTAssertFalse(WebViewCoordinator.routesClickedLinkOut(sso, currentHost: "www.notion.so"))
+        let redirect = try XCTUnwrap(URL(string: "https://auth.example.org/oauth/authorize?client_id=x&redirect_uri=https%3A%2F%2Fapp.linear.app%2Fauth"))
+        XCTAssertFalse(WebViewCoordinator.routesClickedLinkOut(redirect, currentHost: "linear.app"))
+    }
+
+    /// Ordinary links still leave, and so does a sign-in page for somewhere
+    /// else: a GitHub login link in a Slack message is not Slack's sign-in.
+    func testOtherLinksStillLeaveTheService() throws {
+        let article = try XCTUnwrap(URL(string: "https://github.com/nicojan/Chorus"))
+        XCTAssertTrue(WebViewCoordinator.routesClickedLinkOut(article, currentHost: "trello.com"))
+        let otherLogin = try XCTUnwrap(URL(string: "https://github.com/login?return_to=%2Fsettings"))
+        XCTAssertTrue(WebViewCoordinator.routesClickedLinkOut(otherLogin, currentHost: "app.slack.com"))
+        let elsewhere = try XCTUnwrap(URL(string: "https://idp.example.org/login?continue=https%3A%2F%2Fevil.example.net%2F"))
+        XCTAssertTrue(WebViewCoordinator.routesClickedLinkOut(elsewhere, currentHost: "trello.com"))
+        // Same service, and gateways, stay as before.
+        let board = try XCTUnwrap(URL(string: "https://trello.com/b/abc/board"))
+        XCTAssertFalse(WebViewCoordinator.routesClickedLinkOut(board, currentHost: "trello.com"))
+        let google = try XCTUnwrap(URL(string: "https://accounts.google.com/ServiceLogin"))
+        XCTAssertFalse(WebViewCoordinator.routesClickedLinkOut(google, currentHost: "mail.google.com"))
     }
 
     // MARK: - Setup export and import
