@@ -228,3 +228,21 @@ struct ServiceDragPreview: View {
             .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
     }
 }
+
+/// An unread count the way the Notes sidebar shows one: a plain number at the
+/// end of a row that carries a name, in the row's own type, grey, and the
+/// label's colour on the selected row. The red badge is for places where
+/// there is no name to sit beside: nameless cells, tiles and the tab bar.
+struct SidebarCount: View {
+    let count: Int
+    var isSelected = false
+
+    var body: some View {
+        Text(count > 999 ? "999+" : "\(count)")
+            .font(ChorusType.label)
+            .monospacedDigit()
+            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(ChorusColor.secondaryText))
+            .fixedSize()
+            .accessibilityHidden(true)
+    }
+}

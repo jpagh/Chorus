@@ -234,7 +234,13 @@ struct ServiceRowView: View {
             }
 
             if badgeCount > 0 && instance.showBadge {
-                BadgeCountView(count: badgeCount)
+                // Down the side, a Notes-style number; in the tab bar the red
+                // badge, which reads at a glance across a row of tabs.
+                if axis == .vertical {
+                    SidebarCount(count: badgeCount, isSelected: isSelected)
+                } else {
+                    BadgeCountView(count: badgeCount)
+                }
             }
         }
     }

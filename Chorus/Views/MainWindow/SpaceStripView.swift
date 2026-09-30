@@ -353,7 +353,7 @@ private struct SpaceButton: View {
             Spacer(minLength: 0)
 
             if badgeCount > 0 {
-                BadgeCountView(count: badgeCount)
+                SidebarCount(count: badgeCount, isSelected: isSelected)
             } else if isMuted {
                 Image(systemName: "bell.slash.fill")
                     .font(.system(size: 9))

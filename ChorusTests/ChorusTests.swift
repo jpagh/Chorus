@@ -2345,6 +2345,26 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(ServiceRowView.compactRailCellWidth, ServiceRowView.railCardWidth(showsName: false) - 2 * ChorusCard.railPadding)
     }
 
+    /// Dragging the rail's edge switches names once the drag has gone far
+    /// enough, either way, and back again if it returns within the drag.
+    func testRailEdgeDragSwitchesNamesPastTheThreshold() {
+        let t = RailWidthHandle.threshold
+        XCTAssertFalse(RailWidthHandle.showsNames(startingFrom: false, dragged: t - 1))
+        XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: false, dragged: t + 1))
+        XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: true, dragged: -(t - 1)))
+        XCTAssertFalse(RailWidthHandle.showsNames(startingFrom: true, dragged: -(t + 1)))
+        // Dragging the wrong way does nothing.
+        XCTAssertFalse(RailWidthHandle.showsNames(startingFrom: false, dragged: -200))
+        XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: true, dragged: 200))
+    }
+
+    /// The web card's corner follows a page's scroll bar: an 11 point thumb
+    /// (a 5.5 point round end) 3 points in from the edge.
+    func testWebCardCornerFollowsTheScrollBar() {
+        XCTAssertEqual(ChorusCard.webCornerRadius, 5.5 + 3, accuracy: 0.5)
+        XCTAssertTrue(ChorusRadius.allValues.contains(ChorusCard.webCornerRadius))
+    }
+
     /// Pause Audio has to hold on a service in the background. Measured on
     /// YouTube: a plain pause lasted until the ad ended, then the video played
     /// again with nobody looking. The service on screen keeps a plain pause so

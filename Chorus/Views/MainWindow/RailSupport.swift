@@ -295,3 +295,50 @@ extension View {
         onDrop(of: lanes.map(\.type), delegate: LiveReorderDropDelegate(lanes: lanes))
     }
 }
+
+/// The strip in the gap between a rail and the web card. Dragging it right
+/// shows the rail's names and widens it, dragging it left hides them and
+/// narrows it, the same as the setting in Settings. The rail has the two
+/// widths only, so the drag switches between them once it has gone far
+/// enough, and switches back if it returns within the same drag.
+struct RailWidthHandle: View {
+    @Binding var showsNames: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whether names were on when this drag began.
+    @State private var namesAtStart: Bool?
+
+    static let width: CGFloat = ChorusCard.gutter
+    /// How far the pointer has to travel before the rail changes width.
+    static let threshold: CGFloat = 36
+
+    var body: some View {
+        Color.clear
+            .frame(width: Self.width)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = namesAtStart ?? showsNames
+                        namesAtStart = start
+                        let target = Self.showsNames(startingFrom: start, dragged: value.translation.width)
+                        guard target != showsNames else { return }
+                        withAnimation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion)) {
+                            showsNames = target
+                        }
+                    }
+                    .onEnded { _ in namesAtStart = nil }
+            )
+            .help(showsNames ? "Drag left to hide names" : "Drag right to show names")
+            .accessibilityHidden(true)
+    }
+
+    /// Names on or off after a drag of `dragged` points from a rail that
+    /// started with `start`.
+    nonisolated static func showsNames(startingFrom start: Bool, dragged: CGFloat) -> Bool {
+        start ? dragged > -threshold : dragged > threshold
+    }
+}

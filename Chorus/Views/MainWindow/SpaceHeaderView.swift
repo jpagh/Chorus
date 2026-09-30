@@ -122,7 +122,11 @@ struct SpaceHeaderView: View {
             Spacer(minLength: 0)
 
             if badgeCount > 0 {
-                BadgeCountView(count: badgeCount)
+                if axis == .vertical {
+                    SidebarCount(count: badgeCount)
+                } else {
+                    BadgeCountView(count: badgeCount)
+                }
             } else if isMuted {
                 Image(systemName: "bell.slash.fill")
                     .font(.system(size: 9))

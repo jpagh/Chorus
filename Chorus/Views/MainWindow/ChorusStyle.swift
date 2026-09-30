@@ -236,7 +236,13 @@ struct RowMark: Equatable {
 enum ChorusCard {
     /// The gap between the window edge, the rail card and the web card.
     static let gutter: CGFloat = 8
+    /// The rail cards' corners. Their rows nest inside at 14 less the padding.
     static let cornerRadius = ChorusRadius.surface
+    /// The web card's corners, set to follow a page's scroll bar: its thumb is
+    /// 11 points wide, so its end is a 5.5 point round, and it runs 3 points in
+    /// from the card's edge. 5.5 and 3 make the card's 8 (measured on
+    /// macOS 26 with "Always show scroll bars" on).
+    static let webCornerRadius = ChorusRadius.control
     /// The band along the top of every layout: the traffic lights, centred in
     /// it by `TrafficLightsPositioner`, then the bar or the nav row, and the
     /// donation button. The cards start under it, so their top edges line up.
@@ -318,11 +324,12 @@ extension View {
     }
 
     /// Draws this view as the inset content card: the card grey behind it,
-    /// continuous 14 point corners and a hairline edge. The page itself is also
+    /// continuous corners that follow the page's scroll bar (see
+    /// `ChorusCard.webCornerRadius`) and a hairline edge. The page itself is also
     /// clipped by `WebViewHostView`'s layer, because a SwiftUI clip is not
     /// promised to reach into a hosted `NSView`.
     func contentCard() -> some View {
-        let shape = RoundedRectangle(cornerRadius: ChorusCard.cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: ChorusCard.webCornerRadius, style: .continuous)
         return background(ChorusColor.card)
             .clipShape(shape)
             .overlay(

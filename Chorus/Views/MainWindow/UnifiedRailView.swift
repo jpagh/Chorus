@@ -240,9 +240,11 @@ struct UnifiedRailView: View {
                             .frame(width: 18)
                             .opacity(space.isMutedEffective ? 0.5 : 1)
                             .accessibilityHidden(true)
+                        // Set like a Notes section heading: the row size, bold,
+                        // grey; the current space's in the label colour.
                         Text(space.name)
-                            .font(ChorusType.caption)
-                            .fontWeight(.semibold)
+                            .font(ChorusType.label)
+                            .fontWeight(.bold)
                             .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(ChorusColor.secondaryText))
                             .lineLimit(1)
                             .truncationMode(.tail)

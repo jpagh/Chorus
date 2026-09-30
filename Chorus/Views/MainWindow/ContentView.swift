@@ -8,6 +8,8 @@ struct ContentView: View {
     /// it sets the strip's width, and the service bar beside it has to start
     /// clear of whatever the traffic lights overhang.
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
+    /// Whether the rail carries service names, which dragging its edge sets.
+    @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
 
     /// How much desktop the window lets through. See `WindowGlassStyle`.
     @AppStorage(WindowGlassStyle.defaultsKey) private var glassStyleRaw = WindowGlassStyle.defaultStyle.rawValue
@@ -160,6 +162,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: ChorusCard.topBand)
                 webContent
+                    .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showServiceNames) }
             }
         case .allServices:
             HStack(spacing: 0) {
@@ -172,6 +175,7 @@ struct ContentView: View {
                     showsAllSpaces: true
                 )
                 webContent
+                    .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showServiceNames) }
             }
         case .topBars:
             VStack(spacing: 0) {
@@ -200,7 +204,9 @@ struct ContentView: View {
                         ),
                         showsSpaceHeader: false
                     )
+                    // The strip's edge sets its names, as the rail's does.
                     webContent
+                        .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showSpaceNames) }
                 }
             }
         }
