@@ -73,10 +73,9 @@ struct UnifiedRailView: View {
     /// How much of the scrolling tab row's trailing edge is softened to say the
     /// row runs past the window.
     private static let overflowFadeFraction: CGFloat = 0.06
-    /// How far rows sit in from their space's heading in the all-services rail.
-    private static let groupIndent: CGFloat = 10
-    /// The nameless heading's tile: a little shorter than a row.
-    private static let compactHeadingHeight: CGFloat = 26
+    /// Room above each space's heading in the all-services rail, between one
+    /// group's card and the next.
+    private static let groupGap: CGFloat = 10
 
     private var filteredLinks: [SpaceServiceLink] {
         guard let spaceID = selectedSpaceID else { return [] }
@@ -174,9 +173,10 @@ struct UnifiedRailView: View {
         }
     }
 
-    /// Every space in sort order, followed by its services in link order.
-    /// Headings stay identical for full and empty spaces; an empty space puts
-    /// its status in the service area beneath the heading.
+    /// Every space in sort order, each as a card of its services with the
+    /// space's name (or, without names, its emoji) above the card, on the
+    /// window itself. The card does the grouping, so there are no rules
+    /// between groups and the rows are not indented.
     private var allServicesBody: some View {
         // Grouped once per render: the rows and the reorder key both need it.
         let groups = spaces.map { (space: $0, links: links(in: $0.id)) }
@@ -193,49 +193,39 @@ struct UnifiedRailView: View {
                     ForEach(groups, id: \.space.id) { group in
                         let space = group.space
                         let spaceLinks = group.links
-                        let isFirstGroup = space.id == spaces.first?.id
-                        // Without names, a rule across the card parts one
-                        // space's services from the next; the heading under it
-                        // is then only a small emoji.
-                        if !showServiceNames && !isFirstGroup {
-                            railRule
-                                .padding(.top, 6)
-                                .padding(.bottom, 4)
-                        }
                         allServicesHeading(for: space)
-                            // A gap before every group but the first, which
-                            // the card's own padding already clears. More room
-                            // above a heading than below it ties it to its rows.
-                            .padding(.top, isFirstGroup || !showServiceNames ? 0 : 12)
-                            .padding(.bottom, showServiceNames ? 0 : 2)
+                            .padding(.top, space.id == spaces.first?.id ? 0 : Self.groupGap)
+                            .padding(.bottom, 4)
 
-                        if spaceLinks.isEmpty {
-                            emptySpaceCell(for: space)
-                        } else {
-                            ForEach(spaceLinks) { link in
-                                if let service = link.liveService {
-                                    allServicesRow(for: link, service: service, in: space)
-                                        .id("\(space.id.uuidString)-\(link.id.uuidString)")
+                        VStack(spacing: 2) {
+                            if spaceLinks.isEmpty {
+                                emptySpaceCell(for: space)
+                            } else {
+                                ForEach(spaceLinks) { link in
+                                    if let service = link.liveService {
+                                        allServicesRow(for: link, service: service, in: space)
+                                            .id("\(space.id.uuidString)-\(link.id.uuidString)")
+                                    }
                                 }
                             }
                         }
+                        .padding(ChorusCard.railPadding)
+                        .railCard()
                     }
                 }
                 .animation(reorderAnimation, value: ReorderKey(ids: groups.flatMap(\.links).map(\.id)))
-                .padding(.vertical, ChorusCard.railPadding)
+                .padding(.bottom, ChorusCard.railPadding)
             }
 
-            railRule
             allServicesAddButtons
                 .padding(.vertical, ChorusCard.railPadding)
         }
-        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset)
+        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset, carded: false)
     }
 
-    /// A space's name over its services, set like the row labels below it:
-    /// the emoji where their icons are, the name where their names are. The
-    /// nameless rail has no room for a name, so the emoji sits between two
-    /// short rules instead, which also keep the groups apart.
+    /// A space's name over its card, lined up with the service names in it:
+    /// the emoji over their icons, the name over their names. Without names,
+    /// the emoji alone, centred over the card.
     private func allServicesHeading(for space: Space) -> some View {
         let selected = selectedSpaceID == space.id
 
@@ -244,13 +234,11 @@ struct UnifiedRailView: View {
         } label: {
             Group {
                 if showServiceNames {
-                    HStack(spacing: 6) {
-                        // Lighter than the service icons under it, so the
-                        // heading reads as a label and not as one more row.
+                    HStack(spacing: 8) {
                         Text(space.emoji)
-                            .font(.system(size: 11))
-                            .frame(width: 14)
-                            .opacity(space.isMutedEffective ? 0.4 : 0.8)
+                            .font(.system(size: 14))
+                            .frame(width: 18)
+                            .opacity(space.isMutedEffective ? 0.5 : 1)
                             .accessibilityHidden(true)
                         Text(space.name)
                             .font(ChorusType.caption)
@@ -260,30 +248,20 @@ struct UnifiedRailView: View {
                             .truncationMode(.tail)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth)
+                    // Card padding plus the row's own, so the emoji sits over
+                    // the service icons.
+                    .padding(.horizontal, ChorusCard.railPadding + 8)
+                    .frame(width: ServiceRowView.railCardWidth(showsName: true))
                 } else {
-                    // Nameless: the emoji on a tile the width of the cells, in
-                    // the window's own colour, the one round the rail card, so
-                    // it reads as part of the frame the group hangs from and
-                    // outweighs the service icons. Grey stays the selection
-                    // fill and blue the focus ring; the current space's tile
-                    // has the stronger edge.
-                    let tile = RoundedRectangle(cornerRadius: ChorusRadius.control, style: .continuous)
                     Text(space.emoji)
-                        .font(.system(size: 15))
+                        .font(.system(size: 16))
                         .fixedSize()
                         .opacity(space.isMutedEffective ? 0.5 : 1)
-                        .frame(width: ServiceRowView.compactRailCellWidth, height: Self.compactHeadingHeight)
-                        .background(tile.fill(ChorusColor.canvas))
-                        .overlay(
-                            tile.strokeBorder(selected ? ChorusColor.secondaryText : ChorusColor.hairline, lineWidth: 1)
-                        )
                         .accessibilityHidden(true)
-                    .frame(width: ServiceRowView.compactRailCellWidth)
+                        .frame(width: ServiceRowView.railCardWidth(showsName: false))
                 }
             }
-            .frame(height: showServiceNames ? 24 : Self.compactHeadingHeight)
+            .frame(height: 22)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -328,9 +306,9 @@ struct UnifiedRailView: View {
             Text("Empty")
                 .font(ChorusType.caption)
                 .foregroundStyle(ChorusColor.secondaryText)
-                // Where the indented row labels start.
+                // Where the row labels start.
                 .frame(maxWidth: .infinity, alignment: showServiceNames ? .leading : .center)
-                .padding(.horizontal, showServiceNames ? 34 + Self.groupIndent : 0)
+                .padding(.horizontal, showServiceNames ? 34 : 0)
                 .frame(height: ServiceRowView.rowHeight)
                 .contentShape(Rectangle())
         }
@@ -367,7 +345,6 @@ struct UnifiedRailView: View {
             focused: focusedAllServicesLinkID == link.id && focusVisibility.isVisible,
             showsName: showServiceNames,
             spaceName: space.name,
-            indent: showServiceNames ? Self.groupIndent : 0,
             selectionAction: {
                 selectedSpaceID = space.id
                 selectedServiceID = service.id
@@ -573,7 +550,9 @@ struct UnifiedRailView: View {
             addServiceButton
                 .padding(.vertical, ChorusCard.railPadding)
         }
-        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset)
+        // One list needs no card of its own: it sits on the window, and the
+        // web card beside it is the one card in the layout.
+        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset, carded: false)
     }
 
     private var horizontalBody: some View {
@@ -798,7 +777,6 @@ struct UnifiedRailView: View {
         focused: Bool,
         showsName: Bool? = nil,
         spaceName: String? = nil,
-        indent: CGFloat = 0,
         selectionAction: (() -> Void)? = nil
     ) -> some View {
         ServiceRowView(
@@ -815,8 +793,7 @@ struct UnifiedRailView: View {
             health: health,
             showsName: showsName ?? showServiceNames,
             spaceName: spaceName,
-            isFocused: focused,
-            indent: indent
+            isFocused: focused
         ) {
             if let selectionAction {
                 selectionAction()

@@ -297,15 +297,24 @@ extension View {
             )
     }
 
-    /// Places a vertical rail's content on its card: the card's width, the
+    /// Places a vertical rail's content in its column: the card's width, the
     /// gutter to the window's leading and bottom edges, and `topInset` above
-    /// it for the traffic lights.
-    func railCardFrame(width: CGFloat, topInset: CGFloat) -> some View {
-        frame(width: width)
-            .railCard()
-            .padding(.leading, ChorusCard.gutter)
-            .padding(.top, topInset)
-            .padding(.bottom, ChorusCard.gutter)
+    /// it for the traffic lights. `carded` draws the card itself; a rail that
+    /// is one list leaves it off and sits on the window, and the all-services
+    /// rail draws a card per space instead.
+    @ViewBuilder
+    func railCardFrame(width: CGFloat, topInset: CGFloat, carded: Bool = true) -> some View {
+        let column = frame(width: width)
+        Group {
+            if carded {
+                column.railCard()
+            } else {
+                column
+            }
+        }
+        .padding(.leading, ChorusCard.gutter)
+        .padding(.top, topInset)
+        .padding(.bottom, ChorusCard.gutter)
     }
 
     /// Draws this view as the inset content card: the card grey behind it,

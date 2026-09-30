@@ -96,7 +96,8 @@ struct SpaceStripView: View {
             addSpaceButton
                 .padding(.bottom, ChorusCard.railPadding)
         }
-        .railCardFrame(width: cardWidth, topInset: contentInset)
+        // One list, so no card: it sits on the window beside the web card.
+        .railCardFrame(width: cardWidth, topInset: contentInset, carded: false)
         // The OS window drag is off in this layout, because the service bar
         // beside the strip holds draggable tabs in the title-bar band (see
         // WindowMovableConfigurator). Without a handle of its own the strip

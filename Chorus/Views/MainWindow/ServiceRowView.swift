@@ -40,9 +40,6 @@ struct ServiceRowView: View {
     /// Whether the keyboard is on this row. Drawn as a ring, never as the fill
     /// selection uses — see `RowMark`.
     var isFocused: Bool = false
-    /// Extra room before the icon, for rows that sit under a heading (the
-    /// all-services rail), so they read as belonging to it.
-    var indent: CGFloat = 0
     let action: () -> Void
 
     @State private var isHovering = false
@@ -188,8 +185,7 @@ struct ServiceRowView: View {
 
             accessories
         }
-        .padding(.leading, Self.gutter + indent)
-        .padding(.trailing, Self.gutter)
+        .padding(.horizontal, Self.gutter)
         .frame(
             width: axis == .vertical ? Self.rowWidth : nil,
             height: axis == .vertical ? Self.rowHeight : Self.tabHeight
