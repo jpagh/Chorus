@@ -215,3 +215,16 @@ extension View {
         }
     }
 }
+
+/// What a service looks like under the pointer while it is dragged: its own
+/// icon, a little larger than in the rail, on a soft shadow so it lifts off
+/// whatever it passes over.
+struct ServiceDragPreview: View {
+    let service: ServiceInstance
+
+    var body: some View {
+        ServiceIconSquare(instance: service, size: 28, cornerRadius: 6)
+            .padding(4)
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+    }
+}

@@ -191,11 +191,20 @@ struct UnifiedRailView: View {
                     ForEach(groups, id: \.space.id) { group in
                         let space = group.space
                         let spaceLinks = group.links
+                        let isFirstGroup = space.id == spaces.first?.id
+                        // Without names, a rule across the card parts one
+                        // space's services from the next; the heading under it
+                        // is then only a small emoji.
+                        if !showServiceNames && !isFirstGroup {
+                            railRule
+                                .padding(.top, 6)
+                                .padding(.bottom, 4)
+                        }
                         allServicesHeading(for: space)
                             // A gap before every group but the first, which
                             // the card's own padding already clears. More room
                             // above a heading than below it ties it to its rows.
-                            .padding(.top, space.id == spaces.first?.id ? 0 : 12)
+                            .padding(.top, isFirstGroup || !showServiceNames ? 0 : 12)
 
                         if spaceLinks.isEmpty {
                             emptySpaceCell(for: space)
@@ -251,20 +260,18 @@ struct UnifiedRailView: View {
                     .padding(.horizontal, 8)
                     .frame(width: ServiceRowView.rowWidth)
                 } else {
-                    HStack(spacing: 3) {
-                        separatorLine(selected: selected)
-                        // Fixed, or the rules squeeze the emoji to fit 36 points.
-                        Text(space.emoji)
-                            .font(.system(size: 12))
-                            .fixedSize()
-                            .opacity(space.isMutedEffective ? 0.5 : 1)
-                            .accessibilityHidden(true)
-                        separatorLine(selected: selected)
-                    }
+                    // Nameless: the emoji alone, smaller and fainter than the
+                    // service icons, under the rule that opens the group. The
+                    // current space's emoji is at full strength.
+                    Text(space.emoji)
+                        .font(.system(size: 11))
+                        .fixedSize()
+                        .opacity(space.isMutedEffective ? 0.4 : (selected ? 1 : 0.6))
+                        .accessibilityHidden(true)
                     .frame(width: ServiceRowView.compactRailCellWidth)
                 }
             }
-            .frame(height: 24)
+            .frame(height: showServiceNames ? 24 : 18)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -291,13 +298,6 @@ struct UnifiedRailView: View {
         .contextMenu { spaceContextMenu(for: space) }
         .accessibilityAction(named: "Move up") { moveSpace(space, forward: false) }
         .accessibilityAction(named: "Move down") { moveSpace(space, forward: true) }
-    }
-
-    /// Ink, not the accent: blue is kept for the focus ring.
-    private func separatorLine(selected: Bool) -> some View {
-        Rectangle()
-            .fill(selected ? ChorusColor.secondaryText : ChorusColor.hairline)
-            .frame(height: 1)
     }
 
     /// The rule over the add buttons, inset to the rows' width.
@@ -367,11 +367,7 @@ struct UnifiedRailView: View {
             draggingLinkID = link.id
             return LiveReorder.itemProvider(for: link.id, type: LiveReorder.serviceType)
         } preview: {
-            Text(service.label)
-                .font(ChorusType.caption)
-                .padding(6)
-                .background(.ultraThickMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
+            ServiceDragPreview(service: service)
         }
         .liveReorderDrop([
             .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, over: link, in: space) },
@@ -754,11 +750,7 @@ struct UnifiedRailView: View {
                 draggingLinkID = link.id
                 return LiveReorder.itemProvider(for: link.id, type: LiveReorder.serviceType)
             } preview: {
-                Text(service.label)
-                    .font(ChorusType.caption)
-                    .padding(6)
-                    .background(.ultraThickMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
+                ServiceDragPreview(service: service)
             }
             .liveReorderDrop([
                 .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLinkInSpace($0, over: link) },
