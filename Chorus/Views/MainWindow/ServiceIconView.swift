@@ -209,7 +209,7 @@ extension View {
     func cornerBadge(_ count: Int, visible: Bool = true) -> some View {
         overlay(alignment: .topTrailing) {
             if visible && count > 0 {
-                BadgeCountView(count: count)
+                PoppingBadge(count: count)
                     .offset(x: 5, y: -5)
             }
         }
@@ -244,5 +244,30 @@ struct SidebarCount: View {
             .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(ChorusColor.secondaryText))
             .fixedSize()
             .accessibilityHidden(true)
+    }
+}
+
+/// A corner badge that springs up as it appears: when the rail shrinks to its
+/// icons, and when a count arrives. It just appears under Reduce Motion.
+private struct PoppingBadge: View {
+    let count: Int
+    @State private var isShown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        BadgeCountView(count: count)
+            .scaleEffect(isShown ? 1 : 0.3)
+            .opacity(isShown ? 1 : 0)
+            .onAppear {
+                if reduceMotion {
+                    isShown = true
+                } else {
+                    // A beat after the rail starts to shrink, so the badges
+                    // land once the icons are in place.
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.6).delay(0.12)) {
+                        isShown = true
+                    }
+                }
+            }
     }
 }

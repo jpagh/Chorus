@@ -10,6 +10,7 @@ struct ContentView: View {
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
     /// Whether the rail carries service names, which dragging its edge sets.
     @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
+    @AppStorage(RailWidth.defaultsKey) private var railNamedWidth = Double(RailWidth.defaultNamed)
 
     /// How much desktop the window lets through. See `WindowGlassStyle`.
     @AppStorage(WindowGlassStyle.defaultsKey) private var glassStyleRaw = WindowGlassStyle.defaultStyle.rawValue
@@ -165,7 +166,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: ChorusCard.topBand)
                 webContent
-                    .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showServiceNames) }
+                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth) }
             }
         case .allServices:
             HStack(spacing: 0) {
@@ -178,7 +179,7 @@ struct ContentView: View {
                     showsAllSpaces: true
                 )
                 webContent
-                    .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showServiceNames) }
+                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth) }
             }
         case .topBars:
             VStack(spacing: 0) {

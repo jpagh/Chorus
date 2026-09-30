@@ -43,12 +43,20 @@ struct ServiceRowView: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    /// The rail's width, which the named row fills. See `RailWidth`.
+    @Environment(\.railWidth) private var railWidth
 
     /// What the vertical rail takes from the window: the 8 point gutter and the
     /// card, whose 6 point padding holds the 220 point row. The gap between
     /// the rail card and the web card is the web card's own gutter.
     static let railWidth: CGFloat = 240
-    static let rowWidth: CGFloat = railWidth - ChorusCard.gutter - 2 * ChorusCard.railPadding
+    static let rowWidth: CGFloat = rowWidth(forRail: railWidth)
+
+    /// A named row's width in a rail `rail` points wide: less the gutter and
+    /// the card's padding.
+    static func rowWidth(forRail rail: CGFloat) -> CGFloat {
+        rail - ChorusCard.gutter - 2 * ChorusCard.railPadding
+    }
     /// Row height in the vertical rail. The rail stacks these at 2 point spacing,
     /// which is the drawn 30 point pitch.
     static let rowHeight: CGFloat = 28
@@ -121,12 +129,15 @@ struct ServiceRowView: View {
         return "\(label), \(spaceName)"
     }
 
+    /// The two forms cross-fade when the rail changes between them.
     @ViewBuilder
     private var content: some View {
         if showsName {
             namedContent
+                .transition(.opacity)
         } else {
             compactContent
+                .transition(.opacity)
         }
     }
 
@@ -187,7 +198,7 @@ struct ServiceRowView: View {
         }
         .padding(.horizontal, Self.gutter)
         .frame(
-            width: axis == .vertical ? Self.rowWidth : nil,
+            width: axis == .vertical ? Self.rowWidth(forRail: railWidth) : nil,
             height: axis == .vertical ? Self.rowHeight : Self.tabHeight
         )
         // The tab takes exactly the width its label needs and no more. Left

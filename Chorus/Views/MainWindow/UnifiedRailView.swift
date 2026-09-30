@@ -43,6 +43,8 @@ struct UnifiedRailView: View {
 
     /// Whether service cells carry their names. See `ServiceNameVisibility`.
     @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
+    /// The rail's width while it carries names. See `RailWidth`.
+    @AppStorage(RailWidth.defaultsKey) private var namedWidth = Double(RailWidth.defaultNamed)
 
     @State private var showingPalette = false
     @State private var showingAddService = false
@@ -81,6 +83,17 @@ struct UnifiedRailView: View {
         guard let spaceID = selectedSpaceID else { return [] }
         return links(in: spaceID)
     }
+
+    /// What the vertical rail takes from the window now, gutter included.
+    private var railFootprint: CGFloat {
+        showServiceNames ? RailWidth.clampNamed(CGFloat(namedWidth)) : ServiceRowView.compactRailWidth
+    }
+
+    /// The rail's column, less the gutter.
+    private var railColumnWidth: CGFloat { railFootprint - ChorusCard.gutter }
+
+    /// A named row's width at the rail's current width.
+    private var namedRowWidth: CGFloat { ServiceRowView.rowWidth(forRail: railFootprint) }
 
     private func links(in spaceID: UUID) -> [SpaceServiceLink] {
         allLinks
@@ -220,7 +233,11 @@ struct UnifiedRailView: View {
             allServicesAddButtons
                 .padding(.vertical, ChorusCard.railPadding)
         }
-        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset, carded: false)
+        .railCardFrame(width: railColumnWidth, topInset: contentInset, carded: false)
+        .environment(\.railWidth, railFootprint)
+        // Names on and off move the rail between its two forms; the width
+        // itself follows the pointer while it is dragged and does not animate.
+        .animation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion), value: showServiceNames)
     }
 
     /// A space's name over its card, lined up with the service names in it:
@@ -253,7 +270,7 @@ struct UnifiedRailView: View {
                     // Card padding plus the row's own, so the emoji sits over
                     // the service icons.
                     .padding(.horizontal, ChorusCard.railPadding + 8)
-                    .frame(width: ServiceRowView.railCardWidth(showsName: true))
+                    .frame(width: railColumnWidth)
                 } else {
                     Text(space.emoji)
                         .font(.system(size: 16))
@@ -435,7 +452,7 @@ struct UnifiedRailView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth, height: ServiceRowView.rowHeight)
+                    .frame(width: namedRowWidth, height: ServiceRowView.rowHeight)
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .medium))
@@ -554,7 +571,9 @@ struct UnifiedRailView: View {
         }
         // One list needs no card of its own: it sits on the window, and the
         // web card beside it is the one card in the layout.
-        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset, carded: false)
+        .railCardFrame(width: railColumnWidth, topInset: contentInset, carded: false)
+        .environment(\.railWidth, railFootprint)
+        .animation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion), value: showServiceNames)
     }
 
     private var horizontalBody: some View {
@@ -868,7 +887,7 @@ struct UnifiedRailView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth, height: ServiceRowView.rowHeight)
+                    .frame(width: namedRowWidth, height: ServiceRowView.rowHeight)
                 } else {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))

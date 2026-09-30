@@ -45,6 +45,7 @@ struct SpaceHeaderView: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.railWidth) private var railWidth
 
     /// Matches the rail and row widths in `ServiceRowView`, so the header and
     /// the services below it line up on both edges.
@@ -143,7 +144,7 @@ struct SpaceHeaderView: View {
         }
         .padding(.horizontal, Self.gutter)
         .frame(
-            width: axis == .vertical ? Self.headerWidth : Self.barHeaderWidth,
+            width: axis == .vertical ? ServiceRowView.rowWidth(forRail: railWidth) : Self.barHeaderWidth,
             height: axis == .vertical ? Self.headerHeight : Self.barHeaderHeight
         )
     }

@@ -2358,6 +2358,28 @@ final class ChorusTests: XCTestCase {
         XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: true, dragged: 200))
     }
 
+    /// The rail's width follows a drag between its narrowest and widest named
+    /// widths, shrinks to its icons past the collapse point, and comes back
+    /// out past the expand point.
+    func testRailWidthFollowsTheDragAndCollapsesToIcons() {
+        XCTAssertEqual(RailWidth.defaultNamed, ServiceRowView.railWidth)
+        XCTAssertEqual(RailWidth.expandAbove, ServiceRowView.compactRailWidth + 36)
+        XCTAssertLessThan(RailWidth.collapseBelow, RailWidth.minNamed)
+        XCTAssertGreaterThan(RailWidth.collapseBelow, RailWidth.expandAbove)
+
+        let within = RailWidth.resolve(proposed: 190, namesOn: true)
+        XCTAssertTrue(within.namesOn); XCTAssertEqual(within.namedWidth, 190)
+        let pinnedLow = RailWidth.resolve(proposed: 130, namesOn: true)
+        XCTAssertTrue(pinnedLow.namesOn); XCTAssertEqual(pinnedLow.namedWidth, RailWidth.minNamed)
+        let pinnedHigh = RailWidth.resolve(proposed: 500, namesOn: true)
+        XCTAssertEqual(pinnedHigh.namedWidth, RailWidth.maxNamed)
+        XCTAssertFalse(RailWidth.resolve(proposed: 110, namesOn: true).namesOn)
+
+        XCTAssertFalse(RailWidth.resolve(proposed: 80, namesOn: false).namesOn)
+        let out = RailWidth.resolve(proposed: 100, namesOn: false)
+        XCTAssertTrue(out.namesOn); XCTAssertEqual(out.namedWidth, RailWidth.minNamed)
+    }
+
     /// The web card's corner follows a page's scroll bar: an 11 point thumb
     /// (a 5.5 point round end) 3 points in from the edge.
     func testWebCardCornerFollowsTheScrollBar() {

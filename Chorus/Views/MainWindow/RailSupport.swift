@@ -342,3 +342,92 @@ struct RailWidthHandle: View {
         start ? dragged > -threshold : dragged > threshold
     }
 }
+
+/// The service rail's width. With names it can be any width from `minNamed`
+/// to `maxNamed`, set by dragging its edge; below `collapseBelow` it gives up
+/// its names and shrinks to the icon column, and a drag back out past
+/// `expandAbove` brings them back. The named width is kept in UserDefaults
+/// beside the names switch, so the Settings switch goes between the icons and
+/// the width you left it at.
+enum RailWidth {
+    static let defaultsKey = "railNamedWidth"
+    /// Room for an icon, a short name and a count.
+    static let minNamed: CGFloat = 150
+    static let maxNamed: CGFloat = 300
+    /// `ServiceRowView.railWidth`, written out: a View's statics are main-actor
+    /// isolated and these are not. A test holds the two together.
+    static let defaultNamed: CGFloat = 240
+    static let collapseBelow: CGFloat = 120
+    /// 36 points past the icon column's 52 (`ServiceRowView.compactRailWidth`).
+    static let expandAbove: CGFloat = 52 + 36
+
+    static func clampNamed(_ width: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(width, minNamed), maxNamed)
+    }
+
+    /// Where a drag that puts the rail's edge at `proposed` leaves it: names on
+    /// or off, and the named width when they are on.
+    static func resolve(proposed: CGFloat, namesOn: Bool) -> (namesOn: Bool, namedWidth: CGFloat?) {
+        if namesOn {
+            return proposed < collapseBelow ? (false, nil) : (true, clampNamed(proposed))
+        }
+        return proposed > expandAbove ? (true, clampNamed(proposed)) : (false, nil)
+    }
+}
+
+private struct RailWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = RailWidth.defaultNamed
+}
+
+extension EnvironmentValues {
+    /// The width the vertical service rail takes from the window, gutter
+    /// included. Rows, headers and headings size themselves from it.
+    var railWidth: CGFloat {
+        get { self[RailWidthKey.self] }
+        set { self[RailWidthKey.self] = newValue }
+    }
+}
+
+/// The strip in the gap between the service rail and the web card. Dragging
+/// it resizes the rail live; past the narrowest named width the rail shrinks
+/// to its icons with the chrome's sidebar animation, and back out again the
+/// same way. See `RailWidth`.
+struct RailResizeHandle: View {
+    @Binding var showsNames: Bool
+    @Binding var namedWidth: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The rail's width when this drag began.
+    @State private var startWidth: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: ChorusCard.gutter)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = startWidth ?? (showsNames ? CGFloat(namedWidth) : ServiceRowView.compactRailWidth)
+                        startWidth = start
+                        let result = RailWidth.resolve(proposed: start + value.translation.width, namesOn: showsNames)
+                        if result.namesOn != showsNames {
+                            withAnimation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion)) {
+                                if let width = result.namedWidth { namedWidth = Double(width) }
+                                showsNames = result.namesOn
+                            }
+                        } else if let width = result.namedWidth, Double(width) != namedWidth {
+                            // Follows the pointer: no animation, or it lags.
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) { namedWidth = Double(width) }
+                        }
+                    }
+                    .onEnded { _ in startWidth = nil }
+            )
+            .help("Drag to resize. Narrow it far enough and the rail shows only icons.")
+            .accessibilityHidden(true)
+    }
+}
