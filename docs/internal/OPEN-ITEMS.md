@@ -1,6 +1,8 @@
 # Open items
 
-## On branch `feat/paguro-look`: the window redesign, all 7 steps built
+## Merged, not released: the window redesign (`feat/paguro-look`), all 7 steps built
+
+**Merged into `main` on 2026-09-29 as `fd59831`, with the findings branch merged just before it. Not released.** Full screen on macOS 26 is now checked: the View menu took the window in and out, and the lights came back to the centre of the band. The lights on macOS 14 and 15 still want a look before 1.5.22 ships.
 
 **Started 2026-09-29.** Branch `feat/paguro-look`, cut from `fix/paguro-findings` (not from `main`, because that branch is not merged yet; rebase onto `main` once it is). Commit `dc77885`, pushed, CI green on macOS 14 and 15 (run 36653665480), 278 tests pass locally. `CHANGELOG.md` has a "Changed" line under Unreleased.
 
@@ -20,7 +22,7 @@ Built: `ChorusColor` / `ChorusType` / `ChorusMotion` / `ChorusCard` in `ChorusSt
 - ~~The live shots of steps 1–3 show a blank web card.~~ Closed 2026-09-29: with the Debug build allowed in Little Snitch, the page loads inside the rounded card, and the corners clip cleanly.
 - A keyboard-focus ring lands on the first rail row at launch. The old build does it too; look at it with step 4.
 
-## On branch `fix/paguro-findings`: fixes and features found in Paguro, not merged
+## Merged, not released: fixes and features found in Paguro (`fix/paguro-findings`)
 
 **Built on 2026-09-29.** Branch `fix/paguro-findings`, pushed, CI green on macOS 14 and 15. Not merged and not released. `CHANGELOG.md` has the entry under Unreleased.
 
@@ -28,7 +30,7 @@ Built: `ChorusColor` / `ChorusType` / `ChorusMotion` / `ChorusCard` in `ChorusSt
 
 ### Still open
 
-- Merge the branch into `main`.
+- ~~Merge the branch into `main`.~~ Merged 2026-09-29 as `ffea72e`.
 - The by-hand block at the top of `VERIFY-BY-HAND.md` has not been run. The one that matters most is WhatsApp across a quit: the handoff runs, but nobody has seen a real session survive it.
 - `_isPlayingAudio` is private WebKit. A probe proved it on macOS 26 only. On 14 and 15 it is unchecked, though the `responds(to:)` guard makes the failure harmless.
 - If a setup import's second save fails, the import deletes what it added, and no test forces that failure.
