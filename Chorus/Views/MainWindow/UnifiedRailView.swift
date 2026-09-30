@@ -75,6 +75,8 @@ struct UnifiedRailView: View {
     private static let overflowFadeFraction: CGFloat = 0.06
     /// How far rows sit in from their space's heading in the all-services rail.
     private static let groupIndent: CGFloat = 10
+    /// The nameless heading's tile: a little shorter than a row.
+    private static let compactHeadingHeight: CGFloat = 26
 
     private var filteredLinks: [SpaceServiceLink] {
         guard let spaceID = selectedSpaceID else { return [] }
@@ -205,6 +207,7 @@ struct UnifiedRailView: View {
                             // the card's own padding already clears. More room
                             // above a heading than below it ties it to its rows.
                             .padding(.top, isFirstGroup || !showServiceNames ? 0 : 12)
+                            .padding(.bottom, showServiceNames ? 0 : 2)
 
                         if spaceLinks.isEmpty {
                             emptySpaceCell(for: space)
@@ -260,18 +263,26 @@ struct UnifiedRailView: View {
                     .padding(.horizontal, 8)
                     .frame(width: ServiceRowView.rowWidth)
                 } else {
-                    // Nameless: the emoji alone, smaller and fainter than the
-                    // service icons, under the rule that opens the group. The
-                    // current space's emoji is at full strength.
+                    // Nameless: the emoji on a raised tile the width of the
+                    // cells, in the card colour the page sits on, so it reads
+                    // as the group's label and sits above the service icons in
+                    // weight. Grey stays the selection fill and blue the focus
+                    // ring; the current space's tile has the stronger edge.
+                    let tile = RoundedRectangle(cornerRadius: ChorusRadius.control, style: .continuous)
                     Text(space.emoji)
-                        .font(.system(size: 11))
+                        .font(.system(size: 15))
                         .fixedSize()
-                        .opacity(space.isMutedEffective ? 0.4 : (selected ? 1 : 0.6))
+                        .opacity(space.isMutedEffective ? 0.5 : 1)
+                        .frame(width: ServiceRowView.compactRailCellWidth, height: Self.compactHeadingHeight)
+                        .background(tile.fill(ChorusColor.card))
+                        .overlay(
+                            tile.strokeBorder(selected ? ChorusColor.secondaryText : ChorusColor.hairline, lineWidth: 1)
+                        )
                         .accessibilityHidden(true)
                     .frame(width: ServiceRowView.compactRailCellWidth)
                 }
             }
-            .frame(height: showServiceNames ? 24 : 18)
+            .frame(height: showServiceNames ? 24 : Self.compactHeadingHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
