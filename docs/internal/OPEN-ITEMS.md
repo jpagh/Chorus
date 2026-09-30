@@ -1,5 +1,22 @@
 # Open items
 
+## On branch `feat/paguro-look`: the window redesign, steps 1–3 of 7 built
+
+**Started 2026-09-29.** Branch `feat/paguro-look`, cut from `fix/paguro-findings` (not from `main`, because that branch is not merged yet; rebase onto `main` once it is). Commit `dc77885`, pushed, CI green on macOS 14 and 15 (run 36653665480), 278 tests pass locally. `CHANGELOG.md` has a "Changed" line under Unreleased.
+
+Takes Paguro's look, not its code. Decisions made from a trends survey on 2026-09-29: selection is a neutral ink fill with a primary label and the accent kept for the focus ring; glass is Off by default, Off below macOS 26 and under Reduce Transparency, and both glass styles keep a heavy canvas tint (0.62 Clear, 0.78 Regular); the web view is an inset card in every layout, with no gutter on the edge a top bar sits on; spaces keep the header and palette (the Arc/Slack model), and the all-services separators are to become 12pt headings.
+
+Built: `ChorusColor` / `ChorusType` / `ChorusMotion` / `ChorusCard` in `ChorusStyle.swift`, `WindowBackdrop.swift` (frost + `NSGlassEffectView` + tint, `UserDefaults` key `windowGlassStyle`), and the inset web card (`contentCard()`, `WebViewHostView` layer clip).
+
+### Still open
+
+- **Step 4, the rail card.** The rail still has its old fill (`.background(.background)` in `UnifiedRailView` at the all-services and vertical bodies, `windowBackgroundColor` in `SpaceStripView`), which hides the frost and reads brownish in dark. Make it an inset rounded card with a hairline, 28pt rows, 18pt icons. Check all four layouts, the traffic-light clearance, downloads, speaker and media marks, and the donation button.
+- **Step 5,** a 52pt header with 28pt circular buttons (`.glassEffect` on 26 behind `#if compiler(>=6.2)`, material below).
+- **Step 6,** the Off / Clear / Regular picker in Settings, hidden below macOS 26. New strings go through the humanizer loop.
+- **Step 7,** the notice strips as floating cards. Then Reduce Motion wiring for `ChorusMotion.reorder` in the rail's reorder.
+- The live shots of steps 1–3 show a blank web card: Little Snitch held the rebuilt Debug binary's connections. The by-eye check of the page inside the card is still to do.
+- A keyboard-focus ring lands on the first rail row at launch. The old build does it too; look at it with step 4.
+
 ## On branch `fix/paguro-findings`: fixes and features found in Paguro, not merged
 
 **Built on 2026-09-29.** Branch `fix/paguro-findings`, pushed, CI green on macOS 14 and 15. Not merged and not released. `CHANGELOG.md` has the entry under Unreleased.
@@ -12,7 +29,7 @@
 - The by-hand block at the top of `VERIFY-BY-HAND.md` has not been run. The one that matters most is WhatsApp across a quit: the handoff runs, but nobody has seen a real session survive it.
 - `_isPlayingAudio` is private WebKit. A probe proved it on macOS 26 only. On 14 and 15 it is unchecked, though the `responds(to:)` guard makes the failure harmless.
 - If a setup import's second save fails, the import deletes what it added, and no test forces that failure.
-- The visual redesign that Paguro suggested is a separate piece of work. Most of the look works on macOS 14; Liquid Glass is one optional layer.
+- The visual redesign that Paguro suggested is under way on `feat/paguro-look`; see the section above.
 
 ## Shipped in 1.5.21: Gmail sign-in, the all-services rail, and the traffic lights
 
