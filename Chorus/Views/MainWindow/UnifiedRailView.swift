@@ -263,18 +263,19 @@ struct UnifiedRailView: View {
                     .padding(.horizontal, 8)
                     .frame(width: ServiceRowView.rowWidth)
                 } else {
-                    // Nameless: the emoji on a raised tile the width of the
-                    // cells, in the card colour the page sits on, so it reads
-                    // as the group's label and sits above the service icons in
-                    // weight. Grey stays the selection fill and blue the focus
-                    // ring; the current space's tile has the stronger edge.
+                    // Nameless: the emoji on a tile the width of the cells, in
+                    // the window's own colour, the one round the rail card, so
+                    // it reads as part of the frame the group hangs from and
+                    // outweighs the service icons. Grey stays the selection
+                    // fill and blue the focus ring; the current space's tile
+                    // has the stronger edge.
                     let tile = RoundedRectangle(cornerRadius: ChorusRadius.control, style: .continuous)
                     Text(space.emoji)
                         .font(.system(size: 15))
                         .fixedSize()
                         .opacity(space.isMutedEffective ? 0.5 : 1)
                         .frame(width: ServiceRowView.compactRailCellWidth, height: Self.compactHeadingHeight)
-                        .background(tile.fill(ChorusColor.card))
+                        .background(tile.fill(ChorusColor.canvas))
                         .overlay(
                             tile.strokeBorder(selected ? ChorusColor.secondaryText : ChorusColor.hairline, lineWidth: 1)
                         )
@@ -414,7 +415,9 @@ struct UnifiedRailView: View {
                     }
                 }
             } else {
-                HStack(spacing: 0) {
+                // Stacked, one full cell each: side by side they shared 32
+                // points and read as one cramped control.
+                VStack(spacing: 2) {
                     allServicesAddButton(
                         title: "Add service",
                         systemImage: "plus",
@@ -457,8 +460,7 @@ struct UnifiedRailView: View {
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: ServiceRowView.rowHeight)
+                        .frame(width: ServiceRowView.compactRailCellWidth, height: ServiceRowView.rowHeight)
                 }
             }
             .contentShape(Rectangle())
