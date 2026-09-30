@@ -199,13 +199,14 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         //    - identity gateways (accounts.google.com, login.microsoftonline.com,
         //      …) are exempt via `isAuthHost`, so clicking "Sign in" on a
         //      signed-out page (Gmail → accounts.google.com) loads in place and
-        //      the login can finish instead of being kicked to the browser.
+        //      the login can finish instead of being kicked to the browser;
+        //    - so is a sign-in page anywhere that says it will come back here
+        //      (Trello → id.atlassian.com?continue=trello.com). See
+        //      `routesClickedLinkOut`.
         if navigationAction.navigationType == .linkActivated,
            navigationAction.targetFrame?.isMainFrame ?? true,
            let currentHost = webView.url?.host,
-           let targetHost = url.host,
-           !Self.belongsToService(targetHost, serviceHost: currentHost),
-           !Self.isAuthHost(targetHost) {
+           Self.routesClickedLinkOut(url, currentHost: currentHost) {
             if let handler = externalLinkHandler {
                 handler(url, instanceID)
             } else {
@@ -1272,6 +1273,40 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             && !looksLikeSignIn(targetURL)
     }
 
+    /// Whether a link the user clicked on a page at `currentHost` leaves the
+    /// service, and so goes to the link router (another Chorus service, or the
+    /// browser). It stays when it is the same service, a known sign-in gateway,
+    /// or a sign-in round trip back to this service. Factored out of
+    /// `decidePolicyFor` so the rule can be tested without a `WKWebView`.
+    nonisolated static func routesClickedLinkOut(_ url: URL, currentHost: String) -> Bool {
+        guard let targetHost = url.host else { return false }
+        return !belongsToService(targetHost, serviceHost: currentHost)
+            && !isAuthHost(targetHost)
+            && !isSignInRoundTrip(url, serviceHost: currentHost)
+    }
+
+    /// Whether `url` is a sign-in step that says it will come back to the
+    /// service at `serviceHost`: shaped like a sign-in (see `looksLikeSignIn`),
+    /// with a query value that is an address on the service, such as Trello's
+    /// `continue=https://trello.com/…` or an OAuth `redirect_uri`. Lists of
+    /// gateways never cover every company's own sign-in page; this does, and
+    /// the return address keeps it from catching a sign-in page for somewhere
+    /// else.
+    nonisolated static func isSignInRoundTrip(_ url: URL, serviceHost: String) -> Bool {
+        guard looksLikeSignIn(url),
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        else { return false }
+        return items.contains { item in
+            guard let value = item.value,
+                  let returnURL = URL(string: value),
+                  let scheme = returnURL.scheme?.lowercased(),
+                  scheme == "https" || scheme == "http",
+                  let returnHost = returnURL.host
+            else { return false }
+            return belongsToService(returnHost, serviceHost: serviceHost)
+        }
+    }
+
     /// Whether a URL reads as a step in a sign-in or an authorization, whatever
     /// its host: OAuth and SAML parameters in the query, or a path segment such
     /// as `oauth`, `authorize` or `login`. Errs toward yes; a false yes costs a
@@ -1387,6 +1422,8 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         "login.yahoo.com",
         "appleid.apple.com",
         "idmsa.apple.com",
+        // Atlassian's one sign-in page, for Trello, Jira and Confluence.
+        "id.atlassian.com",
     ]
 
     /// Whether `host` is a known authentication gateway (an exact match or a
