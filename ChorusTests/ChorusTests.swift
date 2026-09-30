@@ -2313,6 +2313,15 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("www.atlassian.com"))
     }
 
+    /// Pause Audio has to hold on a service in the background. Measured on
+    /// YouTube: a plain pause lasted until the ad ended, then the video played
+    /// again with nobody looking. The service on screen keeps a plain pause so
+    /// its own play button still works.
+    func testPauseAudioSuspendsOnlyInTheBackground() {
+        XCTAssertTrue(WebViewPool.suspendsMediaOnPause(isActive: false))
+        XCTAssertFalse(WebViewPool.suspendsMediaOnPause(isActive: true))
+    }
+
     /// Sign-in pages found by loading every catalog service signed out, and the
     /// company sign-in providers whose tenants each get a subdomain. A
     /// provider's own site (marketing, docs) is not a sign-in page.

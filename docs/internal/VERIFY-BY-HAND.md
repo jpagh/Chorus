@@ -6,7 +6,17 @@ Record the result next to each item. An unrun item is not a passing item.
 
 ## Next: the Paguro branches (`fix/paguro-findings`, `feat/paguro-look`)
 
-Run these on the build that will ship as 1.5.22. None has been run yet.
+Run these on the build that will ship as 1.5.22.
+
+**Scripted pass, 2026-09-29.** Run on the Debug build, macOS 26, by script with nobody at the Mac.
+
+Passed: 2 (music played on in the background, the speaker mark stayed, and Pause Audio stopped it; macOS showed the audio held through the switch and gone after the pause), 5 (with the setting on, a link to support.google.com opened in a Chorus window), 8 (Finder opened with THIRD_PARTY_NOTICES.md selected inside the app), 10 (a tab dragged ahead of Gmail, the empty bar moved the window, and a double-click zoomed and unzoomed it), and full screen on 26.
+
+Found and fixed: Pause Audio on a service in the background did not hold. YouTube started again by itself within a minute, when its ad ended. Now it holds for as long as you are away (watched for 90 seconds), and the page's own play button works when you come back.
+
+Part done: 13 (Trello's Log in and its Continue with Google both load inside the service; nobody signed in) and 4 (the button and its ring appear; the file waits on macOS asking whether this build may use the Downloads folder, which nobody answered).
+
+Not run: 1, 3, 6, 7 and 11 need accounts or a call, 12 needs Wi-Fi off, and 9 needs macOS 14 or 15. The UTM virtual machine started but showed no window, and it would want a password.
 
 1. **WhatsApp across a quit.** Sign in, send a message, press ⌘Q, and reopen. WhatsApp should come back signed in. Do it three times. The log should show `Released N pages for quit` each time (`/usr/bin/log stream --level info --predicate 'subsystem == "com.nicojan.Chorus"'`).
 2. **Music keeps playing.** Play Spotify or YouTube, then switch to another service. The music goes on and the rail shows a speaker. Right-click the row, choose Pause Audio, and the music stops. A service that was quiet when you left it stays quiet.
