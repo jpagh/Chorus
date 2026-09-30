@@ -17,6 +17,13 @@ xcodebuild test -project Chorus.xcodeproj -scheme Chorus -destination 'platform=
 
 You can also open `Chorus.xcodeproj` in Xcode and run the Chorus scheme.
 
+CI builds with Xcode 16.2, whose compiler rejects some code that newer Xcode accepts. Four cases so far:
+
+- A private stored property in a View makes its memberwise initialiser private, so another file cannot build the view.
+- An overloaded method passed to `contains(where:)` reads as a throwing one. Pass a closure.
+- `NSItemProvider`'s `registerDataRepresentation` loader is taken as main-actor bound. Build the provider with `NSItemProvider(item:typeIdentifier:)`.
+- A View's static property cannot be read from a `nonisolated` function. Mark the property `nonisolated`.
+
 ## Making a change
 
 - Add a test for any logic you can exercise on its own. The tests in
