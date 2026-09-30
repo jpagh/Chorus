@@ -75,6 +75,8 @@ Run from the repo root. Replace `X.Y.Z` with the new version.
 
    Edit in Xcode (target build settings) or via `agvtool`.
 
+Build each release into a folder of its own, `build/r1.5.23` and so on, and use it in place of `build/` in the commands below. The guard hook blocks `rm -rf` inside the repo, so clearing an old `build/Chorus.xcarchive` is not an option, and a fresh folder needs no delete.
+
 2. **Archive:**
    ```sh
    xcodebuild -project Chorus.xcodeproj -scheme Chorus \

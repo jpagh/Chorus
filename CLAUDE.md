@@ -37,6 +37,11 @@ Write plain, direct, active, concrete prose. No marketing gloss, no AI tells.
   `.pbxproj` so a later `xcodegen generate` stays consistent.
 - `xcodegen generate` reproduces the checked-in `.pbxproj` byte for byte, so add a new `.swift` file and run it; commit the regenerated project. To ship a file that is not under `Chorus/`, add a `sources:` entry with `buildPhase: resources`. A target-level `resources:` key is not XcodeGen's, and it ignores it silently.
 - CI's macOS 14 job builds with Xcode 16.2, which has no macOS 26 SDK, so `#available(macOS 26, *)` alone does not compile there. Wrap any macOS 26 symbol, such as `NSGlassEffectView` or `.glassEffect`, in `#if compiler(>=6.2)` as well. A stored property holds it as a plain `NSView`, since it cannot name a type the deployment target lacks.
+- **Run CI after every commit on a branch, not only before merging.** Xcode 16.2's compiler rejects code that Xcode 26 accepts. Four that got through in 1.5.23:
+  - A private stored property in a View makes its memberwise initialiser private, so another file cannot build the view.
+  - An overloaded method passed to `contains(where:)` reads as a throwing one. Pass a closure.
+  - `NSItemProvider`'s `registerDataRepresentation` loader is taken as main-actor bound. Build the provider with `NSItemProvider(item:typeIdentifier:)`.
+  - A View's static property cannot be read from a `nonisolated` function. Mark the property `nonisolated`.
 - **Never add `-configuration Release` to that test command.** `ChorusTests` is
   app-hosted, and `ChorusApp.init` builds an `AppState`, so every test run
   executes the launch path, including `StoreRepair.applyPendingRestore`, which

@@ -1,5 +1,23 @@
 # Open items
 
+## Shipped in 1.5.23: live reorder, a resizable rail, Notes-style counts
+
+**Shipped on 2026-09-30 as `v1.5.23`, build 36, tag on `c43abe2`. The DMG is 9,534,338 bytes, and both feeds and the cask serve it.**
+
+The user asked for each piece by hand in this session and tried each one in the Debug build. Spaces and services reorder live as a drag crosses them (`LiveReorder`); moving a service into another space waits for the drop, so a cancelled drag leaves it where it was. The service rail can be dragged from 150 to 300 points wide and gives up its names below 100, taking them back above 125 (`RailWidth`, UserDefaults `railNamedWidth`). With names, a count is a grey number, as in Notes; without them, a red badge on the corner. A count that goes up flashes, and pulses red until its service is opened, once the first minute after launch has passed (`BadgeManager.attentionIDs`). The all-services rail has a card per space; the other left rails sit on the window. Buttons have hover and press marks (`ChromeButtonStyle`), the focus ring waits for the keyboard (`FocusVisibility`), and the web card's corners follow the scroll bar.
+
+Two reviews read the branch before release and every finding was fixed. CI's Xcode 16.2 then rejected four things the local Xcode 26 accepts; see `CLAUDE.md`.
+
+### Still open
+
+- Nobody has checked on macOS 14 or 15 how the resize, the pulse or the per-space cards look, since CI builds and tests there but no one looks.
+- The space strip still has only two widths, and the bar's tabs keep red badges. Both were offered to the user and left as they are.
+- Debug builds can show made-up counts: `defaults write com.nicojan.Chorus.debug debugMockBadges -bool true`. One goes up every six seconds, and the pulses start after the settling minute.
+
+## Shipped in 1.5.22 as well: Trello sign-in, more sign-in pages, the whole of LinkedIn, Pause Audio
+
+These went into 1.5.22 after the redesign merge. Trello signs in inside Chorus: `routesClickedLinkOut` and `isSignInRoundTrip` keep a clicked sign-in link that returns to the service. About thirty more sign-in pages are known, including Zoho's regional ones and company providers such as Okta (`authTenantDomains`). The catalog has the whole of LinkedIn (`linkedin-feed`) beside LinkedIn Messaging. Pause Audio holds on a service in the background. The user signed in to Trello with Google in the Debug build.
+
 ## Shipped in 1.5.22: the window redesign (`feat/paguro-look`), all 7 steps built
 
 **Shipped on 2026-09-29 as `v1.5.22`, build 35, tagged on `d85610f`, and both feeds serve it while the cask is bumped here and in the tap. The DMG is 9,394,169 bytes.**
@@ -23,7 +41,7 @@ Built: `ChorusColor` / `ChorusType` / `ChorusMotion` / `ChorusCard` in `ChorusSt
 - **The review also hardened the traffic-light code.** It waits for AppKit's pass before moving the lights, stays out of the way while full screen comes and goes, and watches the close button's frame. Window tabs are off. Idle, it ran twice in two minutes.
 - **Before release:** items 9 to 12 of the by-hand block in `VERIFY-BY-HAND.md`, above all the lights on macOS 14 or 15 and full screen on 26. The Settings captions are 10 points. They use `.caption` like every other caption there, and the redesign set its 12 point floor for the window's chrome only, so Settings kept its own.
 - ~~The live shots of steps 1–3 show a blank web card.~~ Closed 2026-09-29: with the Debug build allowed in Little Snitch, the page loads inside the rounded card, and the corners clip cleanly.
-- A keyboard-focus ring lands on the first rail row at launch. The old build does it too; look at it with step 4.
+- ~~A keyboard-focus ring lands on the first rail row at launch.~~ Fixed in 1.5.23: the ring waits for the keyboard (`FocusVisibility`).
 
 ## Shipped in 1.5.22: fixes and features found in Paguro (`fix/paguro-findings`)
 
