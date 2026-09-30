@@ -3191,13 +3191,14 @@ final class ChorusTests: XCTestCase {
     /// of what is left — the fix the retired hybrid layout already had. The named
     /// strip swallows them, and the bar starts flush.
     func testServiceBarClearsTheTrafficLightsOverhangingTheCompactStrip() {
-        let lights: CGFloat = 72
+        let lights = SpaceStripMetrics.trafficLightsWidth
+        XCTAssertEqual(lights, 82)
         XCTAssertEqual(
             SpaceStripMetrics.barLeadingInset(
                 stripWidth: SpaceStripMetrics.width(showingNames: false),
                 lightsWidth: lights
             ),
-            20
+            30
         )
         XCTAssertEqual(
             SpaceStripMetrics.barLeadingInset(
@@ -3224,6 +3225,33 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(origins[0].x + 7, ChorusCard.topBand / 2)
         XCTAssertLessThan(origins[2].x + 14, SpaceStripMetrics.trafficLightsWidth)
         XCTAssertEqual(UnifiedRailView.barHeight, ChorusCard.topBand)
+    }
+
+    /// Glass is Off unless asked for, falls back to Off for anything it does
+    /// not recognise, and is Off everywhere under Reduce Transparency. The
+    /// picker's three names are distinct.
+    func testWindowGlassStyleDefaultsAndFallbacks() {
+        XCTAssertEqual(WindowGlassStyle.defaultStyle, .off)
+        XCTAssertEqual(WindowGlassStyle.resolve(nil), .off)
+        XCTAssertEqual(WindowGlassStyle.resolve("frosted"), .off)
+        XCTAssertEqual(WindowGlassStyle.resolve("clear"), .clear)
+        for style in WindowGlassStyle.allCases {
+            XCTAssertEqual(style.effective(reduceTransparency: true), .off)
+        }
+        XCTAssertEqual(Set(WindowGlassStyle.allCases.map(\.displayName)).count, 3)
+        XCTAssertEqual(WindowGlassStyle.regular.effective(reduceTransparency: false),
+                       WindowGlassStyle.isGlassAvailable ? .regular : .off)
+    }
+
+    /// Only a reorder animates: the same rows in a new order. A space switch
+    /// brings in different rows and must not play the spring.
+    func testReorderKeyChangesOnlyForAReorder() {
+        let a = UUID(), b = UUID(), c = UUID()
+        XCTAssertEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [a, b]))
+        XCTAssertNotEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [b, a]))
+        XCTAssertEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [a, c]))
+        XCTAssertEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [a, b, c]))
+        XCTAssertEqual(ReorderKey(ids: [a, a]), ReorderKey(ids: [a, b]))
     }
 
     // MARK: - Notice shape, radius scale, selection against focus (build step 7)

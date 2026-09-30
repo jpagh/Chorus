@@ -15,8 +15,8 @@ enum ServiceReorderPlacement {
 
 /// Sets whether the user can move the window by dragging its background.
 ///
-/// With `.windowStyle(.hiddenTitleBar)` the top ~32px stays a title-bar drag
-/// band. In the bar layout the rail sits in that band, so a click-drag on a tab
+/// With `.windowStyle(.hiddenTitleBar)` the top of the window stays a title-bar
+/// drag band, 52 points tall since `TrafficLightsPositioner` grew it. In the bar layout the rail sits in that band, so a click-drag on a tab
 /// was grabbed by the window move before SwiftUI's `.draggable` reorder could
 /// start — the window slid instead of the tab reordering. A view nested in a
 /// SwiftUI `ScrollView` can't opt out of that drag (the scroll view

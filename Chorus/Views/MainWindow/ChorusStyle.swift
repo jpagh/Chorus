@@ -109,9 +109,22 @@ enum ChorusMotion {
     }
 }
 
+/// A list's order, compared so that only a reorder counts as a change: the
+/// same rows in a new order. Rows arriving or leaving, as when the space
+/// changes, compare equal, so `.animation(_:value:)` lets them appear without
+/// the reorder spring. The comparison is not transitive, which is fine for
+/// what SwiftUI does with it: it only ever compares the old value with the new.
+struct ReorderKey: Equatable {
+    let ids: [UUID]
+
+    static func == (lhs: ReorderKey, rhs: ReorderKey) -> Bool {
+        lhs.ids == rhs.ids || lhs.ids.count != rhs.ids.count || Set(lhs.ids) != Set(rhs.ids)
+    }
+}
+
 /// How bad a notice is. Three, and the fill is the same weight for all of them:
-/// the tone is carried by the icon and the rule under the strip, not by shouting
-/// with the background. This replaces two raw SwiftUI yellows and a solid red
+/// the icon and the card's edge say how bad it is, and the background stays
+/// quiet. This replaces two raw SwiftUI yellows and a solid red
 /// bar that read as three unrelated designs.
 enum NoticeSeverity: CaseIterable {
     /// Something is offered, and nothing is wrong.
@@ -141,17 +154,10 @@ enum NoticeSeverity: CaseIterable {
     var fillOpacity: Double { 0.12 }
 }
 
-/// The one notice strip: a tinted band with a rule under it.
-///
-/// The window-drag handle is part of the shape rather than left to each caller.
-/// A notice sits at the very top of the window, inside the title-bar drag band,
-/// and the bar layout turns the OS window drag off (see
-/// `WindowMovableConfigurator`). Without a handle the strip is dead to dragging,
-/// and because it also pushes the rail's own handle down out of the band, the
-/// window could not be moved by its top edge at all while a notice was up. The
-/// handle goes behind the content and in front of the fill, so buttons still
-/// take their own clicks.
-struct NoticeStrip<Content: View>: View {
+/// The one notice shape: a card above the web card, with the severity's tint in
+/// its fill and on its edge. It used to be a strip across the top of the
+/// window, in the band the traffic lights share. See `WindowNotices`.
+struct NoticeCard<Content: View>: View {
     let severity: NoticeSeverity
     /// Overrides the severity's own icon where a notice is about something more
     /// specific than its seriousness.
@@ -159,23 +165,26 @@ struct NoticeStrip<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage ?? severity.systemImage)
-                    .foregroundStyle(severity.tint)
-                    .accessibilityHidden(true)
+        let shape = RoundedRectangle(cornerRadius: ChorusRadius.surface, style: .continuous)
+        HStack(spacing: 8) {
+            Image(systemName: systemImage ?? severity.systemImage)
+                .foregroundStyle(severity.tint)
+                .accessibilityHidden(true)
 
-                content()
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Rectangle()
-                .fill(severity.tint)
-                .frame(height: 1)
+            content()
         }
-        .background(WindowDragHandle())
-        .background(severity.tint.opacity(severity.fillOpacity))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            shape.fill(ChorusColor.card)
+            shape.fill(severity.tint.opacity(severity.fillOpacity))
+        }
+        .overlay(
+            shape
+                .strokeBorder(severity.tint.opacity(0.35), lineWidth: 1)
+                .allowsHitTesting(false)
+        )
     }
 }
 

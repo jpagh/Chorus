@@ -28,7 +28,10 @@ enum TrafficLightsLayout {
 
 /// Keeps the traffic lights centred in the band. AppKit puts them back on
 /// every title-bar layout pass (a resize, leaving full screen, a change of key
-/// window or appearance), so this listens for those and moves them again.
+/// window or appearance), so this listens for those, and for the close
+/// button's own frame changing, and moves them again after AppKit's pass.
+/// Window tabs are off, because a tab bar would sit where the taller title
+/// bar now is.
 struct TrafficLightsPositioner: NSViewRepresentable {
     let bandHeight: CGFloat
 
@@ -44,9 +47,13 @@ struct TrafficLightsPositioner: NSViewRepresentable {
     final class PositionerView: NSView {
         var bandHeight: CGFloat
         private var observers: [NSObjectProtocol] = []
-        /// AppKit's own spacing, read once before the first move, since a moved
-        /// button no longer tells us where AppKit wanted it.
+        /// AppKit's own spacing, read before the first move, since a moved
+        /// button no longer tells us where AppKit wanted it. Kept only once it
+        /// is a real distance: frames read before the first layout are zero.
         private var nativePitch: CGFloat?
+        /// Between entering and leaving full screen, AppKit owns the buttons.
+        private var isInFullScreenTransition = false
+        private var isRepositionScheduled = false
 
         init(bandHeight: CGFloat) {
             self.bandHeight = bandHeight
@@ -58,23 +65,51 @@ struct TrafficLightsPositioner: NSViewRepresentable {
             fatalError("init(coder:) has not been implemented")
         }
 
+        /// Takes no clicks: it fills the window behind everything.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
             guard let window else { return }
+            window.tabbingMode = .disallowed
+
+            let center = NotificationCenter.default
             let names: [Notification.Name] = [
                 NSWindow.didResizeNotification,
                 NSWindow.didEndLiveResizeNotification,
-                NSWindow.didExitFullScreenNotification,
                 NSWindow.didBecomeKeyNotification,
                 NSWindow.didResignKeyNotification,
-                NSWindow.didChangeScreenNotification
+                NSWindow.didChangeScreenNotification,
+                NSWindow.didChangeBackingPropertiesNotification
             ]
             observers = names.map { name in
-                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.reposition() }
+                center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.scheduleReposition() }
                 }
+            }
+            observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.isInFullScreenTransition = true }
+            })
+            observers.append(center.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.isInFullScreenTransition = true }
+            })
+            for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.isInFullScreenTransition = false
+                        self?.scheduleReposition()
+                    }
+                })
+            }
+            // Any title-bar pass that moves the close button, whatever caused
+            // it. Our own move posts this too, and then finds nothing to do.
+            if let close = window.standardWindowButton(.closeButton) {
+                close.postsFrameChangedNotifications = true
+                observers.append(center.addObserver(forName: NSView.frameDidChangeNotification, object: close, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.scheduleReposition() }
+                })
             }
             scheduleReposition()
         }
@@ -84,9 +119,13 @@ struct TrafficLightsPositioner: NSViewRepresentable {
             scheduleReposition()
         }
 
-        /// After AppKit's own pass, so ours is the one that lands.
+        /// After AppKit's own pass, so ours is the one that lands. Several
+        /// triggers in one turn of the run loop make one move.
         func scheduleReposition() {
+            guard !isRepositionScheduled else { return }
+            isRepositionScheduled = true
             DispatchQueue.main.async { [weak self] in
+                self?.isRepositionScheduled = false
                 self?.reposition()
             }
         }
@@ -95,6 +134,7 @@ struct TrafficLightsPositioner: NSViewRepresentable {
             guard let window,
                   // Full screen hides the lights in a menu-bar strip of their own.
                   !window.styleMask.contains(.fullScreen),
+                  !isInFullScreenTransition,
                   let close = window.standardWindowButton(.closeButton),
                   let minimize = window.standardWindowButton(.miniaturizeButton),
                   let zoom = window.standardWindowButton(.zoomButton),
@@ -103,6 +143,7 @@ struct TrafficLightsPositioner: NSViewRepresentable {
             else { return }
 
             let pitch = nativePitch ?? (minimize.frame.minX - close.frame.minX)
+            guard pitch > 0, close.frame.width > 0 else { return }
             nativePitch = pitch
 
             var containerFrame = container.frame

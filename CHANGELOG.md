@@ -15,7 +15,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ### Changed
 
-- The window has a new look, borrowed from Paguro. The page sits on a card with rounded corners and a narrow grey margin round it, and the window behind it is a flat grey. A selected service is grey with its name in black or white, not blue. Blue now marks only the row the keyboard is on. Names in the rail are a point larger, and no text in the rail or the notices is smaller than 12 points.
+- The window has a new look, borrowed from Paguro. The page sits on a card with rounded corners and a narrow grey margin round it, and the rail has a card of its own. A selected service is grey with its name in black or white, not blue. Blue now marks only the row the keyboard is on. Rows are shorter, so more services fit, and in All services on the left each space's name heads its group. The window's own buttons at the top left sit in the middle of a taller band along the top, and the page buttons, such as Back and Reload, are round. On macOS 26 you can let the desktop show through behind the rail and the bars, from Settings; it starts off. Warnings are cards above the page now, clear of the window's buttons, and a long one shows all its words. No text in the rail or the notices is smaller than 12 points.
 
 ### Fixed
 

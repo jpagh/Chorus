@@ -37,10 +37,6 @@ struct WebContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let service = selectedService, currentWebView != nil {
-                if showPasskeyNotice {
-                    passkeyNoticeBanner
-                }
-
                 // Both bar layouts host the nav buttons in the top bar itself.
                 // The two left-rail layouts have no top bar, so they get a slim
                 // navigation row above the card, on the canvas.
@@ -57,11 +53,22 @@ struct WebContentView: View {
                 Color.clear.frame(height: ChorusCard.topBand)
             }
 
+            // The notices sit between the nav row and the card, pushing the
+            // page down rather than covering it. See `WindowNotices`.
+            WindowNotices()
+            if showPasskeyNotice, selectedService != nil, currentWebView != nil {
+                passkeyNoticeCard
+                    .padding(.bottom, ChorusCard.gutter)
+                    // A new service starts its own 12 seconds.
+                    .id(selectedServiceID)
+            }
+
             // Everything below the nav row is one card: the page, the loading
             // placeholder and the empty state alike, so the window keeps its
             // shape while a service loads or when there is none.
             cardContent
                 .contentCard()
+
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showPasskeyNotice)
         .onAppear {
@@ -223,17 +230,15 @@ struct WebContentView: View {
         )
     }
 
-    /// A slim, dismissible bar warning that passkey sign-in isn't available in
-    /// Chorus's web views. Auto-hides after a short delay; the "seen" state is
-    /// already persisted when it appears, so it never returns for this service.
-    private var passkeyNoticeBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.badge.key.fill")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
+    /// A dismissible card warning that passkey sign-in isn't available in
+    /// Chorus's web views, above the page with the window's other notices.
+    /// Auto-hides after
+    /// a short delay; the "seen" state is already persisted when it appears,
+    /// so it never returns for this service.
+    private var passkeyNoticeCard: some View {
+        NoticeCard(severity: .info, systemImage: "person.badge.key.fill") {
             Text(AppCapabilities.passkeyUnavailableBanner)
-                .font(.callout)
+                .font(ChorusType.caption)
                 .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 8)
@@ -245,17 +250,18 @@ struct WebContentView: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderless)
+            .help("Dismiss")
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 14)
-        .padding(.leading, trafficLightsOverhang)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .overlay(alignment: .bottom) { Divider() }
         .transition(.move(edge: .top).combined(with: .opacity))
         .task {
-            try? await Task.sleep(for: .seconds(12))
+            // A cancelled wait means the card already went, so it must not
+            // hide the next one.
+            do {
+                try await Task.sleep(for: .seconds(12))
+            } catch {
+                return
+            }
             showPasskeyNotice = false
         }
     }

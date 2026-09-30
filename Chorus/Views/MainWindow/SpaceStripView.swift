@@ -24,6 +24,7 @@ struct SpaceStripView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showsNames = true
 
@@ -82,6 +83,11 @@ struct SpaceStripView: View {
                         spaceCell(space)
                     }
                 }
+                // Only a reorder animates. See `ReorderKey`.
+                .animation(
+                    ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: reduceMotion),
+                    value: ReorderKey(ids: spaces.map(\.id))
+                )
                 .padding(.vertical, ChorusCard.railPadding)
             }
 
@@ -98,7 +104,8 @@ struct SpaceStripView: View {
         // beside the strip holds draggable tabs in the title-bar band (see
         // WindowMovableConfigurator). Without a handle of its own the strip
         // would be the one part of the window's top edge that could not move it.
-        // The card takes no clicks, so the handle behind it gets them there too.
+        // The handle gets the clicks in the gutter and the card's padding; the
+        // scroll view takes them over the cells.
         .background(WindowDragHandle())
     }
 

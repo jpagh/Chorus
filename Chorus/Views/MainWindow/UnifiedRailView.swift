@@ -181,7 +181,9 @@ struct UnifiedRailView: View {
     /// Headings stay identical for full and empty spaces; an empty space puts
     /// its status in the service area beneath the heading.
     private var allServicesBody: some View {
-        VStack(spacing: 0) {
+        // Grouped once per render: the rows and the reorder key both need it.
+        let groups = spaces.map { (space: $0, links: links(in: $0.id)) }
+        return VStack(spacing: 0) {
             // No scroller: with "Always show scroll bars" on, it took width from
             // the fixed-width cells and pushed them off the rail's centre line.
             ScrollView(.vertical, showsIndicators: false) {
@@ -191,8 +193,9 @@ struct UnifiedRailView: View {
                 // then keeps the old selection/focus marks, so the moved icon
                 // stays highlighted after another service is actually in use.
                 VStack(spacing: 0) {
-                    ForEach(spaces) { space in
-                        let spaceLinks = links(in: space.id)
+                    ForEach(groups, id: \.space.id) { group in
+                        let space = group.space
+                        let spaceLinks = group.links
                         allServicesHeading(for: space)
                             // A gap before every group but the first, which
                             // the card's own padding already clears.
@@ -210,6 +213,7 @@ struct UnifiedRailView: View {
                         }
                     }
                 }
+                .animation(reorderAnimation, value: ReorderKey(ids: groups.flatMap(\.links).map(\.id)))
                 .padding(.vertical, ChorusCard.railPadding)
             }
 
@@ -570,7 +574,7 @@ struct UnifiedRailView: View {
     }
 
     /// A card 232 points wide under the traffic lights, its top edge level with
-    /// the web card's. The header sits at y 36: the 32 point band, then the
+    /// the web card's. The header sits at y 56: the 52 point band, then the
     /// card's 4 points of padding.
     private var verticalBody: some View {
         VStack(spacing: 0) {
@@ -589,6 +593,7 @@ struct UnifiedRailView: View {
                         }
                     }
                 }
+                .animation(reorderAnimation, value: ReorderKey(ids: filteredLinks.map(\.id)))
                 .padding(.vertical, ChorusCard.railPadding)
             }
 
@@ -750,6 +755,14 @@ struct UnifiedRailView: View {
                 }
             }
         }
+        .animation(reorderAnimation, value: ReorderKey(ids: filteredLinks.map(\.id)))
+    }
+
+    /// Rows and tabs settle into a new order with the chrome's spring, and
+    /// jump there under Reduce Motion. Keyed on `ReorderKey`, so a change of
+    /// selection or of space does not animate.
+    private var reorderAnimation: Animation? {
+        ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: reduceMotion)
     }
 
     /// Home URL of the currently selected service, for the nav home button.

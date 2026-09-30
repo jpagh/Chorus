@@ -4,7 +4,7 @@ What scripted input and the test suite cannot check, in the order that finds pro
 
 Record the result next to each item. An unrun item is not a passing item.
 
-## Next: the Paguro branch (`fix/paguro-findings`)
+## Next: the Paguro branches (`fix/paguro-findings`, `feat/paguro-look`)
 
 Run these on the build that will ship as 1.5.22. None has been run yet.
 
@@ -16,6 +16,10 @@ Run these on the build that will ship as 1.5.22. None has been run yet.
 6. **A Linear link in Slack** (or any link that another of your services covers, opened in a new window) switches to that service. A Sign in with Google window still opens as a window.
 7. **Export and import.** Export, then import the file into the Debug build. The confirmation lists the sites. Spaces with the same name merge, and each service asks you to sign in. Camera and microphone ask again.
 8. **About ▸ Show License Files in Finder** selects `THIRD_PARTY_NOTICES.md` inside the app.
+9. **The new look on macOS 14 or 15.** Open each of the four layouts. The red, yellow and green buttons sit in the middle of the band along the top, and nothing covers them. Resize the window, go full screen with ⌃⌘F and come back: the buttons return to the same spot. Do the full-screen part on macOS 26 as well, since no script could.
+10. **Tabs in the band.** In Bar along the top, click a tab, drag one to reorder it, and drag an empty part of the bar to move the window. A double-click on the empty part zooms.
+11. **Glass on macOS 26.** In Settings, set Window glass to Clear and then Regular, in light and dark. The desktop shows faintly behind the rail and the page stays solid. With Reduce Transparency on, the window goes solid.
+12. **A notice.** Turn Wi-Fi off. The offline card sits between the band and the page, and goes away when Wi-Fi comes back.
 
 ## Start here: 1.5.21 is published
 

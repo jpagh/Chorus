@@ -21,9 +21,21 @@ enum WindowGlassStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .clear: return "Clear"
+        case .regular: return "Regular"
+        }
+    }
+
     /// Whether this Mac can draw the glass styles at all.
+    /// A build made without the macOS 26 SDK has no glass layer to draw, even
+    /// when it runs on 26, so it answers no as well.
     static var isGlassAvailable: Bool {
+        #if compiler(>=6.2)
         if #available(macOS 26, *) { return true }
+        #endif
         return false
     }
 

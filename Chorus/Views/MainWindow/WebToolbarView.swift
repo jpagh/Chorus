@@ -60,8 +60,9 @@ struct WebNavButtons: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .fixedSize()
             // Outside the menu, because a menu's label draws only its image.
+            // Without `fixedSize` the menu takes the circle's whole 28 points,
+            // so a click on the ring opens it too.
             .navCircle()
             .disabled(currentPageURL == nil)
             .help(didCopy ? "Copied" : "Share this page")
