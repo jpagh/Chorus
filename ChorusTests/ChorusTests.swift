@@ -3290,6 +3290,64 @@ final class ChorusTests: XCTestCase {
         )
     }
 
+    /// The traffic-light move measured on a real window, so CI checks it on
+    /// macOS 14 and 15, where nobody can look. A window shaped like Chorus's
+    /// (hidden title, content under the title bar) gets the positioner; then
+    /// the test reads where AppKit put the buttons, before and after a resize,
+    /// and asks the window which view a click low in the band would reach. That
+    /// last one is what the bar's tabs need: the taller title bar must not take
+    /// the click.
+    @MainActor
+    func testTrafficLightsLandInTheBandOnARealWindow() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 900, height: 600),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+        window.contentView = content
+        let positioner = TrafficLightsPositioner.PositionerView(bandHeight: ChorusCard.topBand)
+        positioner.frame = content.bounds
+        content.addSubview(positioner)
+        window.orderFrontRegardless()
+        defer { window.close() }
+
+        func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.6)) }
+        func assertLightsCentred(_ label: String) throws {
+            let band = ChorusCard.topBand
+            let height = window.frame.height
+            let buttons = try [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map {
+                try XCTUnwrap(window.standardWindowButton($0), label)
+            }
+            let frames = buttons.map { $0.convert($0.bounds, to: nil) }
+            for frame in frames {
+                // Window coordinates run up from the bottom edge.
+                XCTAssertEqual(height - frame.midY, band / 2, accuracy: 1.5, "\(label): centre line")
+            }
+            XCTAssertEqual(frames[0].midX, band / 2, accuracy: 1.5, "\(label): first light's x")
+            XCTAssertLessThan(frames[0].maxX, frames[1].minX, "\(label): lights overlap")
+            XCTAssertLessThan(frames[2].maxX, SpaceStripMetrics.trafficLightsWidth, "\(label): lights pass the reserve")
+        }
+
+        settle()
+        try assertLightsCentred("after first layout")
+
+        window.setContentSize(NSSize(width: 1100, height: 720))
+        settle()
+        try assertLightsCentred("after resize")
+
+        // A click low in the band, away from the lights, reaches the content.
+        let frameView = try XCTUnwrap(content.superview)
+        let point = NSPoint(x: 500, y: window.frame.height - ChorusCard.topBand + 8)
+        let hit = frameView.hitTest(frameView.convert(point, from: nil))
+        XCTAssertTrue(hit.map { $0 === content || $0.isDescendant(of: content) } ?? false,
+                      "a click in the band hit \(String(describing: hit)) instead of the content")
+    }
+
     /// The lights sit on the band's centre line, as far in from the side as
     /// down from the top, at AppKit's own spacing, and end inside the width
     /// the bars leave for them.
