@@ -5,6 +5,8 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.5.23] - 2026-09-30
+
 ### Added
 
 - Drag the edge of the rail to make it as wide as you like. Pull it in past its narrowest width and the rail slides down to its icons, with the unread badges popping onto them; push it back out and the names return. Settings still has the switch, and it remembers the width you chose.
