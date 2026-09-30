@@ -57,13 +57,15 @@ struct WebNavButtons: View {
                 Image(systemName: didCopy ? "checkmark" : "square.and.arrow.up")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16, height: 14)
+                    .navCircle()
             }
-            .menuStyle(.borderlessButton)
+            // The button style draws the label as SwiftUI, circle and all, so
+            // the whole 28 points open the menu. The borderless style drew only
+            // the glyph and took clicks on it alone.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            // Outside the menu, because a menu's label draws only its image.
-            // Without `fixedSize` the menu takes the circle's whole 28 points,
-            // so a click on the ring opens it too.
-            .navCircle()
+            .fixedSize()
             .disabled(currentPageURL == nil)
             .help(didCopy ? "Copied" : "Share this page")
             .accessibilityLabel(didCopy ? "Link copied" : "Share this page")
