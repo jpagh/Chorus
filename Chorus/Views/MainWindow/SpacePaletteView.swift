@@ -42,8 +42,8 @@ enum SpacePalette {
 /// it, and its aggregate unread count. Two things that were free on the old
 /// rail are paid for here, and both are kept rather than dropped —
 /// drag-to-reorder and the per-space context menu — because `SpaceStripView`
-/// goes away at build step 5 and this is their new home. The reorder maths is
-/// `ServiceReorder`, moved across untouched.
+/// goes away at build step 5 and this is their new home. Reordering is the live
+/// drag of `LiveReorder`, shared with the strip and the all-services rail.
 ///
 /// The owner presents it, and owns any sheet it asks for:
 ///
@@ -162,7 +162,7 @@ struct SpacePaletteView: View {
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
         .liveReorderDrop([
-            .init(type: LiveReorder.spaceType, draggingID: draggingSpaceID) { liveMoveSpace($0, over: space.id) },
+            .init(type: LiveReorder.spaceType, draggingID: { draggingSpaceID }, move: { liveMoveSpace($0, over: space.id) }),
         ])
         .accessibilityAction(named: "Move up") { move(space, forward: false) }
         .accessibilityAction(named: "Move down") { move(space, forward: true) }

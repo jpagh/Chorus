@@ -166,7 +166,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: ChorusCard.topBand)
                 webContent
-                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth) }
+                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth, topInset: ChorusCard.topBand) }
             }
         case .allServices:
             HStack(spacing: 0) {
@@ -179,7 +179,7 @@ struct ContentView: View {
                     showsAllSpaces: true
                 )
                 webContent
-                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth) }
+                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth, topInset: ChorusCard.topBand) }
             }
         case .topBars:
             VStack(spacing: 0) {

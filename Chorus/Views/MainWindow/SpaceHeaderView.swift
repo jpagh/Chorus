@@ -37,7 +37,7 @@ struct SpaceHeaderView: View {
     var needsAttention: Bool = false
     var isMuted: Bool = false
     /// Whether the header carries the space's name. It follows the rail's
-    /// service rows: a 224 point header cannot sit above a 52 point column of
+    /// service rows: a full-width header cannot sit above a 52 point column of
     /// icons. Only the vertical rail ever asks for this — the horizontal bar has
     /// the room and keeps its name.
     var showsName: Bool = true
@@ -49,9 +49,6 @@ struct SpaceHeaderView: View {
     @State private var isHovering = false
     @Environment(\.railWidth) private var railWidth
 
-    /// Matches the rail and row widths in `ServiceRowView`, so the header and
-    /// the services below it line up on both edges.
-    static let headerWidth: CGFloat = ServiceRowView.rowWidth
     static let headerHeight: CGFloat = 36
     /// The nameless header: the emoji alone, matching the compact service cell
     /// under it.

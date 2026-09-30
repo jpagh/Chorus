@@ -2332,6 +2332,9 @@ final class ChorusTests: XCTestCase {
     /// the ring SwiftUI puts on the first rail row at launch stays hidden.
     func testFocusMarksFollowTheLastInput() {
         XCTAssertEqual(FocusVisibility.visibility(after: .keyDown), true)
+        XCTAssertEqual(FocusVisibility.visibility(after: .keyDown, modifiers: .option), true, "Option-arrow reorders")
+        XCTAssertNil(FocusVisibility.visibility(after: .keyDown, modifiers: .command), "a shortcut is not moving around")
+        XCTAssertNil(FocusVisibility.visibility(after: .keyDown, modifiers: [.control, .shift]))
         XCTAssertEqual(FocusVisibility.visibility(after: .leftMouseDown), false)
         XCTAssertEqual(FocusVisibility.visibility(after: .rightMouseDown), false)
         XCTAssertNil(FocusVisibility.visibility(after: .mouseMoved))
@@ -2341,8 +2344,24 @@ final class ChorusTests: XCTestCase {
     /// less the padding between them.
     func testRailRowCornersNestInsideTheCard() {
         XCTAssertEqual(ChorusCard.cornerRadius - ChorusCard.railPadding, ChorusRadius.control)
-        XCTAssertEqual(ServiceRowView.rowWidth, ServiceRowView.railCardWidth(showsName: true) - 2 * ChorusCard.railPadding)
         XCTAssertEqual(ServiceRowView.compactRailCellWidth, ServiceRowView.railCardWidth(showsName: false) - 2 * ChorusCard.railPadding)
+        // At every width the rail can be dragged to, a row fills the column
+        // less the padding each side, and never gets too narrow for an icon,
+        // a name and a count.
+        for rail in stride(from: RailWidth.minNamed, through: RailWidth.maxNamed, by: 10) {
+            let row = ServiceRowView.rowWidth(forRail: rail)
+            XCTAssertEqual(row, rail - ChorusCard.gutter - 2 * ChorusCard.railPadding)
+            XCTAssertGreaterThanOrEqual(row, 130)
+        }
+    }
+
+    /// VoiceOver hears what the pulse shows.
+    func testSpokenLabelSaysACountIsNew() {
+        let plain = ServiceAccessibility.label(name: "Slack", badgeCount: 3, isHibernated: false, isMuted: false)
+        let fresh = ServiceAccessibility.label(name: "Slack", badgeCount: 3, isHibernated: false, isMuted: false, needsAttention: true)
+        XCTAssertEqual(plain, "Slack, 3 unread")
+        XCTAssertEqual(fresh, "Slack, 3 unread, new since you last looked")
+        XCTAssertEqual(ServiceAccessibility.label(name: "Slack", badgeCount: 0, isHibernated: false, isMuted: false, needsAttention: true), "Slack")
     }
 
     /// Dragging the rail's edge switches names once the drag has gone far
@@ -2394,7 +2413,13 @@ final class ChorusTests: XCTestCase {
         let away = UUID(), here = UUID()
         badges.activeServiceID = here
 
+        // The first count a service reports is where it starts, not a rise:
+        // otherwise every service with unread mail pulses after each launch.
         badges.updateBadge(for: away, count: 2, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(away), "the launch report must not pulse")
+        badges.updateBadge(for: here, count: 1, isMuted: false)
+
+        badges.updateBadge(for: away, count: 3, isMuted: false)
         XCTAssertTrue(badges.needsAttention(away))
         badges.updateBadge(for: here, count: 3, isMuted: false)
         XCTAssertFalse(badges.needsAttention(here))
@@ -2408,20 +2433,32 @@ final class ChorusTests: XCTestCase {
 
         // Opening it lets it go.
         badges.updateBadge(for: away, count: 4, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
         badges.activeServiceID = away
         XCTAssertFalse(badges.needsAttention(away))
 
         // A muted service never pulses.
         let muted = UUID()
         badges.updateBadge(for: muted, count: 5, isMuted: true)
+        badges.updateBadge(for: muted, count: 6, isMuted: true)
         XCTAssertFalse(badges.needsAttention(muted))
+
+        // And a deleted one forgets it.
+        badges.activeServiceID = here
+        badges.updateBadge(for: away, count: 5, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.removeBadge(for: away)
+        XCTAssertFalse(badges.needsAttention(away))
     }
 
     /// The web card's corner follows a page's scroll bar: an 11 point thumb
     /// (a 5.5 point round end) 3 points in from the edge.
     func testWebCardCornerFollowsTheScrollBar() {
-        XCTAssertEqual(ChorusCard.webCornerRadius, 5.5 + 3, accuracy: 0.5)
-        XCTAssertTrue(ChorusRadius.allValues.contains(ChorusCard.webCornerRadius))
+        // Measured: an 11 point thumb, so a 5.5 point round end, 3 points in.
+        let thumbWidth: CGFloat = 11, inset: CGFloat = 3
+        XCTAssertEqual(ChorusCard.webCornerRadius, (thumbWidth / 2 + inset).rounded(.down))
+        // The rail cards keep their larger corner so their rows still nest.
+        XCTAssertNotEqual(ChorusCard.cornerRadius, ChorusCard.webCornerRadius)
     }
 
     /// Pause Audio has to hold on a service in the background. Measured on

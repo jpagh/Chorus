@@ -1626,7 +1626,10 @@ final class AppState {
         // While they were not, this exact order was one of the shapes that
         // trapped. An orphaned service's only links are in this space, so this
         // covers them too.
-        for link in space.serviceLinks where link.modelContext != nil {
+        // Only rows that still point at this space: a link that a drag or
+        // Move to Space re-pointed elsewhere could linger in this inverse on
+        // macOS 14, and deleting it would take its service's data with it.
+        for link in space.serviceLinks where link.modelContext != nil && link.liveSpace?.id == spaceID {
             context.delete(link)
         }
         for service in reclaimed { context.delete(service) }
@@ -3312,6 +3315,7 @@ extension AppState {
     /// one past 99 for the "99+" badge, and some zeros so a few rows stay
     /// clear.
     static let debugMockBadgePattern = [3, 12, 128, 0, 1, 7, 42, 0, 5, 2]
+    private static var debugMockTicker: Task<Void, Never>?
 
     /// Gives every service a made-up count when the switch is on, and clears
     /// them when it is off.
@@ -3333,8 +3337,11 @@ extension AppState {
     /// Every six seconds one made-up count goes up by one, so the flash and
     /// the pulse can be seen without waiting for real mail.
     private func startDebugMockTicker(serviceIDs: [UUID]) {
+        // One ticker for the app: the window's launch task runs again each
+        // time the window is reopened, and each run would start another.
+        Self.debugMockTicker?.cancel()
         guard !serviceIDs.isEmpty else { return }
-        Task { @MainActor [weak self] in
+        Self.debugMockTicker = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(6))
                 guard let self, UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey),

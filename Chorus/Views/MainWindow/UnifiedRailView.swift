@@ -15,9 +15,9 @@ import os
 /// `hybrid` and `topBars` collapsed into a single layout: with one rail there
 /// are only two arrangements left, on the left or along the top.
 ///
-/// Everything the audit rated severity 0 came across untouched: the reorder
-/// maths (`ServiceReorder`), drag and drop, the arrow keys, the VoiceOver move
-/// actions, and the donation button's reserved corner. The space half of that
+/// The arrow keys, the VoiceOver move actions and the donation button's
+/// reserved corner came across from the old rails. Drag and drop has since
+/// been rewritten as a live reorder; see `LiveReorder`. The space half of that
 /// plumbing now lives in `SpacePaletteView`, which the header opens.
 struct UnifiedRailView: View {
     @Binding var selectedSpaceID: UUID?
@@ -301,8 +301,13 @@ struct UnifiedRailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
         .liveReorderDrop([
-            .init(type: LiveReorder.spaceType, draggingID: draggingSpaceID) { liveMoveSpace($0, over: space.id) },
-            .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, toTopOf: space) },
+            .init(type: LiveReorder.spaceType, draggingID: { draggingSpaceID }, move: { liveMoveSpace($0, over: space.id) }),
+            .init(
+                type: LiveReorder.serviceType,
+                draggingID: { draggingLinkID },
+                move: { liveMoveLinkToTop($0, of: space) },
+                drop: { dropLinkAtTop($0, of: space) }
+            ),
         ])
         .contextMenu { spaceContextMenu(for: space) }
         .accessibilityAction(named: "Move up") { moveSpace(space, forward: false) }
@@ -335,7 +340,7 @@ struct UnifiedRailView: View {
         .help("\(space.name), empty")
         .accessibilityLabel("\(space.name), empty")
         .liveReorderDrop([
-            .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, toTopOf: space) },
+            .init(type: LiveReorder.serviceType, draggingID: { draggingLinkID }, drop: { dropLinkAtTop($0, of: space) }),
         ])
     }
 
@@ -378,7 +383,12 @@ struct UnifiedRailView: View {
             ServiceDragPreview(service: service)
         }
         .liveReorderDrop([
-            .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLink($0, over: link, in: space) },
+            .init(
+                type: LiveReorder.serviceType,
+                draggingID: { draggingLinkID },
+                move: { liveMoveLink($0, over: link, in: space) },
+                drop: { dropLink($0, over: link, in: space) }
+            ),
         ])
         .accessibilityAction(named: "Move up") { moveServiceWithinSpace(link, forward: false) }
         .accessibilityAction(named: "Move down") { moveServiceWithinSpace(link, forward: true) }
@@ -391,44 +401,24 @@ struct UnifiedRailView: View {
         }
     }
 
+    /// Add service over Add space, one full cell each with or without names:
+    /// side by side, the nameless pair shared 32 points and read as one
+    /// cramped control.
     private var allServicesAddButtons: some View {
-        Group {
-            if showServiceNames {
-                VStack(spacing: 2) {
-                    allServicesAddButton(
-                        title: "Add service",
-                        systemImage: "plus",
-                        disabled: selectedSpaceID == nil
-                    ) {
-                        showingAddService = true
-                    }
-                    allServicesAddButton(
-                        title: "Add space",
-                        systemImage: "folder.badge.plus",
-                        disabled: false
-                    ) {
-                        showingAddSpace = true
-                    }
-                }
-            } else {
-                // Stacked, one full cell each: side by side they shared 32
-                // points and read as one cramped control.
-                VStack(spacing: 2) {
-                    allServicesAddButton(
-                        title: "Add service",
-                        systemImage: "plus",
-                        disabled: selectedSpaceID == nil
-                    ) {
-                        showingAddService = true
-                    }
-                    allServicesAddButton(
-                        title: "Add space",
-                        systemImage: "folder.badge.plus",
-                        disabled: false
-                    ) {
-                        showingAddSpace = true
-                    }
-                }
+        VStack(spacing: 2) {
+            allServicesAddButton(
+                title: "Add service",
+                systemImage: "plus",
+                disabled: selectedSpaceID == nil
+            ) {
+                showingAddService = true
+            }
+            allServicesAddButton(
+                title: "Add space",
+                systemImage: "folder.badge.plus",
+                disabled: false
+            ) {
+                showingAddSpace = true
             }
         }
         .foregroundStyle(.secondary)
@@ -540,9 +530,9 @@ struct UnifiedRailView: View {
         }
     }
 
-    /// A card 232 points wide under the traffic lights, its top edge level with
-    /// the web card's. The header sits at y 56: the 52 point band, then the
-    /// card's 4 points of padding.
+    /// One list, on the window under the traffic lights, as wide as the rail
+    /// has been dragged (see `RailWidth`); its top edge is level with the web
+    /// card's. The header sits at y 58: the 52 point band, then 6 of padding.
     private var verticalBody: some View {
         VStack(spacing: 0) {
             spaceHeader
@@ -767,7 +757,7 @@ struct UnifiedRailView: View {
                 ServiceDragPreview(service: service)
             }
             .liveReorderDrop([
-                .init(type: LiveReorder.serviceType, draggingID: draggingLinkID) { liveMoveLinkInSpace($0, over: link) },
+                .init(type: LiveReorder.serviceType, draggingID: { draggingLinkID }, move: { liveMoveLinkInSpace($0, over: link) }),
             ])
             .accessibilityAction(named: "Move up") { moveServiceUp(link) }
             .accessibilityAction(named: "Move down") { moveServiceDown(link) }
@@ -872,7 +862,7 @@ struct UnifiedRailView: View {
     /// In the wide vertical rail this is a labelled row like the services above
     /// it, with the plus sitting in an 18 point box so its text starts on the same
     /// x as theirs. Everywhere else it is the plus alone: the horizontal bar has
-    /// no width to spare, and a nameless rail is 52 points wide, so the 224 point
+    /// no width to spare, and a nameless rail is 52 points wide, so the full-width
     /// labelled row would hang out of it.
     private var addServiceButton: some View {
         Button {
@@ -1210,37 +1200,57 @@ struct UnifiedRailView: View {
         save("reorder services")
     }
 
-    /// In the all-services rail: over a row of the same space, the dragged
-    /// service takes its slot; over a row of another space, it moves into that
-    /// space at that row. `placeService` keeps the membership and its data and
-    /// refuses a second copy of a service in one space.
+    /// In the all-services rail, over a row of the dragged service's own space:
+    /// it takes that row's slot, live. Over another space's row nothing moves
+    /// until the drop (`dropLink`), so a cancelled drag leaves the service
+    /// where it was.
     private func liveMoveLink(_ dragged: UUID, over target: SpaceServiceLink, in space: Space) {
-        guard dragged != target.id,
-              let draggedLink = allLinks.first(where: { $0.id == dragged }),
-              let source = draggedLink.liveSpace
+        guard let source = allLinks.first(where: { $0.id == dragged })?.liveSpace,
+              source.id == space.id
         else { return }
-        if source.id == space.id {
-            let links = links(in: space.id)
-            guard let ids = LiveReorder.moving(dragged, over: target.id, in: links.map(\.id)) else { return }
-            let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
-            for (index, id) in ids.enumerated() {
-                linksByID[id]?.sortOrder = index
-            }
-            save("reorder services")
-        } else {
-            placeService(droppedLinkID: dragged, in: space, relativeTo: target, placement: .before)
+        let links = links(in: space.id)
+        guard let ids = LiveReorder.moving(dragged, over: target.id, in: links.map(\.id)) else { return }
+        let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
+        for (index, id) in ids.enumerated() {
+            linksByID[id]?.sortOrder = index
         }
+        save("reorder services")
     }
 
-    /// Over a space's heading or its empty slot: the dragged service goes to
-    /// the top of that space.
-    private func liveMoveLink(_ dragged: UUID, toTopOf space: Space) {
-        let links = links(in: space.id)
-        if let first = links.first {
-            liveMoveLink(dragged, over: first, in: space)
-        } else {
-            placeService(droppedLinkID: dragged, in: space, relativeTo: nil, placement: .before)
+    /// Over a space's heading: a service of that same space goes to its top,
+    /// live. One from another space waits for the drop (`dropLinkAtTop`).
+    private func liveMoveLinkToTop(_ dragged: UUID, of space: Space) {
+        guard let first = links(in: space.id).first else { return }
+        liveMoveLink(dragged, over: first, in: space)
+    }
+
+    /// Released over a row: a service from another space moves into this one
+    /// at that row. `placeService` keeps the membership and its data, and
+    /// refuses a second copy of a service in one space, which reports the
+    /// drop as not taken.
+    private func dropLink(_ dragged: UUID, over target: SpaceServiceLink, in space: Space) -> Bool {
+        guard let source = allLinks.first(where: { $0.id == dragged })?.liveSpace else { return false }
+        guard source.id != space.id else { return true }
+        return moveLinkAcrossSpaces(dragged, into: space, relativeTo: target)
+    }
+
+    /// Released over a space's heading or its empty slot: a service from
+    /// another space goes to the top of this one.
+    private func dropLinkAtTop(_ dragged: UUID, of space: Space) -> Bool {
+        guard let source = allLinks.first(where: { $0.id == dragged })?.liveSpace else { return false }
+        guard source.id != space.id else { return true }
+        return moveLinkAcrossSpaces(dragged, into: space, relativeTo: links(in: space.id).first)
+    }
+
+    /// Moves a membership into another space and brings its badge up to date,
+    /// since the new space may be muted when the old one was not.
+    private func moveLinkAcrossSpaces(_ dragged: UUID, into space: Space, relativeTo target: SpaceServiceLink?) -> Bool {
+        let serviceID = allLinks.first(where: { $0.id == dragged })?.liveService?.id
+        let moved = placeService(droppedLinkID: dragged, in: space, relativeTo: target, placement: .before)
+        if moved, let serviceID {
+            appState.refreshBadgeState(for: serviceID)
         }
+        return moved
     }
 
     private func moveServiceWithinSpace(_ link: SpaceServiceLink, forward: Bool) {

@@ -8,7 +8,8 @@ import SwiftUI
 /// were two identical squares and the name lived only in a tooltip. Both axes
 /// now carry the name.
 ///
-/// Geometry: a 220 by 28 row inside the 232 point rail card, an 18 point icon
+/// Geometry: a 28 point row as wide as the rail allows (220 at the default
+/// width), an 18 point icon
 /// at x 8, the label at x 34, and the badge trailing. The horizontal tab keeps
 /// the same parts and hugs its label instead of taking a fixed width.
 ///
@@ -48,9 +49,10 @@ struct ServiceRowView: View {
     /// The rail's width, which the named row fills. See `RailWidth`.
     @Environment(\.railWidth) private var railWidth
 
-    /// What the vertical rail takes from the window: the 8 point gutter and the
-    /// card, whose 6 point padding holds the 220 point row. The gap between
-    /// the rail card and the web card is the web card's own gutter.
+    /// The rail's default width with names, gutter included; the rail itself can
+    /// be dragged from 150 to 300 (see `RailWidth`). A row is that less the 8
+    /// point gutter and 6 points of padding each side, 220 at the default. The
+    /// gap between the rail and the web card is the web card's own gutter.
     static let railWidth: CGFloat = 240
     static let rowWidth: CGFloat = rowWidth(forRail: railWidth)
 
@@ -125,7 +127,8 @@ struct ServiceRowView: View {
             micActive: micActive,
             micMuted: micMuted,
             isPlayingAudio: isPlayingAudio,
-            health: health
+            health: health,
+            needsAttention: needsAttention
         )
         guard let spaceName else { return label }
         return "\(label), \(spaceName)"

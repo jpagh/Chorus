@@ -40,11 +40,14 @@ final class BadgeManager {
     }
 
     /// Records a change of count for the attention rule: up while elsewhere
-    /// asks for attention, down to zero lets it go.
-    private func noteCountChange(_ id: UUID, from old: Int, to new: Int) {
+    /// asks for attention, down to zero lets it go. The first count seen for a
+    /// service this session (`old` nil) is where it starts, not a rise: at
+    /// launch every service reports its unread count, and treating those as
+    /// new would set every one of them pulsing after each relaunch.
+    private func noteCountChange(_ id: UUID, from old: Int?, to new: Int) {
         if new == 0 {
             attentionIDs.remove(id)
-        } else if new > old, id != activeServiceID {
+        } else if let old, new > old, id != activeServiceID {
             attentionIDs.insert(id)
         }
     }
@@ -123,7 +126,7 @@ final class BadgeManager {
         // garbage-large value would corrupt totalCount/aggregateCount — one
         // negative can zero out or hide the dock badge for every other service.
         let clamped = max(0, min(count, 999))
-        noteCountChange(instanceID, from: counts[instanceID] ?? 0, to: clamped)
+        noteCountChange(instanceID, from: counts[instanceID], to: clamped)
         // Always store the (clamped) true count; muting / show-badge only
         // toggles the display mask. Storing the real value (rather than 0) keeps
         // adaptive polling's delta detection correct for muted services and
@@ -140,6 +143,9 @@ final class BadgeManager {
     func removeBadge(for instanceID: UUID) {
         counts.removeValue(forKey: instanceID)
         attentionIDs.remove(instanceID)
+        #if DEBUG
+        mockCounts.removeValue(forKey: instanceID)
+        #endif
         maskedIDs.remove(instanceID)
         updateDockBadge()
     }

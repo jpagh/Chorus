@@ -120,11 +120,14 @@ enum ServiceAccessibility {
         micActive: Bool = false,
         micMuted: Bool = false,
         isPlayingAudio: Bool = false,
-        health: ServiceHealth = .live
+        health: ServiceHealth = .live,
+        needsAttention: Bool = false
     ) -> String {
         var parts = [name]
         if badgeCount > 0 {
             parts.append(badgeCount == 1 ? "1 unread" : "\(badgeCount) unread")
+            // What the pulse says to the eye, said to VoiceOver.
+            if needsAttention { parts.append("new since you last looked") }
         }
         if isHibernated { parts.append("hibernated") }
         if isMuted { parts.append("muted") }
@@ -271,7 +274,17 @@ private struct CountMotion: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(isFlashing ? 1.35 : (isPulsing ? 1.12 : 1))
+            // One scale each, so the flash's spring never takes over the
+            // pulse's repeating animation and leaves it frozen part way.
+            .scaleEffect(isPulsing ? 1.12 : 1)
+            .scaleEffect(isFlashing ? 1.25 : 1)
+            .onChange(of: reduceMotion) { _, reduced in
+                if reduced {
+                    isPulsing = false
+                } else if needsAttention {
+                    startPulse()
+                }
+            }
             .onChange(of: count) { old, new in
                 guard new > old, !reduceMotion else { return }
                 withAnimation(.spring(response: 0.16, dampingFraction: 0.45)) { isFlashing = true }
@@ -283,11 +296,15 @@ private struct CountMotion: ViewModifier {
             .onChange(of: needsAttention, initial: true) { _, waiting in
                 guard !reduceMotion else { isPulsing = false; return }
                 if waiting {
-                    withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { isPulsing = true }
+                    startPulse()
                 } else {
                     withAnimation(.easeOut(duration: 0.2)) { isPulsing = false }
                 }
             }
+    }
+
+    private func startPulse() {
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { isPulsing = true }
     }
 }
 

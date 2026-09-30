@@ -4,9 +4,9 @@ import SwiftData
 /// The column of spaces down the left of the hybrid layout, with the current
 /// space's services in a bar along the top beside it.
 ///
-/// Restored from the two-rail layouts rather than rewritten: the reorder maths,
-/// drag and drop, arrow keys and VoiceOver move actions are the parts the UX
-/// audit rated severity 0, and they come back as they were. What is new is that
+/// Restored from the two-rail layouts: the arrow keys and the VoiceOver move
+/// actions come back as they were, and dragging a space reorders the strip
+/// live (see `LiveReorder`). What is new is that
 /// a cell can carry its space's name, which answers the finding that retired the
 /// strip: a column of unlabelled emoji, with the name only in a tooltip. The
 /// setting that turns the names on widens the strip to fit them.
@@ -143,7 +143,7 @@ struct SpaceStripView: View {
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
         .liveReorderDrop([
-            .init(type: LiveReorder.spaceType, draggingID: draggingSpaceID) { liveMoveSpace($0, over: space.id) },
+            .init(type: LiveReorder.spaceType, draggingID: { draggingSpaceID }, move: { liveMoveSpace($0, over: space.id) }),
         ])
         .accessibilityAction(named: "Move up") { moveSpaceUp(space) }
         .accessibilityAction(named: "Move down") { moveSpaceDown(space) }
@@ -263,7 +263,6 @@ struct SpaceStripView: View {
         save("move space down")
     }
 
-    @discardableResult
     /// Moves the dragged space into the slot of the one under the pointer and
     /// saves at once, so a drag that ends outside the strip keeps what it showed.
     private func liveMoveSpace(_ dragged: UUID, over target: UUID) {
@@ -342,7 +341,7 @@ private struct SpaceButton: View {
 
     /// The wide strip: emoji and name, laid out like a service row so the two
     /// rails read as one piece of chrome. It fills the strip's width rather than
-    /// hugging its name, so dragging the strip wider widens the rows with it.
+    /// hugging its name, so the named strip's rows all line up.
     private var namedRow: some View {
         HStack(spacing: 8) {
             Text(space.emoji)
