@@ -38,6 +38,8 @@ struct UnifiedRailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Draws the focus ring only once the keyboard is in use. See `FocusVisibility`.
+    private var focusVisibility = FocusVisibility.shared
 
     /// Whether service cells carry their names. See `ServiceNameVisibility`.
     @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
@@ -72,7 +74,8 @@ struct UnifiedRailView: View {
     /// Measured size of each drop cell, so the before/after split uses the target's
     /// true midpoint instead of a hardcoded guess.
     @State private var cellSizes: [UUID: CGSize] = [:]
-    @State private var spaceSeparatorSizes: [UUID: CGSize] = [:]
+    /// The space being dragged in the all-services rail. See `LiveReorder`.
+    @State private var draggingSpaceID: UUID?
 
     /// The horizontal bar is the top band: a 32 point header and 32 point tabs
     /// with 10 points clear above and below.
@@ -80,6 +83,8 @@ struct UnifiedRailView: View {
     /// How much of the scrolling tab row's trailing edge is softened to say the
     /// row runs past the window.
     private static let overflowFadeFraction: CGFloat = 0.06
+    /// How far rows sit in from their space's heading in the all-services rail.
+    private static let groupIndent: CGFloat = 10
 
     private var filteredLinks: [SpaceServiceLink] {
         guard let spaceID = selectedSpaceID else { return [] }
@@ -198,8 +203,9 @@ struct UnifiedRailView: View {
                         let spaceLinks = group.links
                         allServicesHeading(for: space)
                             // A gap before every group but the first, which
-                            // the card's own padding already clears.
-                            .padding(.top, space.id == spaces.first?.id ? 0 : 6)
+                            // the card's own padding already clears. More room
+                            // above a heading than below it ties it to its rows.
+                            .padding(.top, space.id == spaces.first?.id ? 0 : 12)
 
                         if spaceLinks.isEmpty {
                             emptySpaceCell(for: space)
@@ -236,11 +242,13 @@ struct UnifiedRailView: View {
         } label: {
             Group {
                 if showServiceNames {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        // Lighter than the service icons under it, so the
+                        // heading reads as a label and not as one more row.
                         Text(space.emoji)
-                            .font(.system(size: 12))
-                            .frame(width: 18)
-                            .opacity(space.isMutedEffective ? 0.5 : 1)
+                            .font(.system(size: 11))
+                            .frame(width: 14)
+                            .opacity(space.isMutedEffective ? 0.4 : 0.8)
                             .accessibilityHidden(true)
                         Text(space.name)
                             .font(ChorusType.caption)
@@ -263,7 +271,7 @@ struct UnifiedRailView: View {
                             .accessibilityHidden(true)
                         separatorLine(selected: selected)
                     }
-                    .frame(width: ServiceRowView.compactCellWidth)
+                    .frame(width: ServiceRowView.compactRailCellWidth)
                 }
             }
             .frame(height: 24)
@@ -273,40 +281,27 @@ struct UnifiedRailView: View {
         .help(space.isMutedEffective ? "\(space.name) (muted)" : space.name)
         .accessibilityLabel(space.name)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .draggable(space.id.uuidString) {
+        // Spaces reorder live as a heading is dragged over the others; a
+        // service dropped on a heading moves into that space. See
+        // `LiveReorder`.
+        .onDrag {
+            draggingSpaceID = space.id
+            return LiveReorder.itemProvider(forSpace: space.id)
+        } preview: {
             Text(space.emoji)
                 .font(.title3)
                 .padding(6)
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .dropDestination(for: String.self) { items, location in
-            guard let raw = items.first, let droppedID = UUID(uuidString: raw) else { return false }
-
-            if spaces.contains(where: { $0.id == droppedID }) {
-                let midpoint = (spaceSeparatorSizes[space.id]?.height).map { $0 / 2 } ?? 12
-                let placement: ServiceReorderPlacement = location.y < midpoint ? .before : .after
-                return reorderSpace(
-                    droppedSpaceID: droppedID,
-                    relativeTo: space,
-                    placement: placement
-                )
+        .onDrop(of: [LiveReorder.spaceType, .plainText, .utf8PlainText], delegate: LiveSpaceDropDelegate(
+            targetID: space.id,
+            draggingID: draggingSpaceID,
+            move: liveMoveSpace,
+            onOtherDrop: { info in
+                dropService(from: info, into: space)
             }
-
-            return placeService(
-                droppedLinkID: droppedID,
-                in: space,
-                relativeTo: nil,
-                placement: .before
-            )
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size, initial: true) {
-                    spaceSeparatorSizes[space.id] = proxy.size
-                }
-            }
-        )
+        ))
         .contextMenu { spaceContextMenu(for: space) }
         .accessibilityAction(named: "Move up") { moveSpace(space, forward: false) }
         .accessibilityAction(named: "Move down") { moveSpace(space, forward: true) }
@@ -335,9 +330,9 @@ struct UnifiedRailView: View {
             Text("Empty")
                 .font(ChorusType.caption)
                 .foregroundStyle(ChorusColor.secondaryText)
-                // 34 puts the word where the row labels start.
+                // Where the indented row labels start.
                 .frame(maxWidth: .infinity, alignment: showServiceNames ? .leading : .center)
-                .padding(.horizontal, showServiceNames ? 34 : 0)
+                .padding(.horizontal, showServiceNames ? 34 + Self.groupIndent : 0)
                 .frame(height: ServiceRowView.rowHeight)
                 .contentShape(Rectangle())
         }
@@ -377,9 +372,10 @@ struct UnifiedRailView: View {
             muted: muted,
             media: media,
             health: health,
-            focused: focusedAllServicesLinkID == link.id,
+            focused: focusedAllServicesLinkID == link.id && focusVisibility.isVisible,
             showsName: showServiceNames,
             spaceName: space.name,
+            indent: showServiceNames ? Self.groupIndent : 0,
             selectionAction: {
                 selectedSpaceID = space.id
                 selectedServiceID = service.id
@@ -786,7 +782,7 @@ struct UnifiedRailView: View {
         // already says why it is not loaded — so it reports live and draws no dot.
         let health = hibernated ? ServiceHealth.live : appState.webViewPool.health(for: service.id)
 
-        cell(for: link, service: service, isSelected: isSel, badge: badge, hibernated: hibernated, muted: muted, media: media, health: health, focused: focusedServiceID == service.id)
+        cell(for: link, service: service, isSelected: isSel, badge: badge, hibernated: hibernated, muted: muted, media: media, health: health, focused: focusedServiceID == service.id && focusVisibility.isVisible)
             .draggable(link.id.uuidString) {
                 // Custom drag preview. Source-dimming is left to SwiftUI:
                 // manually tracking a "dragging" id can't be cleared reliably —
@@ -856,6 +852,7 @@ struct UnifiedRailView: View {
         focused: Bool,
         showsName: Bool? = nil,
         spaceName: String? = nil,
+        indent: CGFloat = 0,
         selectionAction: (() -> Void)? = nil
     ) -> some View {
         ServiceRowView(
@@ -872,7 +869,8 @@ struct UnifiedRailView: View {
             health: health,
             showsName: showsName ?? showServiceNames,
             spaceName: spaceName,
-            isFocused: focused
+            isFocused: focused,
+            indent: indent
         ) {
             if let selectionAction {
                 selectionAction()
@@ -950,7 +948,7 @@ struct UnifiedRailView: View {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))
                         .frame(
-                            width: ServiceRowView.compactCellWidth,
+                            width: axis == .vertical ? ServiceRowView.compactRailCellWidth : ServiceRowView.compactCellWidth,
                             height: axis == .vertical ? ServiceRowView.rowHeight : ServiceRowView.tabHeight
                         )
                 }
@@ -1243,26 +1241,32 @@ struct UnifiedRailView: View {
         save(forward ? "move space down" : "move space up")
     }
 
-    @discardableResult
-    private func reorderSpace(
-        droppedSpaceID: UUID,
-        relativeTo target: Space,
-        placement: ServiceReorderPlacement
-    ) -> Bool {
+    /// Moves the dragged space into the slot of the one under the pointer and
+    /// saves at once. See `LiveReorder`.
+    private func liveMoveSpace(_ dragged: UUID, over target: UUID) {
+        guard let ids = LiveReorder.moving(dragged, over: target, in: spaces.map(\.id)) else { return }
         let spacesByID = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
-        guard let reorderedIDs = ServiceReorder.reorderedIDs(
-            spaces.map(\.id),
-            moving: droppedSpaceID,
-            relativeTo: target.id,
-            placement: placement
-        ) else {
-            return false
+        for (index, id) in ids.enumerated() {
+            spacesByID[id]?.sortOrder = index
         }
+        save("reorder spaces")
+    }
 
-        for (order, id) in reorderedIDs.enumerated() {
-            spacesByID[id]?.sortOrder = order
+    /// A service dropped on a space's heading goes to the top of that space.
+    /// The drop carries the service's link id as text, which loads
+    /// asynchronously, so the move runs once it has arrived.
+    private func dropService(from info: DropInfo, into space: Space) -> Bool {
+        guard let provider = info.itemProviders(for: [.plainText, .utf8PlainText]).first else { return false }
+        // The id crosses into the callback, not the model, which is not Sendable.
+        let spaceID = space.id
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let raw = object as? String, let linkID = UUID(uuidString: raw) else { return }
+            Task { @MainActor in
+                guard let target = spaces.first(where: { $0.modelContext != nil && $0.id == spaceID }) else { return }
+                _ = placeService(droppedLinkID: linkID, in: target, relativeTo: nil, placement: .before)
+            }
         }
-        return save("reorder spaces")
+        return true
     }
 
     private func moveServiceWithinSpace(_ link: SpaceServiceLink, forward: Bool) {

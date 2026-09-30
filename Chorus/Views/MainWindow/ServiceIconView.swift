@@ -182,6 +182,9 @@ struct BadgeCountView: View {
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
             .font(.system(size: 9, weight: .bold))
+            // Its own width, whatever it is offered: laid over an 18 point
+            // icon, "99+" was cut down to an ellipsis.
+            .fixedSize()
             .foregroundStyle(.white)
             .padding(.horizontal, 4)
             .frame(minWidth: 16, minHeight: 16)
@@ -194,5 +197,21 @@ struct BadgeCountView: View {
                     )
             )
             .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// Puts a count badge over this view's top-trailing corner, the way the
+    /// Dock does: the badge's middle sits inside the corner, so it plainly
+    /// overlaps the edge, a selection fill or a focus ring, instead of grazing
+    /// it. Used on the nameless cells and tiles; rows with names carry their
+    /// badge inline.
+    func cornerBadge(_ count: Int, visible: Bool = true) -> some View {
+        overlay(alignment: .topTrailing) {
+            if visible && count > 0 {
+                BadgeCountView(count: count)
+                    .offset(x: 5, y: -5)
+            }
+        }
     }
 }

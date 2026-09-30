@@ -1,4 +1,6 @@
 import SwiftUI
+import Observation
+import UniformTypeIdentifiers
 
 /// Window-drag plumbing and the reorder maths the rail depends on.
 ///
@@ -174,5 +176,110 @@ enum SpaceStripMetrics {
     /// flush, while the compact one leaves 30 points of them overhanging.
     static func barLeadingInset(stripWidth: CGFloat, lightsWidth: CGFloat) -> CGFloat {
         Swift.max(0, lightsWidth - stripWidth)
+    }
+}
+
+/// Whether keyboard focus should be drawn, the way browsers answer
+/// `:focus-visible`. A key press turns the marks on and a click turns them
+/// off, so the ring that SwiftUI's first-responder pass put on the first rail
+/// row at launch no longer shows until the keyboard is in use.
+@MainActor
+@Observable
+final class FocusVisibility {
+    static let shared = FocusVisibility()
+
+    private(set) var isVisible = false
+    @ObservationIgnored private var monitor: Any?
+
+    private init() {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { event in
+            let visible = FocusVisibility.visibility(after: event.type)
+            MainActor.assumeIsolated {
+                if let visible, FocusVisibility.shared.isVisible != visible {
+                    FocusVisibility.shared.isVisible = visible
+                }
+            }
+            return event
+        }
+    }
+
+    /// What an event means for the marks: on after a key, off after a click,
+    /// and no change for anything else.
+    nonisolated static func visibility(after type: NSEvent.EventType) -> Bool? {
+        switch type {
+        case .keyDown: return true
+        case .leftMouseDown, .rightMouseDown: return false
+        default: return nil
+        }
+    }
+}
+
+/// Spaces reorder live while you drag one: as the pointer enters another
+/// space's slot, the dragged space moves into it, and the order is saved as
+/// it goes. The old drop-to-place version decided before or after from where
+/// the drop landed, and a drag downward never reached its drop handler.
+///
+/// The drag carries a type of Chorus's own, visible only inside the app, so a
+/// service tab or a link dragged over the space list can never move a space.
+enum LiveReorder {
+    static let spaceType = UTType(exportedAs: "com.nicojan.chorus.space-id")
+
+    /// The order after `dragged` takes the slot of `target`: it lands after
+    /// the target when it came from above, and before it when it came from
+    /// below. Nil when nothing would move.
+    static func moving(_ dragged: UUID, over target: UUID, in ids: [UUID]) -> [UUID]? {
+        guard dragged != target,
+              let from = ids.firstIndex(of: dragged),
+              let to = ids.firstIndex(of: target)
+        else { return nil }
+        var moved = ids
+        moved.remove(at: from)
+        moved.insert(dragged, at: to)
+        return moved
+    }
+
+    /// What a space drag carries: its id, under the Chorus-only type.
+    static func itemProvider(forSpace id: UUID) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: spaceType.identifier, visibility: .ownProcess) { completion in
+            completion(Data(id.uuidString.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+}
+
+/// The drop side of `LiveReorder`, put on each space's row. `onOtherDrop`
+/// takes anything that is not a space, such as a service dropped on a
+/// heading in the all-services rail; leave it nil where only spaces belong.
+struct LiveSpaceDropDelegate: DropDelegate {
+    let targetID: UUID
+    /// The space being dragged, set by the row that started the drag.
+    let draggingID: UUID?
+    let move: (_ dragged: UUID, _ target: UUID) -> Void
+    var onOtherDrop: ((DropInfo) -> Bool)? = nil
+
+    private func carriesSpace(_ info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [LiveReorder.spaceType])
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        carriesSpace(info) || onOtherDrop != nil
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard carriesSpace(info), let draggingID, draggingID != targetID else { return }
+        move(draggingID, targetID)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        // The order was saved as the drag went, so a space drop has nothing
+        // left to do.
+        if carriesSpace(info) { return true }
+        return onOtherDrop?(info) ?? false
     }
 }

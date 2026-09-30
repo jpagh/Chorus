@@ -241,8 +241,9 @@ enum ChorusCard {
     /// it by `TrafficLightsPositioner`, then the bar or the nav row, and the
     /// donation button. The cards start under it, so their top edges line up.
     static let topBand: CGFloat = 52
-    /// Space between the rail card's edge and the rows inside it.
-    static let railPadding: CGFloat = 4
+    /// Space between the rail card's edge and the rows inside it. Six, so a
+    /// row's corner nests inside the card's: 14 less 6 is the rows' 8.
+    static let railPadding: CGFloat = 6
 }
 
 /// The nav buttons in the top band.

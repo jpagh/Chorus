@@ -8,7 +8,7 @@ import SwiftUI
 /// were two identical squares and the name lived only in a tooltip. Both axes
 /// now carry the name.
 ///
-/// Geometry: a 224 by 28 row inside the 232 point rail card, an 18 point icon
+/// Geometry: a 220 by 28 row inside the 232 point rail card, an 18 point icon
 /// at x 8, the label at x 34, and the badge trailing. The horizontal tab keeps
 /// the same parts and hugs its label instead of taking a fixed width.
 ///
@@ -40,25 +40,31 @@ struct ServiceRowView: View {
     /// Whether the keyboard is on this row. Drawn as a ring, never as the fill
     /// selection uses — see `RowMark`.
     var isFocused: Bool = false
+    /// Extra room before the icon, for rows that sit under a heading (the
+    /// all-services rail), so they read as belonging to it.
+    var indent: CGFloat = 0
     let action: () -> Void
 
     @State private var isHovering = false
 
     /// What the vertical rail takes from the window: the 8 point gutter and the
-    /// card, whose 4 point padding holds the 224 point row. The gap between
+    /// card, whose 6 point padding holds the 220 point row. The gap between
     /// the rail card and the web card is the web card's own gutter.
     static let railWidth: CGFloat = 240
-    static let rowWidth: CGFloat = 224
+    static let rowWidth: CGFloat = railWidth - ChorusCard.gutter - 2 * ChorusCard.railPadding
     /// Row height in the vertical rail. The rail stacks these at 2 point spacing,
     /// which is the drawn 30 point pitch.
     static let rowHeight: CGFloat = 28
     /// Tab height in the horizontal bar.
     static let tabHeight: CGFloat = 32
-    /// The nameless cell: the icon plus its 9 point gutters, and the tab's
-    /// width in the horizontal bar.
+    /// The nameless tab in the horizontal bar: the icon plus its 9 point
+    /// gutters.
     static let compactCellWidth: CGFloat = 36
+    /// The nameless cell in the vertical rail: what the 44 point card leaves
+    /// inside its padding.
+    static let compactRailCellWidth: CGFloat = compactRailWidth - ChorusCard.gutter - 2 * ChorusCard.railPadding
     /// Width of the vertical rail when the rows carry no name: the gutter, and
-    /// a 44 point card round the 36 point cell.
+    /// a 44 point card round the 32 point cell.
     static let compactRailWidth: CGFloat = 52
     /// Roughly what a labelled tab measures. Used only as the drop-midpoint
     /// fallback before the first geometry pass records a real width.
@@ -144,16 +150,13 @@ struct ServiceRowView: View {
             ServiceHealthDot(health: health)
                 .offset(x: 3, y: 3)
         }
-        .overlay(alignment: .topTrailing) {
-            if badgeCount > 0 && instance.showBadge {
-                BadgeCountView(count: badgeCount)
-                    .offset(x: 8, y: -6)
-            }
-        }
         .frame(
-            width: Self.compactCellWidth,
+            width: axis == .vertical ? Self.compactRailCellWidth : Self.compactCellWidth,
             height: axis == .vertical ? Self.rowHeight : Self.tabHeight
         )
+        // On the cell, not the icon, so it sits over the corner that the
+        // selection fill and the focus ring are drawn on.
+        .cornerBadge(badgeCount, visible: instance.showBadge)
     }
 
     private var namedContent: some View {
@@ -188,7 +191,8 @@ struct ServiceRowView: View {
 
             accessories
         }
-        .padding(.horizontal, Self.gutter)
+        .padding(.leading, Self.gutter + indent)
+        .padding(.trailing, Self.gutter)
         .frame(
             width: axis == .vertical ? Self.rowWidth : nil,
             height: axis == .vertical ? Self.rowHeight : Self.tabHeight

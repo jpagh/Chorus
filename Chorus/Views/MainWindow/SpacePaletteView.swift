@@ -74,14 +74,13 @@ struct SpacePaletteView: View {
     /// not switch spaces underneath the palette.
     @State private var highlightedIndex = 0
     @FocusState private var isFocused: Bool
-    /// Measured row heights, so a drop's before/after split uses the row's true
-    /// midpoint. Mirrors `SpaceStripView`.
-    @State private var rowSizes: [UUID: CGSize] = [:]
+    /// The space being dragged, so the rows it crosses know what to move.
+    @State private var draggingSpaceID: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let paletteWidth: CGFloat = 260
     /// Radius 14 is the spec's one value for sheets and palettes.
     private static let cornerRadius = ChorusRadius.surface
-    private static let rowMidpointFallback: CGFloat = 19
 
     var body: some View {
         VStack(spacing: 0) {
@@ -107,17 +106,24 @@ struct SpacePaletteView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(Array(spaces.enumerated()), id: \.element.id) { index, space in
+                        // Keyed by the space, not its index, so a row keeps its
+                        // identity when a drag moves it and slides into place.
                         row(space, index: index)
-                            .id(index)
+                            .id(space.id)
                     }
                 }
+                .animation(
+                    ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: reduceMotion),
+                    value: ReorderKey(ids: spaces.map(\.id))
+                )
                 .padding(6)
             }
             // 4 rows and a bit, so a fifth space reads as "there is more here"
             // rather than being cut off flush.
             .frame(maxHeight: 220)
             .onChange(of: highlightedIndex) { _, new in
-                proxy.scrollTo(new, anchor: .center)
+                guard spaces.indices.contains(new) else { return }
+                proxy.scrollTo(spaces[new].id, anchor: .center)
             }
         }
     }
@@ -144,32 +150,22 @@ struct SpacePaletteView: View {
         .onHover { hovering in
             if hovering { highlightedIndex = index }
         }
-        .draggable(space.id.uuidString) {
+        // Live reorder, as in the strip. See `LiveReorder`.
+        .onDrag {
+            draggingSpaceID = space.id
+            return LiveReorder.itemProvider(forSpace: space.id)
+        } preview: {
             Text(space.emoji)
                 .font(.title3)
                 .padding(6)
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .dropDestination(for: String.self) { items, location in
-            guard let droppedIDString = items.first,
-                  let droppedID = UUID(uuidString: droppedIDString),
-                  droppedID != space.id
-            else { return false }
-            let mid = (rowSizes[space.id]?.height).map { $0 / 2 } ?? Self.rowMidpointFallback
-            return reorder(
-                droppedSpaceID: droppedID,
-                relativeTo: space,
-                placement: location.y < mid ? .before : .after
-            )
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size, initial: true) {
-                    rowSizes[space.id] = proxy.size
-                }
-            }
-        )
+        .onDrop(of: [LiveReorder.spaceType], delegate: LiveSpaceDropDelegate(
+            targetID: space.id,
+            draggingID: draggingSpaceID,
+            move: liveMoveSpace
+        ))
         .accessibilityAction(named: "Move up") { move(space, forward: false) }
         .accessibilityAction(named: "Move down") { move(space, forward: true) }
         .contextMenu {
@@ -278,26 +274,15 @@ struct SpacePaletteView: View {
         save(forward ? "move space down" : "move space up")
     }
 
-    @discardableResult
-    private func reorder(droppedSpaceID: UUID, relativeTo target: Space, placement: ServiceReorderPlacement) -> Bool {
+    /// Moves the dragged space into the slot of the one under the pointer and
+    /// saves at once. See `LiveReorder`.
+    private func liveMoveSpace(_ dragged: UUID, over target: UUID) {
+        guard let ids = LiveReorder.moving(dragged, over: target, in: spaces.map(\.id)) else { return }
         let spacesByID = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
-        // The service rail's tested reorder maths, reused rather than rewritten:
-        // it decrements the index when moving forward, which an inline version
-        // here got wrong before (a forward drag landed one slot past the target).
-        guard let reorderedIDs = ServiceReorder.reorderedIDs(
-            spaces.map(\.id),
-            moving: droppedSpaceID,
-            relativeTo: target.id,
-            placement: placement
-        ) else {
-            return false
-        }
-
-        for (index, id) in reorderedIDs.enumerated() {
+        for (index, id) in ids.enumerated() {
             spacesByID[id]?.sortOrder = index
         }
         save("reorder spaces")
-        return true
     }
 
     private func save(_ context: String) {

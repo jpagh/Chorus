@@ -48,11 +48,11 @@ struct SpaceHeaderView: View {
 
     /// Matches the rail and row widths in `ServiceRowView`, so the header and
     /// the services below it line up on both edges.
-    static let headerWidth: CGFloat = 224
+    static let headerWidth: CGFloat = ServiceRowView.rowWidth
     static let headerHeight: CGFloat = 36
     /// The nameless header: the emoji alone, matching the compact service cell
     /// under it.
-    static let compactWidth: CGFloat = 36
+    static let compactWidth: CGFloat = ServiceRowView.compactRailCellWidth
     /// The horizontal bar's header is a fixed width rather than hugging its
     /// name: it is the leftmost thing in the bar and a header that resized on
     /// every space switch would shove every service tab sideways.
@@ -101,13 +101,8 @@ struct SpaceHeaderView: View {
             .font(.system(size: 18))
             .opacity(isMuted ? 0.5 : 1.0)
             .accessibilityHidden(true)
-            .overlay(alignment: .topTrailing) {
-                if badgeCount > 0 {
-                    BadgeCountView(count: badgeCount)
-                        .offset(x: 10, y: -6)
-                }
-            }
             .frame(width: Self.compactWidth, height: Self.headerHeight)
+            .cornerBadge(badgeCount)
     }
 
     private var namedContent: some View {

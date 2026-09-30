@@ -35,11 +35,8 @@ struct SpaceStripView: View {
     /// cell's `.focused` so the arrow keys move relative to it.
     @FocusState private var focusedSpaceID: UUID?
 
-    /// Measured size of each drop cell, so a drop's before/after split uses the
-    /// target's true midpoint. Falls back to the constant below until the first
-    /// geometry pass records a size.
-    @State private var cellSizes: [UUID: CGSize] = [:]
-    private static let spaceDropMidpoint: CGFloat = 22
+    /// The space being dragged, so the rows it crosses know what to move.
+    @State private var draggingSpaceID: UUID?
 
     /// The card is the strip's width less the gutter beside it.
     private var cardWidth: CGFloat { SpaceStripMetrics.width(showingNames: showsNames) - ChorusCard.gutter }
@@ -131,38 +128,23 @@ struct SpaceStripView: View {
             selectedSpaceID = space.id
             focusedSpaceID = space.id
         }
-        .draggable(space.id.uuidString) {
-            // Custom drag preview. Source-dimming is intentionally left to
-            // SwiftUI: manually tracking a "dragging" id to dim the source can't
-            // be cleared reliably (a drop on itself or a cancelled drag never
-            // fires the drop handler), which left the icon stuck dim.
+        // Live reorder: the space moves as the pointer crosses other spaces,
+        // and the order is saved as it goes. See `LiveReorder`.
+        .onDrag {
+            draggingSpaceID = space.id
+            return LiveReorder.itemProvider(forSpace: space.id)
+        } preview: {
             Text(space.emoji)
                 .font(.title3)
                 .padding(6)
                 .background(.ultraThickMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .dropDestination(for: String.self) { items, location in
-            guard let droppedIDString = items.first,
-                  let droppedID = UUID(uuidString: droppedIDString),
-                  droppedID != space.id
-            else { return false }
-            // Split at the target's real midpoint so a cell can be dropped after
-            // the last space (before-only would leave the final slot unreachable
-            // by drag). Returns false when the dropped id isn't a space in this
-            // strip (e.g. a service tab), so the drop isn't reported as a no-op
-            // success.
-            let mid = (cellSizes[space.id]?.height).map { $0 / 2 } ?? Self.spaceDropMidpoint
-            let placement: ServiceReorderPlacement = location.y < mid ? .before : .after
-            return reorderSpace(droppedSpaceID: droppedID, relativeTo: space, placement: placement)
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size, initial: true) {
-                    cellSizes[space.id] = proxy.size
-                }
-            }
-        )
+        .onDrop(of: [LiveReorder.spaceType], delegate: LiveSpaceDropDelegate(
+            targetID: space.id,
+            draggingID: draggingSpaceID,
+            move: liveMoveSpace
+        ))
         .accessibilityAction(named: "Move up") { moveSpaceUp(space) }
         .accessibilityAction(named: "Move down") { moveSpaceDown(space) }
         .focusable()
@@ -279,26 +261,15 @@ struct SpaceStripView: View {
     }
 
     @discardableResult
-    private func reorderSpace(droppedSpaceID: UUID, relativeTo target: Space, placement: ServiceReorderPlacement) -> Bool {
-        let orderedSpaces = spaces
-        let spacesByID = Dictionary(uniqueKeysWithValues: orderedSpaces.map { ($0.id, $0) })
-        // Reuse the service rail's tested reorder math. The old inline version
-        // inserted at a pre-removal index, so a forward drag landed one slot past
-        // the target; ServiceReorder decrements the index when moving forward.
-        guard let reorderedIDs = ServiceReorder.reorderedIDs(
-            orderedSpaces.map(\.id),
-            moving: droppedSpaceID,
-            relativeTo: target.id,
-            placement: placement
-        ) else {
-            return false
-        }
-
-        for (index, id) in reorderedIDs.enumerated() {
+    /// Moves the dragged space into the slot of the one under the pointer and
+    /// saves at once, so a drag that ends outside the strip keeps what it showed.
+    private func liveMoveSpace(_ dragged: UUID, over target: UUID) {
+        guard let ids = LiveReorder.moving(dragged, over: target, in: spaces.map(\.id)) else { return }
+        let spacesByID = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+        for (index, id) in ids.enumerated() {
             spacesByID[id]?.sortOrder = index
         }
         save("reorder spaces")
-        return true
     }
 
     private func deleteSpace(_ space: Space) {
@@ -346,22 +317,22 @@ private struct SpaceButton: View {
     /// The narrow strip: an emoji tile, filled grey when selected. The accent
     /// pill and stroke it used to carry went with the move to one selection mark.
     private var emojiTile: some View {
-        ZStack(alignment: .topTrailing) {
+        // The tile fills what the card leaves inside its padding, so its 8
+        // point corners sit concentric with the card's 14.
+        let side = SpaceStripMetrics.compactWidth - ChorusCard.gutter - 2 * ChorusCard.railPadding
+        return ZStack(alignment: .topTrailing) {
             Text(space.emoji)
                 .font(.title2)
                 .opacity(isMuted ? 0.5 : 1.0)
-                .frame(width: 40, height: 40)
+                .frame(width: side, height: side)
                 .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-                .frame(width: 44, height: 44)
+                .cornerBadge(badgeCount)
 
-            if badgeCount > 0 {
-                BadgeCountView(count: badgeCount).offset(x: 2, y: -2)
-            }
             if isMuted {
                 muteGlyph
             }
         }
-        .frame(width: 44, height: 44)
+        .frame(width: side, height: side)
     }
 
     /// The wide strip: emoji and name, laid out like a service row so the two

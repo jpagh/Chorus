@@ -2313,6 +2313,38 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("www.atlassian.com"))
     }
 
+    /// A dragged space takes the slot of the one under the pointer, in either
+    /// direction. The old drop-to-place version never ran on a drag downward.
+    func testLiveReorderMovesTheDraggedSpaceIntoTheSlotUnderThePointer() {
+        let a = UUID(), b = UUID(), c = UUID()
+        XCTAssertEqual(LiveReorder.moving(a, over: c, in: [a, b, c]), [b, c, a], "down past two")
+        XCTAssertEqual(LiveReorder.moving(a, over: b, in: [a, b, c]), [b, a, c], "down one")
+        XCTAssertEqual(LiveReorder.moving(c, over: a, in: [a, b, c]), [c, a, b], "up past two")
+        XCTAssertEqual(LiveReorder.moving(b, over: a, in: [a, b, c]), [b, a, c], "up one")
+        XCTAssertNil(LiveReorder.moving(a, over: a, in: [a, b, c]), "over itself")
+        XCTAssertNil(LiveReorder.moving(UUID(), over: a, in: [a, b, c]), "not in the list")
+        // Crossing back undoes the move, so the order follows the pointer.
+        let there = LiveReorder.moving(a, over: b, in: [a, b, c])!
+        XCTAssertEqual(LiveReorder.moving(a, over: b, in: there), [a, b, c])
+    }
+
+    /// The focus ring shows once the keyboard is used and goes on a click, so
+    /// the ring SwiftUI puts on the first rail row at launch stays hidden.
+    func testFocusMarksFollowTheLastInput() {
+        XCTAssertEqual(FocusVisibility.visibility(after: .keyDown), true)
+        XCTAssertEqual(FocusVisibility.visibility(after: .leftMouseDown), false)
+        XCTAssertEqual(FocusVisibility.visibility(after: .rightMouseDown), false)
+        XCTAssertNil(FocusVisibility.visibility(after: .mouseMoved))
+    }
+
+    /// Nested corners follow each other: a rail row's radius is the card's
+    /// less the padding between them.
+    func testRailRowCornersNestInsideTheCard() {
+        XCTAssertEqual(ChorusCard.cornerRadius - ChorusCard.railPadding, ChorusRadius.control)
+        XCTAssertEqual(ServiceRowView.rowWidth, ServiceRowView.railCardWidth(showsName: true) - 2 * ChorusCard.railPadding)
+        XCTAssertEqual(ServiceRowView.compactRailCellWidth, ServiceRowView.railCardWidth(showsName: false) - 2 * ChorusCard.railPadding)
+    }
+
     /// Pause Audio has to hold on a service in the background. Measured on
     /// YouTube: a plain pause lasted until the ad ended, then the video played
     /// again with nobody looking. The service on screen keeps a plain pause so
