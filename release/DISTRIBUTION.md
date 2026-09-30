@@ -149,6 +149,10 @@ Package with `hdiutil` rather than `create-dmg`. The layout tool drives Finder t
 
 A test build is still a branch build. Merge before cutting anything from it, and rebuild from the merged commit.
 
+### Credit what you took
+
+When a release takes a fix, a feature, a look or code from another project, such as a fork of Chorus, the release notes name that project, link it, and say what came from it. Copied code also goes in `THIRD_PARTY_NOTICES.md` with its license.
+
 ### Before step 6, finish the by-hand pass
 
 `docs/internal/VERIFY-BY-HAND.md` is that pass, and its Start here block says what is still unchecked. Steps 2 to 5 publish nothing, so stopping after them is fine. Step 6 is the first one users see. A tick in that file against an older build is not a tick against this one. A rebuild makes a new binary, and the checks are owed again.

@@ -15,7 +15,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ### Changed
 
-- The window has a new look, borrowed from Paguro. The page sits on a card with rounded corners and a narrow grey margin round it, and the rail has a card of its own. A selected service is grey with its name in black or white, not blue. Blue now marks only the row the keyboard is on. Rows are shorter, so more services fit, and in All services on the left each space's name heads its group. The window's own buttons at the top left sit in the middle of a taller band along the top, and the page buttons, such as Back and Reload, are round. On macOS 26 you can let the desktop show through behind the rail and the bars, from Settings; it starts off. Warnings are cards above the page now, clear of the window's buttons, and a long one shows all its words. No text in the rail or the notices is smaller than 12 points.
+- The window has a new look, borrowed from [Paguro](https://github.com/anguria-studio/Paguro). The page sits on a card with rounded corners and a narrow grey margin round it, and the rail has a card of its own. A selected service is grey with its name in black or white, not blue. Blue now marks only the row the keyboard is on. Rows are shorter, so more services fit, and in All services on the left each space's name heads its group. The window's own buttons at the top left sit in the middle of a taller band along the top, and the page buttons, such as Back and Reload, are round. On macOS 26 you can let the desktop show through behind the rail and the bars, from Settings; it starts off. Warnings are cards above the page now, clear of the window's buttons, and a long one shows all its words. No text in the rail or the notices is smaller than 12 points.
 
 ### Fixed
 
@@ -29,7 +29,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 - With "Always show scroll bars" on, the rail's scroll bar no longer pushes its icons off centre.
 - A setting that fails to save stays unsaved. Before, it turned up later, when something else saved.
 
-Paguro, a fork of Chorus by Tommaso Laterza, found most of these bugs first. Thank you.
+Much of this release comes from [Paguro](https://github.com/anguria-studio/Paguro), a fork of Chorus by Tommaso Laterza. Paguro found most of these bugs first, and the new look is Paguro's, drawn again in Chorus's own code. Chorus wrote most of the fixes its own way. Two small helpers, the ones that keep a page on screen after a failed load and let Reload work on a page that never loaded, follow Paguro's code closely and ship under its MIT license; `THIRD_PARTY_NOTICES.md` names them. Thank you, Tommaso.
 
 ## [1.5.21] - 2026-09-29
 
