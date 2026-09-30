@@ -500,10 +500,22 @@ final class WebViewPool {
     }
 
     /// Pauses every media element on a service's page, from the rail's context
-    /// menu. A pause rather than a suspend: the page's own controls and the
-    /// media keys can start it again.
+    /// menu. On the service you are looking at it is only a pause, so the
+    /// page's own controls and the media keys can start it again. On one in the
+    /// background it also suspends playback until you come back, as leaving a
+    /// quiet service does: a pause alone does not hold there, because a page
+    /// can start playing again by itself, and YouTube does when an ad ends.
     func pauseAudio(for id: UUID) {
-        webViews[id]?.pauseAllMediaPlayback(completionHandler: nil)
+        guard let webView = webViews[id] else { return }
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+        if Self.suspendsMediaOnPause(isActive: id == activeServiceID) {
+            webView.setAllMediaPlaybackSuspended(true)
+        }
+    }
+
+    /// Whether Pause Audio also suspends the page's media. See `pauseAudio`.
+    nonisolated static func suspendsMediaOnPause(isActive: Bool) -> Bool {
+        !isActive
     }
 
     /// Resumes media playback when a service becomes active again.
