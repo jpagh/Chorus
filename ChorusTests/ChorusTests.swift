@@ -2313,6 +2313,25 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("www.atlassian.com"))
     }
 
+    /// Sign-in pages found by loading every catalog service signed out, and the
+    /// company sign-in providers whose tenants each get a subdomain. A
+    /// provider's own site (marketing, docs) is not a sign-in page.
+    func testMoreSignInPagesAreRecognised() {
+        for host in [
+            "accounts.zohocloud.ca", "accounts.zoho.eu", "accounts.zoho.com.au", "accounts.zoho.in",
+            "id.superhuman.com", "auth.openai.com", "login.microsoftonline.us",
+            "acme.okta.com", "acme.okta-emea.com", "acme.oktapreview.com",
+            "acme.us.auth0.com", "acme.onelogin.com", "api-1a2b3c.duosecurity.com",
+            "contoso.b2clogin.com", "contoso.ciamlogin.com", "team.cloudflareaccess.com",
+            "d-1234567890.awsapps.com", "sso.jumpcloud.com", "auth.pingone.eu",
+        ] {
+            XCTAssertTrue(WebViewCoordinator.isAuthHost(host), host)
+        }
+        for host in ["www.okta.com", "okta.com", "developer.okta.com", "www.onelogin.com", "auth0.com", "www.zoho.com", "openai.com"] {
+            XCTAssertFalse(WebViewCoordinator.isAuthHost(host), host)
+        }
+    }
+
     /// A sign-in page on a host Chorus doesn't list still stays when it says it
     /// will come back to this service, which is what a sign-in round trip is.
     func testSignInThatReturnsToTheServiceStays() throws {

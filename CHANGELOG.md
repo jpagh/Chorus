@@ -20,7 +20,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ### Fixed
 
-- Trello can sign in inside Chorus. Its Log in button goes to an Atlassian page on another domain, and Chorus sent that page to your browser, where signing in did nothing for Chorus. Chorus now keeps a sign-in page in the service when it says it will come back there, which should help other services that sign in on another domain too. Jira and Confluence use the same Atlassian page.
+- Trello can sign in inside Chorus. Its Log in button goes to an Atlassian page on another domain, and Chorus sent that page to your browser, where signing in did nothing for Chorus. Chorus now keeps a sign-in page in the service when it says it will come back there, which should help other services that sign in on another domain too. Jira and Confluence use the same Atlassian page. The same goes for Zoho outside the US, Coda, and ChatGPT, and for company sign-ins through Okta, Auth0, OneLogin, Duo, PingOne, JumpCloud, Azure AD B2C, Cloudflare Access and AWS.
 - A call keeps its sound when you switch to another service. Chorus paused the sound of every service you left, so the other person went quiet while your microphone kept sending.
 - WhatsApp should stay signed in when you quit and reopen Chorus. Pages save their state when they go out of view, and a quit gave them no warning. Chorus now tells every open page it is going away and gives it a moment to save before it quits. I have not yet seen this work on a real WhatsApp account, so tell me if you still get signed out.
 - Chorus no longer loads a hidden second copy of WhatsApp or another chat app to read its unread count. Two copies on one sign-in can sign WhatsApp out.

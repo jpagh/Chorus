@@ -1422,15 +1422,67 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         "login.yahoo.com",
         "appleid.apple.com",
         "idmsa.apple.com",
-        // Atlassian's one sign-in page, for Trello, Jira and Confluence.
+        "login.microsoftonline.us",
+        "account.live.com",
+        // Atlassian's one sign-in page, for Trello, Jira, Confluence and Bitbucket.
         "id.atlassian.com",
+        // Coda signs in here since Superhuman bought it.
+        "id.superhuman.com",
+        // ChatGPT's sign-in, on openai.com rather than chatgpt.com.
+        "auth.openai.com",
+        "auth0.openai.com",
+        // Zoho signs in on a domain per data centre, so outside the US the
+        // sign-in is on another domain from zoho.com.
+        "accounts.zoho.com",
+        "accounts.zoho.eu",
+        "accounts.zoho.in",
+        "accounts.zoho.com.au",
+        "accounts.zoho.com.cn",
+        "accounts.zoho.jp",
+        "accounts.zoho.sa",
+        "accounts.zohocloud.ca",
+        // Company sign-in providers with one shared host.
+        "sso.jumpcloud.com",
+        "auth.pingone.com",
+        "auth.pingone.eu",
+        "auth.pingone.ca",
+        "auth.pingone.asia",
+        "auth.pingone.com.au",
+    ]
+
+    /// Company sign-in providers that give every customer a subdomain
+    /// (`acme.okta.com`, `contoso.b2clogin.com`). Any subdomain counts except the
+    /// provider's own site, so a link to Okta's marketing or docs pages still
+    /// leaves the service. Domains from each provider's documentation.
+    nonisolated static let authTenantDomains: Set<String> = [
+        "okta.com", "okta-emea.com", "oktapreview.com", "okta-gov.com", "okta.mil",
+        "auth0.com",
+        "onelogin.com",
+        "duosecurity.com",
+        "b2clogin.com", "ciamlogin.com",
+        "cloudflareaccess.com",
+        "awsapps.com",
+    ]
+
+    /// The first labels a provider uses for its own site rather than a
+    /// customer's sign-in.
+    nonisolated private static let providerSiteLabels: Set<String> = [
+        "developer", "help", "support", "docs", "status", "community", "trust",
     ]
 
     /// Whether `host` is a known authentication gateway (an exact match or a
-    /// subdomain of one). Callers keep such hosts in-app so sign-in completes.
+    /// subdomain of one, or a customer's subdomain of a company sign-in
+    /// provider). Callers keep such hosts in-app so sign-in completes.
     nonisolated static func isAuthHost(_ host: String) -> Bool {
         let h = normalizedHost(host)
-        return authHosts.contains(h) || authHosts.contains { h.hasSuffix("." + $0) }
+        if authHosts.contains(h) || authHosts.contains(where: { h.hasSuffix("." + $0) }) {
+            return true
+        }
+        return authTenantDomains.contains { domain in
+            guard h.hasSuffix("." + domain) else { return false }
+            let first = h.split(separator: ".").first.map(String.init) ?? ""
+            return !providerSiteLabels.contains(first)
+        }
     }
 
     /// Lowercases a host and drops a leading `www.` so host comparisons ignore
