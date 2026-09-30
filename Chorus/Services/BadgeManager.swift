@@ -15,6 +15,23 @@ final class BadgeManager {
     /// show-badge toggle off. Their real count still lives in `counts`.
     private var maskedIDs: Set<UUID> = []
 
+    #if DEBUG
+    /// Made-up counts for looking at the badges in a Debug build, laid over
+    /// the real ones so polling cannot wipe them. See `AppState.applyDebugMockBadges`.
+    var mockCounts: [UUID: Int] = [:] {
+        didSet { updateDockBadge() }
+    }
+    #endif
+
+    /// The count to show for a service: the page's, or in a Debug build a
+    /// made-up one when there is one.
+    private func shownCount(_ id: UUID) -> Int {
+        #if DEBUG
+        if let mock = mockCounts[id] { return mock }
+        #endif
+        return counts[id] ?? 0
+    }
+
     var doNotDisturb: Bool = false {
         // Mirror into a thread-safe snapshot so the UNUserNotificationCenter
         // delegate can read Do Not Disturb from its callback without asserting
@@ -32,7 +49,12 @@ final class BadgeManager {
 
     var totalCount: Int {
         guard !doNotDisturb else { return 0 }
-        return counts.reduce(0) { $0 + (maskedIDs.contains($1.key) ? 0 : $1.value) }
+        #if DEBUG
+        let ids = Set(counts.keys).union(mockCounts.keys)
+        #else
+        let ids = Set(counts.keys)
+        #endif
+        return ids.reduce(0) { $0 + (maskedIDs.contains($1) ? 0 : shownCount($1)) }
     }
 
     /// Returns the raw stored count regardless of DND or masking. Used by
@@ -43,13 +65,13 @@ final class BadgeManager {
 
     func badgeCount(for instanceID: UUID) -> Int {
         guard !doNotDisturb, !maskedIDs.contains(instanceID) else { return 0 }
-        return counts[instanceID] ?? 0
+        return shownCount(instanceID)
     }
 
     func aggregateCount(for serviceIDs: [UUID]) -> Int {
         guard !doNotDisturb else { return 0 }
         return serviceIDs.reduce(0) { sum, id in
-            sum + (maskedIDs.contains(id) ? 0 : (counts[id] ?? 0))
+            sum + (maskedIDs.contains(id) ? 0 : shownCount(id))
         }
     }
 

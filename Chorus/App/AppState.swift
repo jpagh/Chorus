@@ -3298,3 +3298,32 @@ final class AppState {
         }
     }
 }
+
+#if DEBUG
+extension AppState {
+    /// UserDefaults switch for made-up unread counts in a Debug build:
+    /// `defaults write com.nicojan.Chorus.debug debugMockBadges -bool true`.
+    static let debugMockBadgesKey = "debugMockBadges"
+
+    /// The made-up counts, dealt to the services in name order: small ones,
+    /// one past 99 for the "99+" badge, and some zeros so a few rows stay
+    /// clear.
+    static let debugMockBadgePattern = [3, 12, 128, 0, 1, 7, 42, 0, 5, 2]
+
+    /// Gives every service a made-up count when the switch is on, and clears
+    /// them when it is off.
+    func applyDebugMockBadges() {
+        guard UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey) else {
+            badgeManager.mockCounts = [:]
+            return
+        }
+        let services = ((try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+            .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending || ($0.label == $1.label && $0.id.uuidString < $1.id.uuidString) }
+        var mock: [UUID: Int] = [:]
+        for (index, service) in services.enumerated() {
+            mock[service.id] = Self.debugMockBadgePattern[index % Self.debugMockBadgePattern.count]
+        }
+        badgeManager.mockCounts = mock
+    }
+}
+#endif

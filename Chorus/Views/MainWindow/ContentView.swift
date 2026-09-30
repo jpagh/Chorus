@@ -58,6 +58,9 @@ struct ContentView: View {
         // request lands correctly. Idempotent, so re-running is harmless.
         .task {
             appState.notificationManager.requestAuthorization()
+            #if DEBUG
+            appState.applyDebugMockBadges()
+            #endif
         }
         .onChange(of: appState.selectedSpaceID) { _, newSpaceID in
             if let spaceID = newSpaceID {

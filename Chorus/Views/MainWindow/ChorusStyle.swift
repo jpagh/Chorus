@@ -343,7 +343,8 @@ extension View {
 /// The hover and press marks for the chrome's own buttons: the add buttons,
 /// the nav circles, and the like. The pointer over one draws the same faint
 /// ink fill a hovered row gets, a press draws the selection's, and a disabled
-/// button draws neither. A row-shaped button takes the fill behind its label;
+/// button draws neither and is greyed out. The custom style takes over from
+/// SwiftUI's own dimming, so it has to do that greying itself. A row-shaped button takes the fill behind its label;
 /// a nav circle takes it over its glass or material, which would otherwise
 /// hide it.
 struct ChromeButtonStyle<S: Shape>: ButtonStyle {
@@ -366,9 +367,15 @@ private struct ChromeButtonBody<S: Shape>: View {
         let mark = shape.fill(fill).allowsHitTesting(false)
         Group {
             if overLabel {
-                configuration.label.overlay(mark)
+                // A disabled circle keeps its circle and greys its glyph, the
+                // way a toolbar button does.
+                configuration.label
+                    .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                    .overlay(mark)
             } else {
-                configuration.label.background(mark)
+                configuration.label
+                    .opacity(isEnabled ? 1 : 0.45)
+                    .background(mark)
             }
         }
         .contentShape(shape)
