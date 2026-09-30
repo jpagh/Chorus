@@ -38,8 +38,10 @@ struct UnifiedRailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Draws the focus ring only once the keyboard is in use. See `FocusVisibility`.
-    private var focusVisibility = FocusVisibility.shared
+    /// Draws the focus ring only once the keyboard is in use. See
+    /// `FocusVisibility`. Computed, not stored: a private stored property
+    /// makes the memberwise initialiser private on Xcode 16's compiler.
+    private var focusVisibility: FocusVisibility { .shared }
 
     /// Whether service cells carry their names. See `ServiceNameVisibility`.
     @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true

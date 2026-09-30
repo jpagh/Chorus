@@ -36,7 +36,9 @@ final class BadgeManager {
 
     /// Whether any of these services' counts is waiting to be seen.
     func needsAttention(anyOf ids: [UUID]) -> Bool {
-        ids.contains(where: needsAttention)
+        // A closure, not the method: Xcode 16's compiler reads the overloaded
+        // method reference as a throwing one.
+        ids.contains { needsAttention($0) }
     }
 
     /// Records a change of count for the attention rule: up while elsewhere

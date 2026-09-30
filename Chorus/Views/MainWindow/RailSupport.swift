@@ -243,10 +243,12 @@ enum LiveReorder {
     }
 
     /// What a drag carries: an id, under one of the Chorus-only types.
-    static func itemProvider(for id: UUID, type: UTType) -> NSItemProvider {
+    nonisolated static func itemProvider(for id: UUID, type: UTType) -> NSItemProvider {
         let provider = NSItemProvider()
-        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
-            completion(Data(id.uuidString.utf8), nil)
+        let data = Data(id.uuidString.utf8)
+        // The loader may run off the main thread, so it must not be tied to it.
+        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { @Sendable completion in
+            completion(data, nil)
             return nil
         }
         return provider
@@ -320,7 +322,7 @@ struct RailWidthHandle: View {
 
     static let width: CGFloat = ChorusCard.gutter
     /// How far the pointer has to travel before the rail changes width.
-    static let threshold: CGFloat = 36
+    nonisolated static let threshold: CGFloat = 36
 
     var body: some View {
         Color.clear
