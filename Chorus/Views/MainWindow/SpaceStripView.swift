@@ -17,13 +17,14 @@ import SwiftData
 struct SpaceStripView: View {
     @Query(sort: \Space.sortOrder) private var spaces: [Space]
     @Binding var selectedSpaceID: UUID?
-    /// Inset applied to the top of the content to clear the window traffic
-    /// lights — kept inside so the strip's background and dividers still run
-    /// full-length.
+    /// Room above the card for the window traffic lights. The hybrid layout
+    /// passes the bar's height, so the card's top edge is level with the web
+    /// card's.
     var contentInset: CGFloat = 0
 
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showsNames = true
 
@@ -40,7 +41,8 @@ struct SpaceStripView: View {
     @State private var cellSizes: [UUID: CGSize] = [:]
     private static let spaceDropMidpoint: CGFloat = 22
 
-    private var width: CGFloat { SpaceStripMetrics.width(showingNames: showsNames) }
+    /// The card is the strip's width less the gutter beside it.
+    private var cardWidth: CGFloat { SpaceStripMetrics.width(showingNames: showsNames) - ChorusCard.gutter }
 
     var body: some View {
         content
@@ -71,8 +73,6 @@ struct SpaceStripView: View {
 
     private var content: some View {
         VStack(spacing: 2) {
-            Spacer().frame(height: 6 + contentInset)
-
             // Scroll the cells so more spaces than fit the window height stay
             // reachable; the divider and add button below stay pinned.
             // No scroller: with "Always show scroll bars" on, it took width from
@@ -83,21 +83,30 @@ struct SpaceStripView: View {
                         spaceCell(space)
                     }
                 }
+                // Only a reorder animates. See `ReorderKey`.
+                .animation(
+                    ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: reduceMotion),
+                    value: ReorderKey(ids: spaces.map(\.id))
+                )
+                .padding(.vertical, ChorusCard.railPadding)
             }
 
-            Divider().padding(.horizontal, 8)
+            Rectangle()
+                .fill(ChorusColor.hairline)
+                .frame(height: 1)
+                .padding(.horizontal, 8)
 
             addSpaceButton
-
-            Spacer().frame(height: 6)
+                .padding(.bottom, ChorusCard.railPadding)
         }
-        .frame(width: width)
+        .railCardFrame(width: cardWidth, topInset: contentInset)
         // The OS window drag is off in this layout, because the service bar
         // beside the strip holds draggable tabs in the title-bar band (see
         // WindowMovableConfigurator). Without a handle of its own the strip
         // would be the one part of the window's top edge that could not move it.
+        // The handle gets the clicks in the gutter and the card's padding; the
+        // scroll view takes them over the cells.
         .background(WindowDragHandle())
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
@@ -209,7 +218,7 @@ struct SpaceStripView: View {
                     .font(.system(size: 12, weight: .medium))
                 if showsNames {
                     Text("Add Space")
-                        .font(.subheadline)
+                        .font(ChorusType.label)
                         .lineLimit(1)
                 }
             }
@@ -314,7 +323,7 @@ private struct SpaceButton: View {
 
     @State private var isHovering = false
 
-    private static let cornerRadius: CGFloat = 9
+    private static let cornerRadius = ChorusRadius.control
 
     var body: some View {
         Button(action: action) {
@@ -334,7 +343,8 @@ private struct SpaceButton: View {
         .accessibilityAddTraits([.isButton, isSelected ? .isSelected : []])
     }
 
-    /// The narrow strip: an emoji tile with a leading accent pill when selected.
+    /// The narrow strip: an emoji tile, filled grey when selected. The accent
+    /// pill and stroke it used to carry went with the move to one selection mark.
     private var emojiTile: some View {
         ZStack(alignment: .topTrailing) {
             Text(space.emoji)
@@ -342,20 +352,6 @@ private struct SpaceButton: View {
                 .opacity(isMuted ? 0.5 : 1.0)
                 .frame(width: 40, height: 40)
                 .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Self.cornerRadius)
-                        .strokeBorder(
-                            isSelected ? AnyShapeStyle(.tint.opacity(0.55)) : AnyShapeStyle(Color.clear),
-                            lineWidth: 1
-                        )
-                )
-                .overlay(alignment: .leading) {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(.tint)
-                            .frame(width: 3, height: 20)
-                    }
-                }
                 .frame(width: 44, height: 44)
 
             if badgeCount > 0 {
@@ -378,11 +374,11 @@ private struct SpaceButton: View {
                 .opacity(isMuted ? 0.5 : 1.0)
 
             Text(space.name)
-                .font(.subheadline)
+                .font(ChorusType.label)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .foregroundStyle(.primary)
 
             Spacer(minLength: 0)
 
@@ -396,16 +392,9 @@ private struct SpaceButton: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 36)
+        .frame(height: ServiceRowView.rowHeight)
         .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-        .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(.tint)
-                    .frame(width: 3, height: 18)
-            }
-        }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, ChorusCard.railPadding)
         .contentShape(Rectangle())
     }
 
@@ -432,9 +421,9 @@ private struct SpaceButton: View {
 
     private var fillStyle: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.12))
+            return AnyShapeStyle(ChorusColor.selectedFill)
         } else if isHovering {
-            return AnyShapeStyle(Color.primary.opacity(0.06))
+            return AnyShapeStyle(ChorusColor.hoverFill)
         }
         return AnyShapeStyle(Color.clear)
     }

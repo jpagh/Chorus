@@ -19,9 +19,112 @@ enum ChorusRadius {
     static let allValues: [CGFloat] = [icon, control, surface]
 }
 
+/// The window's neutral greys and the ink fills drawn on them.
+///
+/// Taken from Paguro's look (see `THIRD_PARTY_NOTICES.md`): three flat greys
+/// that step up in brightness from the window to what sits on it, and fills made
+/// of the text colour at low strength rather than of the accent. A selected row
+/// is grey with a black or white name; blue is kept for the keyboard focus ring,
+/// which is the one mark that has to stand out from selection (see `RowMark`).
+enum ChorusColor {
+    /// The window itself, behind the rail card and the web card.
+    static let canvas = dynamic(light: canvasNSColor(isDark: false), dark: canvasNSColor(isDark: true))
+    /// Chrome that sits on the canvas: the rail card. Ink rather than an opaque
+    /// grey, so it lands on EC / 20 over the flat canvas and still lets the
+    /// frost through when a glass style is on.
+    static let surface = ink(light: 0.035, dark: 0.035, contrastLight: 0.06, contrastDark: 0.06)
+    /// What sits on a surface, and the web view's own backing.
+    static let card = dynamic(light: .white, dark: grey(40))
+    /// The one-pixel edge round a card.
+    static let hairline = ink(light: 0.08, dark: 0.10, contrastLight: 0.30, contrastDark: 0.35)
+
+    /// A selected row. Strong enough to hold without the accent.
+    static let selectedFill = ink(light: 0.10, dark: 0.16, contrastLight: 0.20, contrastDark: 0.28)
+    /// A row under the pointer: half the weight of selection.
+    static let hoverFill = ink(light: 0.05, dark: 0.08, contrastLight: 0.10, contrastDark: 0.14)
+    /// Text that is not the thing you are reading. Stronger than
+    /// `secondaryLabelColor`, which is too faint on these greys.
+    static let secondaryText = ink(light: 0.60, dark: 0.62, contrastLight: 0.80, contrastDark: 0.82)
+
+    static func canvasNSColor(isDark: Bool) -> NSColor {
+        grey(isDark ? 24 : 245)
+    }
+
+    static func grey(_ level: CGFloat) -> NSColor {
+        NSColor(srgbRed: level / 255, green: level / 255, blue: level / 255, alpha: 1)
+    }
+
+    static func dynamic(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: dynamicNSColor(light: light, dark: dark))
+    }
+
+    static func dynamicNSColor(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        }
+    }
+
+    /// Black or white at the given strength, stronger under Increase Contrast.
+    static func ink(light: CGFloat, dark: CGFloat, contrastLight: CGFloat, contrastDark: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [
+                .aqua, .darkAqua,
+                .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua
+            ])
+            switch match {
+            case .accessibilityHighContrastAqua: return .black.withAlphaComponent(contrastLight)
+            case .accessibilityHighContrastDarkAqua: return .white.withAlphaComponent(contrastDark)
+            case .darkAqua: return .white.withAlphaComponent(dark)
+            default: return .black.withAlphaComponent(light)
+            }
+        })
+    }
+}
+
+/// Type sizes for the chrome. Nothing a person reads is set below 12 points;
+/// the system's own caption and subheadline styles are 10 and 11 on macOS, which
+/// is why they no longer appear in the rail. The numbers in a badge are the one
+/// exception: they sit in a 16 point circle and are read as a count, not text.
+enum ChorusType {
+    /// The smallest text: headings over a group, notes, secondary labels.
+    static let captionSize: CGFloat = 12
+    /// Row and tab names.
+    static let labelSize: CGFloat = 13
+
+    static let caption = Font.system(size: captionSize)
+    static let label = Font.system(size: labelSize)
+}
+
+/// The two movements the chrome makes, and the rule that Reduce Motion turns
+/// both off.
+enum ChorusMotion {
+    /// The rail opening, closing or changing width.
+    static let sidebar = Animation.easeInOut(duration: 0.25)
+    /// A row or tab settling into its new place after a reorder.
+    static let reorder = Animation.spring(response: 0.28, dampingFraction: 0.78)
+
+    /// `animation`, or none when Reduce Motion is on.
+    static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : animation
+    }
+}
+
+/// A list's order, compared so that only a reorder counts as a change: the
+/// same rows in a new order. Rows arriving or leaving, as when the space
+/// changes, compare equal, so `.animation(_:value:)` lets them appear without
+/// the reorder spring. The comparison is not transitive, which is fine for
+/// what SwiftUI does with it: it only ever compares the old value with the new.
+struct ReorderKey: Equatable {
+    let ids: [UUID]
+
+    static func == (lhs: ReorderKey, rhs: ReorderKey) -> Bool {
+        lhs.ids == rhs.ids || lhs.ids.count != rhs.ids.count || Set(lhs.ids) != Set(rhs.ids)
+    }
+}
+
 /// How bad a notice is. Three, and the fill is the same weight for all of them:
-/// the tone is carried by the icon and the rule under the strip, not by shouting
-/// with the background. This replaces two raw SwiftUI yellows and a solid red
+/// the icon and the card's edge say how bad it is, and the background stays
+/// quiet. This replaces two raw SwiftUI yellows and a solid red
 /// bar that read as three unrelated designs.
 enum NoticeSeverity: CaseIterable {
     /// Something is offered, and nothing is wrong.
@@ -51,17 +154,10 @@ enum NoticeSeverity: CaseIterable {
     var fillOpacity: Double { 0.12 }
 }
 
-/// The one notice strip: a tinted band with a rule under it.
-///
-/// The window-drag handle is part of the shape rather than left to each caller.
-/// A notice sits at the very top of the window, inside the title-bar drag band,
-/// and the bar layout turns the OS window drag off (see
-/// `WindowMovableConfigurator`). Without a handle the strip is dead to dragging,
-/// and because it also pushes the rail's own handle down out of the band, the
-/// window could not be moved by its top edge at all while a notice was up. The
-/// handle goes behind the content and in front of the fill, so buttons still
-/// take their own clicks.
-struct NoticeStrip<Content: View>: View {
+/// The one notice shape: a card above the web card, with the severity's tint in
+/// its fill and on its edge. It used to be a strip across the top of the
+/// window, in the band the traffic lights share. See `WindowNotices`.
+struct NoticeCard<Content: View>: View {
     let severity: NoticeSeverity
     /// Overrides the severity's own icon where a notice is about something more
     /// specific than its seriousness.
@@ -69,23 +165,26 @@ struct NoticeStrip<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage ?? severity.systemImage)
-                    .foregroundStyle(severity.tint)
-                    .accessibilityHidden(true)
+        let shape = RoundedRectangle(cornerRadius: ChorusRadius.surface, style: .continuous)
+        HStack(spacing: 8) {
+            Image(systemName: systemImage ?? severity.systemImage)
+                .foregroundStyle(severity.tint)
+                .accessibilityHidden(true)
 
-                content()
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Rectangle()
-                .fill(severity.tint)
-                .frame(height: 1)
+            content()
         }
-        .background(WindowDragHandle())
-        .background(severity.tint.opacity(severity.fillOpacity))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            shape.fill(ChorusColor.card)
+            shape.fill(severity.tint.opacity(severity.fillOpacity))
+        }
+        .overlay(
+            shape
+                .strokeBorder(severity.tint.opacity(0.35), lineWidth: 1)
+                .allowsHitTesting(false)
+        )
     }
 }
 
@@ -125,9 +224,101 @@ struct RowMark: Equatable {
 
     var fillStyle: AnyShapeStyle {
         switch fill {
-        case .selected: return AnyShapeStyle(.tint.opacity(0.12))
-        case .hover: return AnyShapeStyle(Color.primary.opacity(0.06))
+        case .selected: return AnyShapeStyle(ChorusColor.selectedFill)
+        case .hover: return AnyShapeStyle(ChorusColor.hoverFill)
         case .none: return AnyShapeStyle(Color.clear)
         }
+    }
+}
+
+/// The window's 8 point gutter and the inset cards the rail and the web view
+/// sit on.
+enum ChorusCard {
+    /// The gap between the window edge, the rail card and the web card.
+    static let gutter: CGFloat = 8
+    static let cornerRadius = ChorusRadius.surface
+    /// The band along the top of every layout: the traffic lights, centred in
+    /// it by `TrafficLightsPositioner`, then the bar or the nav row, and the
+    /// donation button. The cards start under it, so their top edges line up.
+    static let topBand: CGFloat = 52
+    /// Space between the rail card's edge and the rows inside it.
+    static let railPadding: CGFloat = 4
+}
+
+/// The nav buttons in the top band.
+enum ChorusNav {
+    /// Each button's circle.
+    static let buttonSize: CGFloat = 28
+    /// Space between two circles.
+    static let spacing: CGFloat = 6
+}
+
+extension View {
+    /// A nav button's 28 point circle: Liquid Glass on macOS 26, a material
+    /// below it, and a hairline edge on both. Both follow Reduce Transparency
+    /// on their own. The glass does not depend on the window's glass style:
+    /// that setting is about the window's backdrop, and a button reads the same
+    /// on either. The hairline is what keeps the circle there on the Regular
+    /// backdrop, where glass sits on glass and has nothing to show.
+    @ViewBuilder
+    func navCircle() -> some View {
+        let sized = frame(width: ChorusNav.buttonSize, height: ChorusNav.buttonSize)
+            .contentShape(Circle())
+        #if compiler(>=6.2)
+        if #available(macOS 26, *) {
+            sized.glassEffect(.regular.interactive(), in: Circle()).circleEdge()
+        } else {
+            sized.background(.regularMaterial, in: Circle()).circleEdge()
+        }
+        #else
+        sized.background(.regularMaterial, in: Circle()).circleEdge()
+        #endif
+    }
+
+    fileprivate func circleEdge() -> some View {
+        overlay(
+            Circle()
+                .strokeBorder(ChorusColor.hairline, lineWidth: 1)
+                .allowsHitTesting(false)
+        )
+    }
+
+    /// Draws this view as the rail card: the translucent surface behind it,
+    /// continuous 14 point corners and a hairline edge. Neither layer takes
+    /// clicks, so a window-drag handle behind the card still gets them.
+    func railCard() -> some View {
+        let shape = RoundedRectangle(cornerRadius: ChorusCard.cornerRadius, style: .continuous)
+        return background(shape.fill(ChorusColor.surface).allowsHitTesting(false))
+            .overlay(
+                shape
+                    .strokeBorder(ChorusColor.hairline, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
+    }
+
+    /// Places a vertical rail's content on its card: the card's width, the
+    /// gutter to the window's leading and bottom edges, and `topInset` above
+    /// it for the traffic lights.
+    func railCardFrame(width: CGFloat, topInset: CGFloat) -> some View {
+        frame(width: width)
+            .railCard()
+            .padding(.leading, ChorusCard.gutter)
+            .padding(.top, topInset)
+            .padding(.bottom, ChorusCard.gutter)
+    }
+
+    /// Draws this view as the inset content card: the card grey behind it,
+    /// continuous 14 point corners and a hairline edge. The page itself is also
+    /// clipped by `WebViewHostView`'s layer, because a SwiftUI clip is not
+    /// promised to reach into a hosted `NSView`.
+    func contentCard() -> some View {
+        let shape = RoundedRectangle(cornerRadius: ChorusCard.cornerRadius, style: .continuous)
+        return background(ChorusColor.card)
+            .clipShape(shape)
+            .overlay(
+                shape
+                    .strokeBorder(ChorusColor.hairline, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
     }
 }

@@ -16,13 +16,15 @@ struct DownloadsButton: View {
             Button {
                 isShowingList.toggle()
             } label: {
-                Image(systemName: "arrow.down.circle")
+                Image(systemName: "arrow.down")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16, height: 14)
+                    .navCircle()
+                    // The ring runs just inside the circle's edge.
                     .overlay {
                         if center.hasRunning {
                             ProgressRing(fraction: center.overallFraction)
-                                .frame(width: 17, height: 17)
+                                .frame(width: ChorusNav.buttonSize - 4, height: ChorusNav.buttonSize - 4)
                         }
                     }
             }
@@ -114,7 +116,7 @@ private struct DownloadRow: View {
                     }
                 }
                 Text(status)
-                    .font(.system(size: 11))
+                    .font(ChorusType.caption)
                     .foregroundStyle(isFailure ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
             }

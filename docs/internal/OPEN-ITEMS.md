@@ -1,5 +1,25 @@
 # Open items
 
+## On branch `feat/paguro-look`: the window redesign, all 7 steps built
+
+**Started 2026-09-29.** Branch `feat/paguro-look`, cut from `fix/paguro-findings` (not from `main`, because that branch is not merged yet; rebase onto `main` once it is). Commit `dc77885`, pushed, CI green on macOS 14 and 15 (run 36653665480), 278 tests pass locally. `CHANGELOG.md` has a "Changed" line under Unreleased.
+
+Takes Paguro's look, not its code. Decisions made from a trends survey on 2026-09-29: selection is a neutral ink fill with a primary label and the accent kept for the focus ring; glass is Off by default, Off below macOS 26 and under Reduce Transparency, and both glass styles keep a heavy canvas tint (0.62 Clear, 0.78 Regular); the web view is an inset card in every layout, with no gutter on the edge a top bar sits on; spaces keep the header and palette (the Arc/Slack model), and the all-services separators are to become 12pt headings.
+
+Built: `ChorusColor` / `ChorusType` / `ChorusMotion` / `ChorusCard` in `ChorusStyle.swift`, `WindowBackdrop.swift` (frost + `NSGlassEffectView` + tint, `UserDefaults` key `windowGlassStyle`), and the inset web card (`contentCard()`, `WebViewHostView` layer clip).
+
+### Still open
+
+- **Step 4, the rail card, is built** (2026-09-29). The two left rails and the hybrid strip of spaces now sit on an inset card with a hairline edge (`railCard()`, `railCardFrame`). Its fill is ink at 3.5 percent, not an opaque grey, so it reads as EC / 20 on the flat canvas and lets the frost through when glass is on. Rows are 28 points tall with 18 point icons. The all-services rail sets each space as a 12 point heading; without names, it keeps an emoji between two short rules. Both cards in the left layouts start under a 32 point band (`ChorusCard.topBand`), so their tops line up. The divider beside the hybrid strip is gone, and so is the donation button's own fill, which showed as a dark square on glass. Checked live in all four layouts, light and dark, with names on and off, and with glass Clear and Regular. A throwaway test rendered one row with every mark on; nobody has seen the marks on a live page. Nobody has seen the download button live either, because it only shows once a download exists.
+- **Step 5, the 52 point header, is built** (2026-09-29). Every layout has a 52 point band along its top (`ChorusCard.topBand`), and the bars, the nav row and both cards line up on it. The traffic lights sit on the band's centre line, 26 points in and 26 down. A real toolbar would centre them, but its view takes the clicks in the band, where the bar layouts keep their tabs. So `TrafficLightsPositioner` grows the title bar's container to 52 points and moves the buttons, as Electron does, then moves them again whenever AppKit puts them back. The nav buttons are 28 point circles with a hairline edge (`navCircle()`), Liquid Glass on macOS 26 and a material below it. Without the hairline the circles vanished on the Regular backdrop in dark mode. The download glyph lost its own circle. Seen live on macOS 26 in all four layouts and both appearances, with names on and off and every glass style. A click on a tab in the band still selects it, and hovering the lights shows their glyphs where they now sit. Two things are not checked. A script could not put the window in full screen, so nobody has seen the lights come back after it. And on macOS 14 and 15 CI has built the lights but nobody has looked at them.
+- **Step 6, the glass picker, is built** (2026-09-29). Settings has Window glass (Off, Clear, Regular) under Appearance on macOS 26, and a build made without the 26 SDK hides it too. Picking Clear in Settings frosted the running window at once.
+- **Step 7, the notice cards, is built** (2026-09-29). The window's three notices and the passkey notice are now cards in one stack between the band and the web card (`WindowNotices`). They started as cards floating over the page, and a review sent them back into the flow: two of them cannot be dismissed, a floating card hid the top of every site and the find bar, and the passkey card drew under the others. The storage warning now wraps in full, because its last sentence says changes won't be saved. Nobody has seen a notice in the running app, since none can be raised here without cutting the network; a test rendered the three cards in light and dark.
+- **The rail's reorder now springs, and only a reorder does**: a space switch brings different rows, and `ReorderKey` treats that as no change. Reduce Motion turns the spring off. Nobody has dragged a row to watch it.
+- **The review also hardened the traffic-light code.** It waits for AppKit's pass before moving the lights, stays out of the way while full screen comes and goes, and watches the close button's frame. Window tabs are off. Idle, it ran twice in two minutes.
+- **Before release:** items 9 to 12 of the by-hand block in `VERIFY-BY-HAND.md`, above all the lights on macOS 14 or 15 and full screen on 26. The Settings captions are 10 points. They use `.caption` like every other caption there, and the redesign set its 12 point floor for the window's chrome only, so Settings kept its own.
+- ~~The live shots of steps 1–3 show a blank web card.~~ Closed 2026-09-29: with the Debug build allowed in Little Snitch, the page loads inside the rounded card, and the corners clip cleanly.
+- A keyboard-focus ring lands on the first rail row at launch. The old build does it too; look at it with step 4.
+
 ## On branch `fix/paguro-findings`: fixes and features found in Paguro, not merged
 
 **Built on 2026-09-29.** Branch `fix/paguro-findings`, pushed, CI green on macOS 14 and 15. Not merged and not released. `CHANGELOG.md` has the entry under Unreleased.
@@ -12,7 +32,7 @@
 - The by-hand block at the top of `VERIFY-BY-HAND.md` has not been run. The one that matters most is WhatsApp across a quit: the handoff runs, but nobody has seen a real session survive it.
 - `_isPlayingAudio` is private WebKit. A probe proved it on macOS 26 only. On 14 and 15 it is unchecked, though the `responds(to:)` guard makes the failure harmless.
 - If a setup import's second save fails, the import deletes what it added, and no test forces that failure.
-- The visual redesign that Paguro suggested is a separate piece of work. Most of the look works on macOS 14; Liquid Glass is one optional layer.
+- The visual redesign that Paguro suggested is under way on `feat/paguro-look`; see the section above.
 
 ## Shipped in 1.5.21: Gmail sign-in, the all-services rail, and the traffic lights
 

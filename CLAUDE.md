@@ -36,6 +36,7 @@ Write plain, direct, active, concrete prose. No marketing gloss, no AI tells.
   settings (for example a version bump), edit both `project.yml` and the
   `.pbxproj` so a later `xcodegen generate` stays consistent.
 - `xcodegen generate` reproduces the checked-in `.pbxproj` byte for byte, so add a new `.swift` file and run it; commit the regenerated project. To ship a file that is not under `Chorus/`, add a `sources:` entry with `buildPhase: resources`. A target-level `resources:` key is not XcodeGen's, and it ignores it silently.
+- CI's macOS 14 job builds with Xcode 16.2, which has no macOS 26 SDK, so `#available(macOS 26, *)` alone does not compile there. Wrap any macOS 26 symbol, such as `NSGlassEffectView` or `.glassEffect`, in `#if compiler(>=6.2)` as well. A stored property holds it as a plain `NSView`, since it cannot name a type the deployment target lacks.
 - **Never add `-configuration Release` to that test command.** `ChorusTests` is
   app-hosted, and `ChorusApp.init` builds an `AppState`, so every test run
   executes the launch path, including `StoreRepair.applyPendingRestore`, which

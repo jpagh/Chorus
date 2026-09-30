@@ -15,8 +15,8 @@ enum ServiceReorderPlacement {
 
 /// Sets whether the user can move the window by dragging its background.
 ///
-/// With `.windowStyle(.hiddenTitleBar)` the top ~32px stays a title-bar drag
-/// band. In the bar layout the rail sits in that band, so a click-drag on a tab
+/// With `.windowStyle(.hiddenTitleBar)` the top of the window stays a title-bar
+/// drag band, 52 points tall since `TrafficLightsPositioner` grew it. In the bar layout the rail sits in that band, so a click-drag on a tab
 /// was grabbed by the window move before SwiftUI's `.draggable` reorder could
 /// start — the window slid instead of the tab reordering. A view nested in a
 /// SwiftUI `ScrollView` can't opt out of that drag (the scroll view
@@ -164,13 +164,14 @@ enum SpaceStripMetrics {
         showingNames ? namedWidth : compactWidth
     }
 
-    /// How far the window's traffic lights reach in from the leading edge.
-    static let trafficLightsWidth: CGFloat = 72
+    /// How far the window's traffic lights reach in from the leading edge,
+    /// with room after them. Centred in the 52 point band, they end at x 73.
+    static let trafficLightsWidth: CGFloat = 82
 
     /// Leading inset the service bar needs so the window's traffic lights,
     /// which sit over the strip, do not land on the first tab. The lights are
-    /// 72 points wide; the named strip swallows them whole and the bar starts
-    /// flush, while the compact one leaves 20 points of them overhanging.
+    /// 82 points wide; the named strip swallows them whole and the bar starts
+    /// flush, while the compact one leaves 30 points of them overhanging.
     static func barLeadingInset(stripWidth: CGFloat, lightsWidth: CGFloat) -> CGFloat {
         Swift.max(0, lightsWidth - stripWidth)
     }

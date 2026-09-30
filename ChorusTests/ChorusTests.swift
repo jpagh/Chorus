@@ -3191,13 +3191,14 @@ final class ChorusTests: XCTestCase {
     /// of what is left — the fix the retired hybrid layout already had. The named
     /// strip swallows them, and the bar starts flush.
     func testServiceBarClearsTheTrafficLightsOverhangingTheCompactStrip() {
-        let lights: CGFloat = 72
+        let lights = SpaceStripMetrics.trafficLightsWidth
+        XCTAssertEqual(lights, 82)
         XCTAssertEqual(
             SpaceStripMetrics.barLeadingInset(
                 stripWidth: SpaceStripMetrics.width(showingNames: false),
                 lightsWidth: lights
             ),
-            20
+            30
         )
         XCTAssertEqual(
             SpaceStripMetrics.barLeadingInset(
@@ -3206,6 +3207,51 @@ final class ChorusTests: XCTestCase {
             ),
             0
         )
+    }
+
+    /// The lights sit on the band's centre line, as far in from the side as
+    /// down from the top, at AppKit's own spacing, and end inside the width
+    /// the bars leave for them.
+    func testTrafficLightsAreCentredInTheTopBand() {
+        let origins = TrafficLightsLayout.origins(
+            bandHeight: ChorusCard.topBand,
+            buttonSize: CGSize(width: 14, height: 16),
+            pitch: 20
+        )
+        XCTAssertEqual(origins.count, 3)
+        XCTAssertEqual(origins.map(\.y), [18, 18, 18])
+        XCTAssertEqual(origins.map(\.x), [19, 39, 59])
+        // The first light's centre is 26 in from the side and 26 down.
+        XCTAssertEqual(origins[0].x + 7, ChorusCard.topBand / 2)
+        XCTAssertLessThan(origins[2].x + 14, SpaceStripMetrics.trafficLightsWidth)
+        XCTAssertEqual(UnifiedRailView.barHeight, ChorusCard.topBand)
+    }
+
+    /// Glass is Off unless asked for, falls back to Off for anything it does
+    /// not recognise, and is Off everywhere under Reduce Transparency. The
+    /// picker's three names are distinct.
+    func testWindowGlassStyleDefaultsAndFallbacks() {
+        XCTAssertEqual(WindowGlassStyle.defaultStyle, .off)
+        XCTAssertEqual(WindowGlassStyle.resolve(nil), .off)
+        XCTAssertEqual(WindowGlassStyle.resolve("frosted"), .off)
+        XCTAssertEqual(WindowGlassStyle.resolve("clear"), .clear)
+        for style in WindowGlassStyle.allCases {
+            XCTAssertEqual(style.effective(reduceTransparency: true), .off)
+        }
+        XCTAssertEqual(Set(WindowGlassStyle.allCases.map(\.displayName)).count, 3)
+        XCTAssertEqual(WindowGlassStyle.regular.effective(reduceTransparency: false),
+                       WindowGlassStyle.isGlassAvailable ? .regular : .off)
+    }
+
+    /// Only a reorder animates: the same rows in a new order. A space switch
+    /// brings in different rows and must not play the spring.
+    func testReorderKeyChangesOnlyForAReorder() {
+        let a = UUID(), b = UUID(), c = UUID()
+        XCTAssertEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [a, b]))
+        XCTAssertNotEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [b, a]))
+        XCTAssertEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [a, c]))
+        XCTAssertEqual(ReorderKey(ids: [a, b]), ReorderKey(ids: [a, b, c]))
+        XCTAssertEqual(ReorderKey(ids: [a, a]), ReorderKey(ids: [a, b]))
     }
 
     // MARK: - Notice shape, radius scale, selection against focus (build step 7)
@@ -3245,6 +3291,19 @@ final class ChorusTests: XCTestCase {
     func testHoverIsOutrankedBySelection() {
         XCTAssertEqual(RowMark(isSelected: false, isFocused: false, isHovering: true).fill, .hover)
         XCTAssertEqual(RowMark(isSelected: true, isFocused: false, isHovering: true).fill, .selected)
+    }
+
+    /// Nothing a person reads in the chrome is set below 12 points.
+    func testChromeTypeHasATwelvePointFloor() {
+        XCTAssertGreaterThanOrEqual(ChorusType.captionSize, 12)
+        XCTAssertGreaterThanOrEqual(ChorusType.labelSize, ChorusType.captionSize)
+    }
+
+    /// Reduce Motion turns every chrome movement off, not just some of them.
+    func testReduceMotionDropsChromeAnimations() {
+        XCTAssertNil(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: true))
+        XCTAssertNil(ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: true))
+        XCTAssertNotNil(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: false))
     }
 
     // MARK: - Service health (build step 6)

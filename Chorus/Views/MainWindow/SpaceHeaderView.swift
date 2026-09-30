@@ -118,7 +118,7 @@ struct SpaceHeaderView: View {
                 .accessibilityHidden(true)
 
             Text(displayName)
-                .font(.subheadline)
+                .font(ChorusType.label)
                 .fontWeight(.semibold)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -159,9 +159,9 @@ struct SpaceHeaderView: View {
     /// is open, which is the pop-up button behaviour it borrows.
     private var fillStyle: AnyShapeStyle {
         if isPaletteOpen {
-            return AnyShapeStyle(.tint.opacity(0.12))
+            return AnyShapeStyle(ChorusColor.selectedFill)
         } else if isHovering {
-            return AnyShapeStyle(Color.primary.opacity(0.06))
+            return AnyShapeStyle(ChorusColor.hoverFill)
         }
         return AnyShapeStyle(Color.clear)
     }

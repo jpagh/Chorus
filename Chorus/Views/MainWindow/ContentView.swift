@@ -9,135 +9,46 @@ struct ContentView: View {
     /// clear of whatever the traffic lights overhang.
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
 
-    /// Gates the fresh-start confirmation. Local to the view rather than on
-    /// `AppState`: nothing outside this banner presents it.
-    @State private var isConfirmingFreshStart = false
+    /// How much desktop the window lets through. See `WindowGlassStyle`.
+    @AppStorage(WindowGlassStyle.defaultsKey) private var glassStyleRaw = WindowGlassStyle.defaultStyle.rawValue
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
 
     var body: some View {
         @Bindable var state = appState
 
-        VStack(spacing: 0) {
-            // Three notices, one shape. They used to be two raw SwiftUI yellows
-            // and a solid red bar, which read as three unrelated designs stacked
-            // on each other. `NoticeStrip` carries the severity in the icon and
-            // the rule under the strip, and carries the window-drag handle every
-            // one of them needs.
-            if let error = appState.storeError {
-                NoticeStrip(severity: .error) {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                    Spacer()
-                    if let url = appState.storeFileURL {
-                        Button("Reveal in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        }
-                        .font(.caption)
-                    }
-                    if appState.storeRecoveryOffer != nil {
-                        Button("Review backups…") {
-                            appState.isShowingStoreRecovery = true
-                        }
-                        .font(.caption)
-                    }
-                    if appState.isStoreInMemoryFallback {
-                        Button("Start fresh…") {
-                            isConfirmingFreshStart = true
-                        }
-                        .font(.caption)
-                        .help("Set your current data file aside and start with a new, empty one")
-                    }
-                    if appState.storeErrorDismissible {
-                        Button {
-                            appState.dismissStoreBanner()
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .help("Dismiss")
-                        .accessibilityLabel("Dismiss")
-                    }
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Warning: \(error)")
-                .confirmationDialog(
-                    "Start with a new, empty Chorus?",
-                    isPresented: $isConfirmingFreshStart,
-                    titleVisibility: .visible
-                ) {
-                    Button("Start Fresh and Restart") {
-                        appState.chooseFreshStart()
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Your current data file is kept as a backup and stays listed under Review backups, so you can put it back later. Chorus restarts to do this.")
-                }
-                // The quit waits for the dialog to close: AppKit will not
-                // terminate while one is attached and drops the request rather
-                // than deferring it. Same split as the recovery picker's.
-                .onChange(of: isConfirmingFreshStart) { _, shown in
-                    if !shown { appState.quitForScheduledFreshStart() }
-                }
-            }
-
-            if appState.storeError == nil, appState.storeRecoveryOffer != nil {
-                NoticeStrip(severity: .info) {
-                    Text("Chorus has a backup with more of your spaces and services than it can see now.")
-                        .font(.caption)
-                        .lineLimit(2)
-                    Spacer()
-                    Button("Review backups…") { appState.isShowingStoreRecovery = true }
-                        .font(.caption)
-                    Button("Not now") { appState.declineStoreRecovery() }
-                        .font(.caption)
-                }
-                // No .accessibilityLabel override here, unlike the storeError
-                // banner above: an explicit label replaces what `.combine`
-                // would otherwise speak, and on this banner the buttons ARE
-                // the point — overriding would drop "Review backups…" and
-                // "Not now" from VoiceOver's reading, leaving them reachable
-                // only as custom actions.
-                .accessibilityElement(children: .combine)
-            }
-
-            if !appState.networkMonitor.isOnline {
-                NoticeStrip(severity: .warning) {
-                    Text("You're offline. Services won't load new content until your connection returns.")
-                        .font(.caption)
-                    Spacer()
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Offline")
-            }
-
-            mainLayout(
-                spaceSelection: $state.selectedSpaceID,
-                serviceSelection: $state.selectedServiceID
+        mainLayout(
+            spaceSelection: $state.selectedSpaceID,
+            serviceSelection: $state.selectedServiceID
+        )
+        .frame(minWidth: 800, minHeight: 500)
+        // The canvas behind everything, frosted when a glass style is on.
+        // It also keeps the traffic-light insets from showing the
+        // title-bar vibrancy (the top-left tint).
+        .background(
+            WindowBackdrop(
+                style: WindowGlassStyle.resolve(glassStyleRaw)
+                    .effective(reduceTransparency: reduceTransparency)
             )
-            .frame(minWidth: 800, minHeight: 500)
-            // Fill behind everything with the window shade so the traffic-light
-            // insets don't reveal the title-bar vibrancy (the top-left tint).
-            .background(Color(nsColor: .windowBackgroundColor))
-            // The traffic lights hold the top-left, so the donation button takes
-            // the top-right of whichever bar the layout puts up there.
-            .overlay(alignment: .topTrailing) {
-                SupportButton()
-                    .padding(.trailing, 10 - SupportButtonMetrics.targetOverhang)
-                    .padding(.top, supportButtonTopInset)
-            }
-            // Extend up into the (hidden) title-bar area so the tab bar sits at
-            // the very top of the window; the traffic-light insets keep the
-            // top-left clear.
-            .ignoresSafeArea(.container, edges: .top)
+        )
+        // The traffic lights hold the top-left, so the donation button takes
+        // the top-right of whichever bar the layout puts up there.
+        .overlay(alignment: .topTrailing) {
+            SupportButton()
+                .padding(.trailing, 10 - SupportButtonMetrics.targetOverhang)
+                .padding(.top, supportButtonTopInset)
         }
+        // Extend up into the (hidden) title-bar area so the tab bar sits at
+        // the very top of the window; the traffic-light insets keep the
+        // top-left clear.
+        .ignoresSafeArea(.container, edges: .top)
         // The top-bar and hybrid layouts put draggable tabs in the title-bar
         // drag band, so turn the OS window drag off there (a click-drag on a tab
         // would otherwise move the window instead of reordering) and let the
         // WindowDragHandles move the window instead. The sidebar keeps the
         // normal title-bar drag.
         .background(WindowMovableConfigurator(isMovable: !appState.railLayout.hasTopBar))
+        .background(TrafficLightsPositioner(bandHeight: ChorusCard.topBand))
         // Ask for macOS notification permission here, not in AppState.init:
         // requesting during App.init (before the scene exists) can fail with
         // "Notifications are not allowed for this application" and leave the app
@@ -240,14 +151,14 @@ struct ContentView: View {
     ) -> some View {
         // The title bar is hidden, so content runs to the top edge. Reserve the
         // top-left for the traffic lights: push the leftmost top elements clear.
-        let lightsHeight: CGFloat = 28
         let lightsWidth = SpaceStripMetrics.trafficLightsWidth
 
         switch appState.railLayout {
+        // The two left rails sit under the top band, where the traffic lights
+        // are, so both cards start at the same height.
         case .sidebar:
             HStack(spacing: 0) {
-                rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: lightsHeight)
-                Divider()
+                rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: ChorusCard.topBand)
                 webContent
             }
         case .allServices:
@@ -256,25 +167,24 @@ struct ContentView: View {
                     axis: .vertical,
                     spaceSelection: spaceSelection,
                     serviceSelection: serviceSelection,
-                    contentInset: lightsHeight,
+                    contentInset: ChorusCard.topBand,
                     showsSpaceHeader: false,
                     showsAllSpaces: true
                 )
-                Divider()
                 webContent
             }
         case .topBars:
             VStack(spacing: 0) {
                 rail(axis: .horizontal, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: lightsWidth)
-                Divider()
                 webContent
             }
         case .hybrid:
             HStack(spacing: 0) {
-                SpaceStripView(selectedSpaceID: spaceSelection, contentInset: lightsHeight)
+                // The strip's card starts under the bar's height, level with
+                // the web card beside it.
+                SpaceStripView(selectedSpaceID: spaceSelection, contentInset: UnifiedRailView.barHeight)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Spaces")
-                Divider()
                 VStack(spacing: 0) {
                     // The traffic lights sit over the strip. Only what they
                     // overhang lands on this bar, so only that much is spent
@@ -290,7 +200,6 @@ struct ContentView: View {
                         ),
                         showsSpaceHeader: false
                     )
-                    Divider()
                     webContent
                 }
             }
@@ -317,26 +226,22 @@ struct ContentView: View {
         .accessibilityLabel("Space and services")
     }
 
+    /// The web view on its inset card. The gutter runs round three sides; the
+    /// top is left to whatever sits above the card, the nav row or the bar,
+    /// which already spaces itself off the window edge.
     private var webContent: some View {
         WebContentView(selectedServiceID: appState.selectedServiceID)
+            .padding([.horizontal, .bottom], ChorusCard.gutter)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Web content")
     }
 
-    /// Centres the donation button's 20 point chip in whatever the layout puts
-    /// along the top: the sidebar's nav row, 32 points tall, and the unified
-    /// rail's bar, 42. Re-measured when one rail replaced two — the old 36 and
-    /// 40 point bars are gone. The overhang comes off because the chip is
-    /// centred inside a larger click target.
+    /// Centres the donation button's 20 point chip in the 52 point band, which
+    /// every layout has along its top. The overhang comes off because the chip
+    /// is centred inside a larger click target.
     private var supportButtonTopInset: CGFloat {
-        let overhang = SupportButtonMetrics.targetOverhang
-        switch appState.railLayout {
-        case .sidebar, .allServices: return 6 - overhang
-        // The hybrid layout puts the same 42 point bar along the top, so the
-        // button is centred in it the same way.
-        case .topBars, .hybrid: return (UnifiedRailView.barHeight - SupportButtonMetrics.chipSize) / 2 - overhang
-        }
+        (ChorusCard.topBand - SupportButtonMetrics.chipSize) / 2 - SupportButtonMetrics.targetOverhang
     }
 
     private func selectFirstService(in spaceID: UUID) {
@@ -391,9 +296,9 @@ private struct SupportButton: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(isHovering ? Color.accentColor : Color.secondary)
                 .frame(width: SupportButtonMetrics.chipSize, height: SupportButtonMetrics.chipSize)
-                // The rails scroll under this button when a space holds enough
-                // services to overflow, so it needs its own fill to stay legible.
-                .background(Color(nsColor: .windowBackgroundColor))
+                // No fill of its own: nothing scrolls under this corner, since
+                // the bar's nav buttons keep it clear, and an opaque square
+                // shows as a patch once the canvas is frosted.
                 // The paint stops at the chip; the pointer gets a wider target
                 // around it. Growing the fill instead would make the button
                 // louder, which is the thing the 20 points are buying.
@@ -432,5 +337,125 @@ struct LockView: View {
         .onAppear {
             appState.authenticate()
         }
+    }
+}
+
+/// The window's three notices, one shape. They used to be two raw SwiftUI
+/// yellows and a solid red bar across the top of the window, which read as
+/// three unrelated designs stacked on each other and sat in the band the
+/// traffic lights share. Now they are cards in a stack above the web card,
+/// with the passkey notice, so they push the page down rather than cover it:
+/// two of them cannot be dismissed, and a card over the page would hide the
+/// top of every site for as long as it stood.
+struct WindowNotices: View {
+    @Environment(AppState.self) private var appState
+
+    /// Gates the fresh-start confirmation. Local to the view rather than on
+    /// `AppState`: nothing outside this notice presents it.
+    @State private var isConfirmingFreshStart = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let error = appState.storeError {
+                NoticeCard(severity: .error) {
+                    // Wraps in full: when Chorus is running on a temporary
+                    // store, the end of this message says changes won't be
+                    // saved, and that is the part that must not be cut off.
+                    Text(error)
+                        .font(ChorusType.caption)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    if let url = appState.storeFileURL {
+                        Button("Reveal in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        }
+                        .font(ChorusType.caption)
+                    }
+                    if appState.storeRecoveryOffer != nil {
+                        Button("Review backups…") {
+                            appState.isShowingStoreRecovery = true
+                        }
+                        .font(ChorusType.caption)
+                    }
+                    if appState.isStoreInMemoryFallback {
+                        Button("Start fresh…") {
+                            isConfirmingFreshStart = true
+                        }
+                        .font(ChorusType.caption)
+                        .help("Set your current data file aside and start with a new, empty one")
+                    }
+                    if appState.storeErrorDismissible {
+                        Button {
+                            appState.dismissStoreBanner()
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(ChorusType.caption)
+                        .help("Dismiss")
+                        .accessibilityLabel("Dismiss")
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Warning: \(error)")
+                .confirmationDialog(
+                    "Start with a new, empty Chorus?",
+                    isPresented: $isConfirmingFreshStart,
+                    titleVisibility: .visible
+                ) {
+                    Button("Start Fresh and Restart") {
+                        appState.chooseFreshStart()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Your current data file is kept as a backup and stays listed under Review backups, so you can put it back later. Chorus restarts to do this.")
+                }
+                // The quit waits for the dialog to close: AppKit will not
+                // terminate while one is attached and drops the request rather
+                // than deferring it. Same split as the recovery picker's.
+                .onChange(of: isConfirmingFreshStart) { _, shown in
+                    if !shown { appState.quitForScheduledFreshStart() }
+                }
+            }
+
+            if appState.storeError == nil, appState.storeRecoveryOffer != nil {
+                NoticeCard(severity: .info) {
+                    Text("Chorus has a backup with more of your spaces and services than it can see now.")
+                        .font(ChorusType.caption)
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Review backups…") { appState.isShowingStoreRecovery = true }
+                        .font(ChorusType.caption)
+                    Button("Not now") { appState.declineStoreRecovery() }
+                        .font(ChorusType.caption)
+                }
+                // No .accessibilityLabel override here, unlike the storeError
+                // banner above: an explicit label replaces what `.combine`
+                // would otherwise speak, and on this banner the buttons ARE
+                // the point — overriding would drop "Review backups…" and
+                // "Not now" from VoiceOver's reading, leaving them reachable
+                // only as custom actions.
+                .accessibilityElement(children: .combine)
+            }
+
+            if !appState.networkMonitor.isOnline {
+                NoticeCard(severity: .warning) {
+                    Text("You're offline. Services won't load new content until your connection returns.")
+                        .font(ChorusType.caption)
+                    Spacer()
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Offline")
+            }
+        }
+        // A gap under the stack only when something is in it.
+        .padding(.bottom, isShowingAny ? ChorusCard.gutter : 0)
+    }
+
+    private var isShowingAny: Bool {
+        appState.storeError != nil
+            || appState.storeRecoveryOffer != nil
+            || !appState.networkMonitor.isOnline
     }
 }

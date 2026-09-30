@@ -12,7 +12,7 @@ struct WebNavButtons: View {
     @State private var didCopy = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: ChorusNav.spacing) {
             navButton("chevron.left", label: "Back", enabled: webViewState.canGoBack) {
                 webViewState.webView?.goBack()
             }
@@ -30,6 +30,7 @@ struct WebNavButtons: View {
                 Image(systemName: webViewState.isLoading ? "xmark" : "arrow.clockwise")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16, height: 14)
+                    .navCircle()
             }
             .buttonStyle(.plain)
             .disabled(webViewState.webView == nil)
@@ -56,8 +57,13 @@ struct WebNavButtons: View {
                 Image(systemName: didCopy ? "checkmark" : "square.and.arrow.up")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16, height: 14)
+                    .navCircle()
             }
-            .menuStyle(.borderlessButton)
+            // The button style draws the label as SwiftUI, circle and all, so
+            // the whole 28 points open the menu. The borderless style drew only
+            // the glyph and took clicks on it alone.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
             .disabled(currentPageURL == nil)
@@ -106,6 +112,7 @@ struct WebNavButtons: View {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
                 .frame(width: 16, height: 14)
+                .navCircle()
         }
         .buttonStyle(.plain)
         .disabled(!enabled)

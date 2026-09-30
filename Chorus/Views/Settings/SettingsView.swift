@@ -75,6 +75,7 @@ struct GeneralSettingsView: View {
     /// The same, for the hybrid layout's strip of spaces — see `SpaceStripMetrics`.
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
     @AppStorage(OutsideLinkDefault.defaultsKey) private var linksOpenInChorus = false
+    @AppStorage(WindowGlassStyle.defaultsKey) private var glassStyleRaw = WindowGlassStyle.defaultStyle.rawValue
 
     private let presenceManager = AppPresenceManager()
 
@@ -122,6 +123,22 @@ struct GeneralSettingsView: View {
                     ForEach(AppearanceMode.allCases, id: \.self) { mode in
                         Text(mode.displayName).tag(mode)
                     }
+                }
+
+                // Glass needs macOS 26. Below it the window is always the flat
+                // grey, so a picker there would change nothing.
+                if WindowGlassStyle.isGlassAvailable {
+                    Picker("Window glass", selection: Binding(
+                        get: { WindowGlassStyle.resolve(glassStyleRaw) },
+                        set: { glassStyleRaw = $0.rawValue }
+                    )) {
+                        ForEach(WindowGlassStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                    Text("Glass lets the desktop show through behind the rail and the bars, and Clear lets more of it through than Regular. Pages stay solid. So does the whole window while Reduce Transparency is on.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Picker("Layout", selection: Binding(

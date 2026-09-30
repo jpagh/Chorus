@@ -13,6 +13,10 @@ All notable changes to Chorus are documented here. Format loosely follows
 - Settings can save your spaces and services to a file, and add them back from one, on this Mac or another. Sign-ins stay behind, so you sign in to each service again after an import. An import only adds: a space merges into yours when the names match, and it removes nothing you have. Before you say yes it lists the sites the file would add, and camera and microphone choices stay behind, so each imported service asks again.
 - The app now carries the license texts for the parts other people wrote, and About links to them. The HaGezi blocklist is GPL-3.0, and Chorus shipped it with only a link. The exact list text each release blocks from now sits in the source code. I also brought both blocklists up to date.
 
+### Changed
+
+- The window has a new look, borrowed from Paguro. The page sits on a card with rounded corners and a narrow grey margin round it, and the rail has a card of its own. A selected service is grey with its name in black or white, not blue. Blue now marks only the row the keyboard is on. Rows are shorter, so more services fit, and in All services on the left each space's name heads its group. The window's own buttons at the top left sit in the middle of a taller band along the top, and the page buttons, such as Back and Reload, are round. On macOS 26 you can let the desktop show through behind the rail and the bars, from Settings; it starts off. Warnings are cards above the page now, clear of the window's buttons, and a long one shows all its words. No text in the rail or the notices is smaller than 12 points.
+
 ### Fixed
 
 - A call keeps its sound when you switch to another service. Chorus paused the sound of every service you left, so the other person went quiet while your microphone kept sending.

@@ -23,9 +23,8 @@ struct UnifiedRailView: View {
     @Binding var selectedSpaceID: UUID?
     @Binding var selectedServiceID: UUID?
     var axis: Axis = .vertical
-    /// Inset applied to the content (top for the vertical rail, leading for the
-    /// horizontal bar) to clear the window traffic lights, kept inside so the
-    /// background and dividers still run full-length.
+    /// Room left for the window traffic lights: above the card in the vertical
+    /// rail, and before the first control in the horizontal bar.
     var contentInset: CGFloat = 0
     /// Whether the rail draws the current space as its header. False in the
     /// hybrid layout, where a strip of spaces sits down the left and saying
@@ -62,7 +61,7 @@ struct UnifiedRailView: View {
     /// focus follows the membership link rather than the shared service id.
     @FocusState private var focusedAllServicesLinkID: UUID?
     // Fallback drop midpoints, used only until the first geometry pass records a
-    // cell's real size. Both are half of what `ServiceRowView` draws: a 34 point
+    // cell's real size. Both are half of what `ServiceRowView` draws: a 28 point
     // row in the vertical rail, and a labelled tab of roughly 120 points in the
     // horizontal bar. A wrong (too large) value would make every drop on that
     // axis resolve `.before` and leave the last slot unreachable.
@@ -75,9 +74,9 @@ struct UnifiedRailView: View {
     @State private var cellSizes: [UUID: CGSize] = [:]
     @State private var spaceSeparatorSizes: [UUID: CGSize] = [:]
 
-    /// The horizontal bar: a 32 point header and 32 point tabs with 5 points
-    /// clear above and below. The drawn frame says 42.
-    static let barHeight: CGFloat = 42
+    /// The horizontal bar is the top band: a 32 point header and 32 point tabs
+    /// with 10 points clear above and below.
+    static let barHeight: CGFloat = ChorusCard.topBand
     /// How much of the scrolling tab row's trailing edge is softened to say the
     /// row runs past the window.
     private static let overflowFadeFraction: CGFloat = 0.06
@@ -179,12 +178,12 @@ struct UnifiedRailView: View {
     }
 
     /// Every space in sort order, followed by its services in link order.
-    /// Separators stay identical for full and empty spaces; an empty space puts
-    /// its status in the service area beneath the separator.
+    /// Headings stay identical for full and empty spaces; an empty space puts
+    /// its status in the service area beneath the heading.
     private var allServicesBody: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 6 + contentInset)
-
+        // Grouped once per render: the rows and the reorder key both need it.
+        let groups = spaces.map { (space: $0, links: links(in: $0.id)) }
+        return VStack(spacing: 0) {
             // No scroller: with "Always show scroll bars" on, it took width from
             // the fixed-width cells and pushed them off the rail's centre line.
             ScrollView(.vertical, showsIndicators: false) {
@@ -194,9 +193,13 @@ struct UnifiedRailView: View {
                 // then keeps the old selection/focus marks, so the moved icon
                 // stays highlighted after another service is actually in use.
                 VStack(spacing: 0) {
-                    ForEach(spaces) { space in
-                        let spaceLinks = links(in: space.id)
-                        allServicesSeparator(for: space)
+                    ForEach(groups, id: \.space.id) { group in
+                        let space = group.space
+                        let spaceLinks = group.links
+                        allServicesHeading(for: space)
+                            // A gap before every group but the first, which
+                            // the card's own padding already clears.
+                            .padding(.top, space.id == spaces.first?.id ? 0 : 6)
 
                         if spaceLinks.isEmpty {
                             emptySpaceCell(for: space)
@@ -210,39 +213,59 @@ struct UnifiedRailView: View {
                         }
                     }
                 }
-                .padding(.bottom, 8)
+                .animation(reorderAnimation, value: ReorderKey(ids: groups.flatMap(\.links).map(\.id)))
+                .padding(.vertical, ChorusCard.railPadding)
             }
 
-            Divider()
+            railRule
             allServicesAddButtons
-                .padding(.vertical, 6)
+                .padding(.vertical, ChorusCard.railPadding)
         }
-        .frame(width: showServiceNames ? ServiceRowView.railWidth : ServiceRowView.compactRailWidth)
-        .background(.background)
+        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset)
     }
 
-    private func allServicesSeparator(for space: Space) -> some View {
+    /// A space's name over its services, set like the row labels below it:
+    /// the emoji where their icons are, the name where their names are. The
+    /// nameless rail has no room for a name, so the emoji sits between two
+    /// short rules instead, which also keep the groups apart.
+    private func allServicesHeading(for space: Space) -> some View {
         let selected = selectedSpaceID == space.id
 
         return Button {
             selectSpaceFromAllServicesRail(space)
         } label: {
-            HStack(spacing: 3) {
-                separatorLine(selected: selected)
-                Text(space.emoji)
-                    .font(.system(size: 12))
-                    .opacity(space.isMutedEffective ? 0.5 : 1)
-                    .accessibilityHidden(true)
+            Group {
                 if showServiceNames {
-                    Text(space.name)
-                        .font(.caption)
-                        .fontWeight(selected ? .semibold : .regular)
-                        .foregroundStyle(selected ? .primary : .secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 8) {
+                        Text(space.emoji)
+                            .font(.system(size: 12))
+                            .frame(width: 18)
+                            .opacity(space.isMutedEffective ? 0.5 : 1)
+                            .accessibilityHidden(true)
+                        Text(space.name)
+                            .font(ChorusType.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(ChorusColor.secondaryText))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(width: ServiceRowView.rowWidth)
+                } else {
+                    HStack(spacing: 3) {
+                        separatorLine(selected: selected)
+                        // Fixed, or the rules squeeze the emoji to fit 36 points.
+                        Text(space.emoji)
+                            .font(.system(size: 12))
+                            .fixedSize()
+                            .opacity(space.isMutedEffective ? 0.5 : 1)
+                            .accessibilityHidden(true)
+                        separatorLine(selected: selected)
+                    }
+                    .frame(width: ServiceRowView.compactCellWidth)
                 }
-                separatorLine(selected: selected)
             }
-            .frame(maxWidth: .infinity)
             .frame(height: 24)
             .contentShape(Rectangle())
         }
@@ -289,10 +312,19 @@ struct UnifiedRailView: View {
         .accessibilityAction(named: "Move down") { moveSpace(space, forward: true) }
     }
 
+    /// Ink, not the accent: blue is kept for the focus ring.
     private func separatorLine(selected: Bool) -> some View {
         Rectangle()
-            .fill(selected ? Color.accentColor.opacity(0.65) : Color(nsColor: .separatorColor))
+            .fill(selected ? ChorusColor.secondaryText : ChorusColor.hairline)
             .frame(height: 1)
+    }
+
+    /// The rule over the add buttons, inset to the rows' width.
+    private var railRule: some View {
+        Rectangle()
+            .fill(ChorusColor.hairline)
+            .frame(height: 1)
+            .padding(.horizontal, 8)
     }
 
     private func emptySpaceCell(for space: Space) -> some View {
@@ -301,10 +333,11 @@ struct UnifiedRailView: View {
             selectedServiceID = nil
         } label: {
             Text("Empty")
-                .font(showServiceNames ? .subheadline : .caption2)
-                .foregroundStyle(.tertiary)
+                .font(ChorusType.caption)
+                .foregroundStyle(ChorusColor.secondaryText)
+                // 34 puts the word where the row labels start.
                 .frame(maxWidth: .infinity, alignment: showServiceNames ? .leading : .center)
-                .padding(.horizontal, showServiceNames ? 36 : 0)
+                .padding(.horizontal, showServiceNames ? 34 : 0)
                 .frame(height: ServiceRowView.rowHeight)
                 .contentShape(Rectangle())
         }
@@ -355,7 +388,7 @@ struct UnifiedRailView: View {
         )
         .draggable(link.id.uuidString) {
             Text(service.label)
-                .font(.caption)
+                .font(ChorusType.caption)
                 .padding(6)
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
@@ -445,18 +478,18 @@ struct UnifiedRailView: View {
                     HStack(spacing: 8) {
                         Image(systemName: systemImage)
                             .font(.system(size: 12, weight: .medium))
-                            .frame(width: 20, height: 20)
+                            .frame(width: 18, height: 18)
                         Text(title)
-                            .font(.subheadline)
+                            .font(ChorusType.label)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth, height: 30)
+                    .frame(width: ServiceRowView.rowWidth, height: ServiceRowView.rowHeight)
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .medium))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 28)
+                        .frame(height: ServiceRowView.rowHeight)
                 }
             }
             .contentShape(Rectangle())
@@ -540,19 +573,19 @@ struct UnifiedRailView: View {
         }
     }
 
-    /// 240 points wide, against the 52 + 52 and two dividers the two rails used
-    /// to take. The header sits at y 38 — 28 points of traffic light, then 10 —
-    /// which is where the frame draws it.
+    /// A card 232 points wide under the traffic lights, its top edge level with
+    /// the web card's. The header sits at y 56: the 52 point band, then the
+    /// card's 4 points of padding.
     private var verticalBody: some View {
         VStack(spacing: 0) {
             spaceHeader
-                .padding(.top, 10 + contentInset)
-                .padding(.bottom, 6)
+                .padding(.top, ChorusCard.railPadding)
+                .padding(.bottom, 2)
 
             // No scroller: with "Always show scroll bars" on, it took width from
             // the fixed-width cells and pushed them off the rail's centre line.
             ScrollView(.vertical, showsIndicators: false) {
-                // 2 points between 34 point rows is the drawn 36 point pitch.
+                // 2 points between 28 point rows is the drawn 30 point pitch.
                 LazyVStack(spacing: 2) {
                     ForEach(filteredLinks) { link in
                         if let service = link.liveService {
@@ -560,23 +593,23 @@ struct UnifiedRailView: View {
                         }
                     }
                 }
-                .padding(.bottom, 8)
+                .animation(reorderAnimation, value: ReorderKey(ids: filteredLinks.map(\.id)))
+                .padding(.vertical, ChorusCard.railPadding)
             }
 
-            Divider()
+            railRule
 
             addServiceButton
-                .padding(.vertical, 6)
+                .padding(.vertical, ChorusCard.railPadding)
         }
-        .frame(width: showServiceNames ? ServiceRowView.railWidth : ServiceRowView.compactRailWidth)
-        .background(.background)
+        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset)
     }
 
     private var horizontalBody: some View {
         HStack(spacing: 8) {
             if showsSpaceHeader {
                 spaceHeader
-                    // 72 points of traffic light, then 8, puts the header at x 80.
+                    // 82 points of traffic light, then 8, puts the header at x 90.
                     .padding(.leading, 8 + contentInset)
 
                 Divider().frame(width: 1, height: 20)
@@ -610,8 +643,9 @@ struct UnifiedRailView: View {
         // of the bar to move the window": the header, tabs and nav buttons sit
         // in front and take their own clicks, and every empty area falls through
         // to here.
+        // No fill of its own: the bar sits on the window canvas, and the web
+        // card below it carries the edge the divider used to draw.
         .background(WindowDragHandle())
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     // MARK: - The space header, and the palette it opens
@@ -721,6 +755,14 @@ struct UnifiedRailView: View {
                 }
             }
         }
+        .animation(reorderAnimation, value: ReorderKey(ids: filteredLinks.map(\.id)))
+    }
+
+    /// Rows and tabs settle into a new order with the chrome's spring, and
+    /// jump there under Reduce Motion. Keyed on `ReorderKey`, so a change of
+    /// selection or of space does not animate.
+    private var reorderAnimation: Animation? {
+        ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: reduceMotion)
     }
 
     /// Home URL of the currently selected service, for the nav home button.
@@ -751,7 +793,7 @@ struct UnifiedRailView: View {
                 // a drop on itself or a cancelled drag never fires the drop
                 // handler — which left the row stuck at 0.4 opacity.
                 Text(service.label)
-                    .font(.caption)
+                    .font(ChorusType.caption)
                     .padding(6)
                     .background(.ultraThickMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
@@ -884,7 +926,7 @@ struct UnifiedRailView: View {
     }
 
     /// In the wide vertical rail this is a labelled row like the services above
-    /// it, with the plus sitting in a 20 point box so its text starts on the same
+    /// it, with the plus sitting in an 18 point box so its text starts on the same
     /// x as theirs. Everywhere else it is the plus alone: the horizontal bar has
     /// no width to spare, and a nameless rail is 52 points wide, so the 224 point
     /// labelled row would hang out of it.
@@ -897,13 +939,13 @@ struct UnifiedRailView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "plus")
                             .font(.system(size: 12, weight: .medium))
-                            .frame(width: 20, height: 20)
+                            .frame(width: 18, height: 18)
                         Text("Add service")
-                            .font(.subheadline)
+                            .font(ChorusType.label)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth, height: 30)
+                    .frame(width: ServiceRowView.rowWidth, height: ServiceRowView.rowHeight)
                 } else {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))
