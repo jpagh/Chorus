@@ -235,7 +235,7 @@ struct UnifiedRailView: View {
                     .accessibilityHidden(true)
                 if showServiceNames {
                     Text(space.name)
-                        .font(.caption)
+                        .font(ChorusType.caption)
                         .fontWeight(selected ? .semibold : .regular)
                         .foregroundStyle(selected ? .primary : .secondary)
                         .lineLimit(1)
@@ -355,7 +355,7 @@ struct UnifiedRailView: View {
         )
         .draggable(link.id.uuidString) {
             Text(service.label)
-                .font(.caption)
+                .font(ChorusType.caption)
                 .padding(6)
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
@@ -447,7 +447,7 @@ struct UnifiedRailView: View {
                             .font(.system(size: 12, weight: .medium))
                             .frame(width: 20, height: 20)
                         Text(title)
-                            .font(.subheadline)
+                            .font(ChorusType.label)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
@@ -610,8 +610,9 @@ struct UnifiedRailView: View {
         // of the bar to move the window": the header, tabs and nav buttons sit
         // in front and take their own clicks, and every empty area falls through
         // to here.
+        // No fill of its own: the bar sits on the window canvas, and the web
+        // card below it carries the edge the divider used to draw.
         .background(WindowDragHandle())
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     // MARK: - The space header, and the palette it opens
@@ -751,7 +752,7 @@ struct UnifiedRailView: View {
                 // a drop on itself or a cancelled drag never fires the drop
                 // handler — which left the row stuck at 0.4 opacity.
                 Text(service.label)
-                    .font(.caption)
+                    .font(ChorusType.caption)
                     .padding(6)
                     .background(.ultraThickMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
@@ -899,7 +900,7 @@ struct UnifiedRailView: View {
                             .font(.system(size: 12, weight: .medium))
                             .frame(width: 20, height: 20)
                         Text("Add service")
-                            .font(.subheadline)
+                            .font(ChorusType.label)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)

@@ -15,8 +15,23 @@ struct WebViewContainer: NSViewRepresentable {
     }
 }
 
+/// Holds the current service's web view, clipped to the content card's
+/// rounded corners.
 final class WebViewHostView: NSView {
     private weak var currentWebView: WKWebView?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = ChorusCard.cornerRadius
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     func setWebView(_ webView: WKWebView) {
         guard webView !== currentWebView else { return }

@@ -215,7 +215,7 @@ struct SpacePaletteView: View {
                     .font(.system(size: 11, weight: .medium))
                     .frame(width: 20)
                 Text("New Space")
-                    .font(.subheadline)
+                    .font(ChorusType.label)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(.secondary)
@@ -331,14 +331,14 @@ private struct SpacePaletteRow: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(space.name)
-                        .font(.subheadline)
+                        .font(ChorusType.label)
                         .fontWeight(isCurrent ? .semibold : .regular)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(.primary)
 
                     Text(SpacePalette.subtitle(serviceCount: serviceCount))
-                        .font(.caption)
+                        .font(ChorusType.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -358,7 +358,7 @@ private struct SpacePaletteRow: View {
             .frame(height: 38)
             .background {
                 RoundedRectangle(cornerRadius: ChorusRadius.control)
-                    .fill(isCurrent ? AnyShapeStyle(.tint.opacity(0.12)) : AnyShapeStyle(Color.clear))
+                    .fill(isCurrent ? AnyShapeStyle(ChorusColor.selectedFill) : AnyShapeStyle(Color.clear))
                     .overlay {
                         RoundedRectangle(cornerRadius: ChorusRadius.control)
                             .strokeBorder(

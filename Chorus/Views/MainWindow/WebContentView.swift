@@ -36,67 +36,28 @@ struct WebContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let service = selectedService, let webView = currentWebView {
+            if let service = selectedService, currentWebView != nil {
                 if showPasskeyNotice {
                     passkeyNoticeBanner
                 }
 
                 // Both bar layouts host the nav buttons in the top bar itself.
                 // The two left-rail layouts have no top bar, so they get a slim
-                // navigation row above the content.
+                // navigation row above the card, on the canvas.
                 if !appState.railLayout.hasTopBar {
                     WebNavButtons(webViewState: webViewState, homeURL: URL(string: service.url))
                         .padding(.horizontal, 12)
                         .padding(.leading, trafficLightsOverhang)
                         .padding(.vertical, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                    Divider()
                 }
-
-                ZStack(alignment: .topTrailing) {
-                    WebViewContainer(webView: webView)
-
-                    // Show cached snapshot as instant visual feedback while page loads.
-                    // Fades out once the web view finishes loading. It fills the
-                    // web view's frame (rather than aspect-fill, which cropped or
-                    // stretched it); since the snapshot was taken at this frame it
-                    // lines up without distortion.
-                    if let snapshot = transitionSnapshot, webViewState.isLoading {
-                        Image(nsImage: snapshot)
-                            .resizable()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .transition(.opacity)
-                            // The snapshot is a picture, never a shield. Without
-                            // this it sits over the live web view and eats every
-                            // click for as long as a navigation runs — a page
-                            // that looks exactly like the one underneath but
-                            // answers nothing (reported on TD EasyWeb: click
-                            // Login and the app appears to freeze).
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-
-                    if appState.findInPageVisible {
-                        FindInPageBar(
-                            isVisible: Binding(
-                                get: { appState.findInPageVisible },
-                                set: { appState.findInPageVisible = $0 }
-                            ),
-                            webView: webView
-                        )
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: webViewState.isLoading)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: appState.findInPageVisible)
-            } else if selectedService != nil {
-                ProgressView("Loading service…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                emptyState
             }
+
+            // Everything below the nav row is one card: the page, the loading
+            // placeholder and the empty state alike, so the window keeps its
+            // shape while a service loads or when there is none.
+            cardContent
+                .contentCard()
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showPasskeyNotice)
         .onAppear {
@@ -119,6 +80,56 @@ struct WebContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 if !webViewState.isLoading { transitionSnapshot = nil }
             }
+        }
+    }
+
+    /// What the card holds: the live page with its snapshot and find bar, the
+    /// placeholder while a web view is made, or the empty state.
+    @ViewBuilder
+    private var cardContent: some View {
+        if selectedService != nil, let webView = currentWebView {
+            ZStack(alignment: .topTrailing) {
+                WebViewContainer(webView: webView)
+
+                // Show cached snapshot as instant visual feedback while page loads.
+                // Fades out once the web view finishes loading. It fills the
+                // web view's frame (rather than aspect-fill, which cropped or
+                // stretched it); since the snapshot was taken at this frame it
+                // lines up without distortion.
+                if let snapshot = transitionSnapshot, webViewState.isLoading {
+                    Image(nsImage: snapshot)
+                        .resizable()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .transition(.opacity)
+                        // The snapshot is a picture, never a shield. Without
+                        // this it sits over the live web view and eats every
+                        // click for as long as a navigation runs — a page
+                        // that looks exactly like the one underneath but
+                        // answers nothing (reported on TD EasyWeb: click
+                        // Login and the app appears to freeze).
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+
+                if appState.findInPageVisible {
+                    FindInPageBar(
+                        isVisible: Binding(
+                            get: { appState.findInPageVisible },
+                            set: { appState.findInPageVisible = $0 }
+                        ),
+                        webView: webView
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: webViewState.isLoading)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: appState.findInPageVisible)
+        } else if selectedService != nil {
+            ProgressView("Loading service…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            emptyState
         }
     }
 
@@ -301,6 +312,5 @@ struct WebContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 }

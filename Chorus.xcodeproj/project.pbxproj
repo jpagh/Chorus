@@ -34,6 +34,7 @@
 		5561BE9B6C6D8AA46CD42884 /* WebViewContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D9F34755F65BE5A3C76C88 /* WebViewContainer.swift */; };
 		57B17C6907B888254011D1C3 /* DownloadCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0856C776E775A4CB34F964C5 /* DownloadCenter.swift */; };
 		5E59730D46AE1AED21F82ECA /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C307C75776869CE8A82618 /* AppPreferences.swift */; };
+		6335C06C8BEA4BAFCC16F334 /* WindowBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AEA5DCBB5AB96E2C962A90 /* WindowBackdrop.swift */; };
 		68FE172BCA70FBB55022F7B1 /* StoreRelocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71CC3F7D7BD76E4100BC126 /* StoreRelocation.swift */; };
 		69AC657C2E3D81BFB330050A /* AppRelauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA77C4C73BEB532F6AC1C339 /* AppRelauncher.swift */; };
 		69FF2932CDD4A1208CA5DA71 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D9D707C0F9A04B5E0744F59 /* SettingsView.swift */; };
@@ -153,6 +154,7 @@
 		B2E3F3C66C05EA91501A73EF /* ChorusAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChorusAppDelegate.swift; sourceTree = "<group>"; };
 		B3506A7D95472D8F3E822A39 /* ServiceCatalogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceCatalogEntry.swift; sourceTree = "<group>"; };
 		B44B9AB3EC52D565BFB46183 /* ServiceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceRowView.swift; sourceTree = "<group>"; };
+		B5AEA5DCBB5AB96E2C962A90 /* WindowBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowBackdrop.swift; sourceTree = "<group>"; };
 		B71CC3F7D7BD76E4100BC126 /* StoreRelocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRelocation.swift; sourceTree = "<group>"; };
 		BFD9BB4DBF6536D1AD0CA298 /* ServiceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceHealth.swift; sourceTree = "<group>"; };
 		CA55A0E026084DC20071FBCE /* QuickSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSwitcherView.swift; sourceTree = "<group>"; };
@@ -346,6 +348,7 @@
 				4D2B28970B7AEF9B0EB53AFD /* UnifiedRailView.swift */,
 				DA4617D503719C1701307F28 /* WebContentView.swift */,
 				538A1641C210F10E3CD43E14 /* WebToolbarView.swift */,
+				B5AEA5DCBB5AB96E2C962A90 /* WindowBackdrop.swift */,
 			);
 			path = MainWindow;
 			sourceTree = "<group>";
@@ -586,6 +589,7 @@
 				DF712EA56B5AE10C7BF77176 /* WebViewCoordinator.swift in Sources */,
 				BAA5421430BDF6F9B918B7B5 /* WebViewPool.swift in Sources */,
 				783EF6C467034D74DE8D5F52 /* WebViewState.swift in Sources */,
+				6335C06C8BEA4BAFCC16F334 /* WindowBackdrop.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

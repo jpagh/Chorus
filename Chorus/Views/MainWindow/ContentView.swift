@@ -9,6 +9,10 @@ struct ContentView: View {
     /// clear of whatever the traffic lights overhang.
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
 
+    /// How much desktop the window lets through. See `WindowGlassStyle`.
+    @AppStorage(WindowGlassStyle.defaultsKey) private var glassStyleRaw = WindowGlassStyle.defaultStyle.rawValue
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     /// Gates the fresh-start confirmation. Local to the view rather than on
     /// `AppState`: nothing outside this banner presents it.
     @State private var isConfirmingFreshStart = false
@@ -25,7 +29,7 @@ struct ContentView: View {
             if let error = appState.storeError {
                 NoticeStrip(severity: .error) {
                     Text(error)
-                        .font(.caption)
+                        .font(ChorusType.caption)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                     Spacer()
@@ -33,19 +37,19 @@ struct ContentView: View {
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([url])
                         }
-                        .font(.caption)
+                        .font(ChorusType.caption)
                     }
                     if appState.storeRecoveryOffer != nil {
                         Button("Review backups…") {
                             appState.isShowingStoreRecovery = true
                         }
-                        .font(.caption)
+                        .font(ChorusType.caption)
                     }
                     if appState.isStoreInMemoryFallback {
                         Button("Start fresh…") {
                             isConfirmingFreshStart = true
                         }
-                        .font(.caption)
+                        .font(ChorusType.caption)
                         .help("Set your current data file aside and start with a new, empty one")
                     }
                     if appState.storeErrorDismissible {
@@ -55,7 +59,7 @@ struct ContentView: View {
                             Image(systemName: "xmark")
                         }
                         .buttonStyle(.borderless)
-                        .font(.caption)
+                        .font(ChorusType.caption)
                         .help("Dismiss")
                         .accessibilityLabel("Dismiss")
                     }
@@ -85,13 +89,13 @@ struct ContentView: View {
             if appState.storeError == nil, appState.storeRecoveryOffer != nil {
                 NoticeStrip(severity: .info) {
                     Text("Chorus has a backup with more of your spaces and services than it can see now.")
-                        .font(.caption)
+                        .font(ChorusType.caption)
                         .lineLimit(2)
                     Spacer()
                     Button("Review backups…") { appState.isShowingStoreRecovery = true }
-                        .font(.caption)
+                        .font(ChorusType.caption)
                     Button("Not now") { appState.declineStoreRecovery() }
-                        .font(.caption)
+                        .font(ChorusType.caption)
                 }
                 // No .accessibilityLabel override here, unlike the storeError
                 // banner above: an explicit label replaces what `.combine`
@@ -105,7 +109,7 @@ struct ContentView: View {
             if !appState.networkMonitor.isOnline {
                 NoticeStrip(severity: .warning) {
                     Text("You're offline. Services won't load new content until your connection returns.")
-                        .font(.caption)
+                        .font(ChorusType.caption)
                     Spacer()
                 }
                 .accessibilityElement(children: .combine)
@@ -117,9 +121,15 @@ struct ContentView: View {
                 serviceSelection: $state.selectedServiceID
             )
             .frame(minWidth: 800, minHeight: 500)
-            // Fill behind everything with the window shade so the traffic-light
-            // insets don't reveal the title-bar vibrancy (the top-left tint).
-            .background(Color(nsColor: .windowBackgroundColor))
+            // The canvas behind everything, frosted when a glass style is on.
+            // It also keeps the traffic-light insets from showing the
+            // title-bar vibrancy (the top-left tint).
+            .background(
+                WindowBackdrop(
+                    style: WindowGlassStyle.resolve(glassStyleRaw)
+                        .effective(reduceTransparency: reduceTransparency)
+                )
+            )
             // The traffic lights hold the top-left, so the donation button takes
             // the top-right of whichever bar the layout puts up there.
             .overlay(alignment: .topTrailing) {
@@ -247,7 +257,6 @@ struct ContentView: View {
         case .sidebar:
             HStack(spacing: 0) {
                 rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: lightsHeight)
-                Divider()
                 webContent
             }
         case .allServices:
@@ -260,13 +269,11 @@ struct ContentView: View {
                     showsSpaceHeader: false,
                     showsAllSpaces: true
                 )
-                Divider()
                 webContent
             }
         case .topBars:
             VStack(spacing: 0) {
                 rail(axis: .horizontal, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: lightsWidth)
-                Divider()
                 webContent
             }
         case .hybrid:
@@ -290,7 +297,6 @@ struct ContentView: View {
                         ),
                         showsSpaceHeader: false
                     )
-                    Divider()
                     webContent
                 }
             }
@@ -317,8 +323,12 @@ struct ContentView: View {
         .accessibilityLabel("Space and services")
     }
 
+    /// The web view on its inset card. The gutter runs round three sides; the
+    /// top is left to whatever sits above the card, the nav row or the bar,
+    /// which already spaces itself off the window edge.
     private var webContent: some View {
         WebContentView(selectedServiceID: appState.selectedServiceID)
+            .padding([.horizontal, .bottom], ChorusCard.gutter)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Web content")
@@ -393,7 +403,7 @@ private struct SupportButton: View {
                 .frame(width: SupportButtonMetrics.chipSize, height: SupportButtonMetrics.chipSize)
                 // The rails scroll under this button when a space holds enough
                 // services to overflow, so it needs its own fill to stay legible.
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(ChorusColor.canvas)
                 // The paint stops at the chip; the pointer gets a wider target
                 // around it. Growing the fill instead would make the button
                 // louder, which is the thing the 20 points are buying.

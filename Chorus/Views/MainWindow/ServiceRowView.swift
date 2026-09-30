@@ -167,11 +167,11 @@ struct ServiceRowView: View {
             }
 
             Text(instance.label)
-                .font(.subheadline)
+                .font(ChorusType.label)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .foregroundStyle(.primary)
 
             if axis == .vertical {
                 // Pushes the accessories to the trailing edge of the fixed-width

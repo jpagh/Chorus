@@ -114,7 +114,7 @@ private struct DownloadRow: View {
                     }
                 }
                 Text(status)
-                    .font(.system(size: 11))
+                    .font(ChorusType.caption)
                     .foregroundStyle(isFailure ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
             }

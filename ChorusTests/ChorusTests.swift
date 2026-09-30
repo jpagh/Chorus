@@ -3247,6 +3247,19 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(RowMark(isSelected: true, isFocused: false, isHovering: true).fill, .selected)
     }
 
+    /// Nothing a person reads in the chrome is set below 12 points.
+    func testChromeTypeHasATwelvePointFloor() {
+        XCTAssertGreaterThanOrEqual(ChorusType.captionSize, 12)
+        XCTAssertGreaterThanOrEqual(ChorusType.labelSize, ChorusType.captionSize)
+    }
+
+    /// Reduce Motion turns every chrome movement off, not just some of them.
+    func testReduceMotionDropsChromeAnimations() {
+        XCTAssertNil(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: true))
+        XCTAssertNil(ChorusMotion.animation(ChorusMotion.reorder, reduceMotion: true))
+        XCTAssertNotNil(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: false))
+    }
+
     // MARK: - Service health (build step 6)
 
     /// A load starting always means loading, including a retry after a failure —

@@ -19,6 +19,94 @@ enum ChorusRadius {
     static let allValues: [CGFloat] = [icon, control, surface]
 }
 
+/// The window's neutral greys and the ink fills drawn on them.
+///
+/// Taken from Paguro's look (see `THIRD_PARTY_NOTICES.md`): three flat greys
+/// that step up in brightness from the window to what sits on it, and fills made
+/// of the text colour at low strength rather than of the accent. A selected row
+/// is grey with a black or white name; blue is kept for the keyboard focus ring,
+/// which is the one mark that has to stand out from selection (see `RowMark`).
+enum ChorusColor {
+    /// The window itself, behind the rail card and the web card.
+    static let canvas = dynamic(light: canvasNSColor(isDark: false), dark: canvasNSColor(isDark: true))
+    /// Chrome that sits on the canvas: the rail card, a bar.
+    static let surface = dynamic(light: grey(236), dark: grey(32))
+    /// What sits on a surface, and the web view's own backing.
+    static let card = dynamic(light: .white, dark: grey(40))
+    /// The one-pixel edge round a card.
+    static let hairline = ink(light: 0.08, dark: 0.10, contrastLight: 0.30, contrastDark: 0.35)
+
+    /// A selected row. Strong enough to hold without the accent.
+    static let selectedFill = ink(light: 0.10, dark: 0.16, contrastLight: 0.20, contrastDark: 0.28)
+    /// A row under the pointer: half the weight of selection.
+    static let hoverFill = ink(light: 0.05, dark: 0.08, contrastLight: 0.10, contrastDark: 0.14)
+    /// Text that is not the thing you are reading. Stronger than
+    /// `secondaryLabelColor`, which is too faint on these greys.
+    static let secondaryText = ink(light: 0.60, dark: 0.62, contrastLight: 0.80, contrastDark: 0.82)
+
+    static func canvasNSColor(isDark: Bool) -> NSColor {
+        grey(isDark ? 24 : 245)
+    }
+
+    static func grey(_ level: CGFloat) -> NSColor {
+        NSColor(srgbRed: level / 255, green: level / 255, blue: level / 255, alpha: 1)
+    }
+
+    static func dynamic(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: dynamicNSColor(light: light, dark: dark))
+    }
+
+    static func dynamicNSColor(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        }
+    }
+
+    /// Black or white at the given strength, stronger under Increase Contrast.
+    static func ink(light: CGFloat, dark: CGFloat, contrastLight: CGFloat, contrastDark: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [
+                .aqua, .darkAqua,
+                .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua
+            ])
+            switch match {
+            case .accessibilityHighContrastAqua: return .black.withAlphaComponent(contrastLight)
+            case .accessibilityHighContrastDarkAqua: return .white.withAlphaComponent(contrastDark)
+            case .darkAqua: return .white.withAlphaComponent(dark)
+            default: return .black.withAlphaComponent(light)
+            }
+        })
+    }
+}
+
+/// Type sizes for the chrome. Nothing a person reads is set below 12 points;
+/// the system's own caption and subheadline styles are 10 and 11 on macOS, which
+/// is why they no longer appear in the rail. The numbers in a badge are the one
+/// exception: they sit in a 16 point circle and are read as a count, not text.
+enum ChorusType {
+    /// The smallest text: headings over a group, notes, secondary labels.
+    static let captionSize: CGFloat = 12
+    /// Row and tab names.
+    static let labelSize: CGFloat = 13
+
+    static let caption = Font.system(size: captionSize)
+    static let label = Font.system(size: labelSize)
+}
+
+/// The two movements the chrome makes, and the rule that Reduce Motion turns
+/// both off.
+enum ChorusMotion {
+    /// The rail opening, closing or changing width.
+    static let sidebar = Animation.easeInOut(duration: 0.25)
+    /// A row or tab settling into its new place after a reorder.
+    static let reorder = Animation.spring(response: 0.28, dampingFraction: 0.78)
+
+    /// `animation`, or none when Reduce Motion is on.
+    static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : animation
+    }
+}
+
 /// How bad a notice is. Three, and the fill is the same weight for all of them:
 /// the tone is carried by the icon and the rule under the strip, not by shouting
 /// with the background. This replaces two raw SwiftUI yellows and a solid red
@@ -125,9 +213,33 @@ struct RowMark: Equatable {
 
     var fillStyle: AnyShapeStyle {
         switch fill {
-        case .selected: return AnyShapeStyle(.tint.opacity(0.12))
-        case .hover: return AnyShapeStyle(Color.primary.opacity(0.06))
+        case .selected: return AnyShapeStyle(ChorusColor.selectedFill)
+        case .hover: return AnyShapeStyle(ChorusColor.hoverFill)
         case .none: return AnyShapeStyle(Color.clear)
         }
+    }
+}
+
+/// The window's 8 point gutter and the inset card the web view sits on.
+enum ChorusCard {
+    /// The gap between the window edge, the rail card and the web card.
+    static let gutter: CGFloat = 8
+    static let cornerRadius = ChorusRadius.surface
+}
+
+extension View {
+    /// Draws this view as the inset content card: the card grey behind it,
+    /// continuous 14 point corners and a hairline edge. The page itself is also
+    /// clipped by `WebViewHostView`'s layer, because a SwiftUI clip is not
+    /// promised to reach into a hosted `NSView`.
+    func contentCard() -> some View {
+        let shape = RoundedRectangle(cornerRadius: ChorusCard.cornerRadius, style: .continuous)
+        return background(ChorusColor.card)
+            .clipShape(shape)
+            .overlay(
+                shape
+                    .strokeBorder(ChorusColor.hairline, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
     }
 }

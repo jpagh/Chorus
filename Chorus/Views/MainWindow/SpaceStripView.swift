@@ -209,7 +209,7 @@ struct SpaceStripView: View {
                     .font(.system(size: 12, weight: .medium))
                 if showsNames {
                     Text("Add Space")
-                        .font(.subheadline)
+                        .font(ChorusType.label)
                         .lineLimit(1)
                 }
             }
@@ -334,7 +334,8 @@ private struct SpaceButton: View {
         .accessibilityAddTraits([.isButton, isSelected ? .isSelected : []])
     }
 
-    /// The narrow strip: an emoji tile with a leading accent pill when selected.
+    /// The narrow strip: an emoji tile, filled grey when selected. The accent
+    /// pill and stroke it used to carry went with the move to one selection mark.
     private var emojiTile: some View {
         ZStack(alignment: .topTrailing) {
             Text(space.emoji)
@@ -342,20 +343,6 @@ private struct SpaceButton: View {
                 .opacity(isMuted ? 0.5 : 1.0)
                 .frame(width: 40, height: 40)
                 .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Self.cornerRadius)
-                        .strokeBorder(
-                            isSelected ? AnyShapeStyle(.tint.opacity(0.55)) : AnyShapeStyle(Color.clear),
-                            lineWidth: 1
-                        )
-                )
-                .overlay(alignment: .leading) {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(.tint)
-                            .frame(width: 3, height: 20)
-                    }
-                }
                 .frame(width: 44, height: 44)
 
             if badgeCount > 0 {
@@ -378,11 +365,11 @@ private struct SpaceButton: View {
                 .opacity(isMuted ? 0.5 : 1.0)
 
             Text(space.name)
-                .font(.subheadline)
+                .font(ChorusType.label)
                 .fontWeight(isSelected ? .semibold : .regular)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .foregroundStyle(.primary)
 
             Spacer(minLength: 0)
 
@@ -398,13 +385,6 @@ private struct SpaceButton: View {
         .padding(.horizontal, 8)
         .frame(height: 36)
         .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-        .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(.tint)
-                    .frame(width: 3, height: 18)
-            }
-        }
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
     }
@@ -432,9 +412,9 @@ private struct SpaceButton: View {
 
     private var fillStyle: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(.tint.opacity(0.12))
+            return AnyShapeStyle(ChorusColor.selectedFill)
         } else if isHovering {
-            return AnyShapeStyle(Color.primary.opacity(0.06))
+            return AnyShapeStyle(ChorusColor.hoverFill)
         }
         return AnyShapeStyle(Color.clear)
     }
