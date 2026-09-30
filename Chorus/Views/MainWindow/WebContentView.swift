@@ -48,9 +48,12 @@ struct WebContentView: View {
                     WebNavButtons(webViewState: webViewState, homeURL: URL(string: service.url))
                         .padding(.horizontal, 12)
                         .padding(.leading, trafficLightsOverhang)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: ChorusCard.topBand, alignment: .leading)
                 }
+            } else if !appState.railLayout.hasTopBar {
+                // No page, no buttons, but the band stays, so the card keeps its
+                // top edge level with the rail card's.
+                Color.clear.frame(height: ChorusCard.topBand)
             }
 
             // Everything below the nav row is one card: the page, the loading

@@ -29,8 +29,10 @@ enum ChorusRadius {
 enum ChorusColor {
     /// The window itself, behind the rail card and the web card.
     static let canvas = dynamic(light: canvasNSColor(isDark: false), dark: canvasNSColor(isDark: true))
-    /// Chrome that sits on the canvas: the rail card, a bar.
-    static let surface = dynamic(light: grey(236), dark: grey(32))
+    /// Chrome that sits on the canvas: the rail card. Ink rather than an opaque
+    /// grey, so it lands on EC / 20 over the flat canvas and still lets the
+    /// frost through when a glass style is on.
+    static let surface = ink(light: 0.035, dark: 0.035, contrastLight: 0.06, contrastDark: 0.06)
     /// What sits on a surface, and the web view's own backing.
     static let card = dynamic(light: .white, dark: grey(40))
     /// The one-pixel edge round a card.
@@ -220,14 +222,45 @@ struct RowMark: Equatable {
     }
 }
 
-/// The window's 8 point gutter and the inset card the web view sits on.
+/// The window's 8 point gutter and the inset cards the rail and the web view
+/// sit on.
 enum ChorusCard {
     /// The gap between the window edge, the rail card and the web card.
     static let gutter: CGFloat = 8
     static let cornerRadius = ChorusRadius.surface
+    /// The band along the top of the two left-rail layouts: the traffic lights
+    /// on the left, the nav row and the donation button on the right. Both
+    /// cards start under it, so their top edges line up.
+    static let topBand: CGFloat = 32
+    /// Space between the rail card's edge and the rows inside it.
+    static let railPadding: CGFloat = 4
 }
 
 extension View {
+    /// Draws this view as the rail card: the translucent surface behind it,
+    /// continuous 14 point corners and a hairline edge. Neither layer takes
+    /// clicks, so a window-drag handle behind the card still gets them.
+    func railCard() -> some View {
+        let shape = RoundedRectangle(cornerRadius: ChorusCard.cornerRadius, style: .continuous)
+        return background(shape.fill(ChorusColor.surface).allowsHitTesting(false))
+            .overlay(
+                shape
+                    .strokeBorder(ChorusColor.hairline, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
+    }
+
+    /// Places a vertical rail's content on its card: the card's width, the
+    /// gutter to the window's leading and bottom edges, and `topInset` above
+    /// it for the traffic lights.
+    func railCardFrame(width: CGFloat, topInset: CGFloat) -> some View {
+        frame(width: width)
+            .railCard()
+            .padding(.leading, ChorusCard.gutter)
+            .padding(.top, topInset)
+            .padding(.bottom, ChorusCard.gutter)
+    }
+
     /// Draws this view as the inset content card: the card grey behind it,
     /// continuous 14 point corners and a hairline edge. The page itself is also
     /// clipped by `WebViewHostView`'s layer, because a SwiftUI clip is not

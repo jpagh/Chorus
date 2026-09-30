@@ -8,10 +8,9 @@ import SwiftUI
 /// were two identical squares and the name lived only in a tooltip. Both axes
 /// now carry the name.
 ///
-/// Geometry comes off the `C · Rethink` frames on Figma page `08`: a 224 by 34
-/// row inside a 240 point rail, a 20 point icon at x 8, the label at x 36, and
-/// the badge trailing. The horizontal tab keeps the same parts and hugs its
-/// label instead of taking a fixed width.
+/// Geometry: a 224 by 28 row inside the 232 point rail card, an 18 point icon
+/// at x 8, the label at x 34, and the badge trailing. The horizontal tab keeps
+/// the same parts and hugs its label instead of taking a fixed width.
 ///
 /// Icon resolution, the spoken label, the badge and the media glyph are all
 /// shared with the rest of the app through `ServiceIconView.swift`.
@@ -45,26 +44,33 @@ struct ServiceRowView: View {
 
     @State private var isHovering = false
 
-    /// Width of the vertical rail, and of a row inside it. The 8 point gutter on
-    /// each side is applied by the rail, not by the row.
+    /// What the vertical rail takes from the window: the 8 point gutter and the
+    /// card, whose 4 point padding holds the 224 point row. The gap between
+    /// the rail card and the web card is the web card's own gutter.
     static let railWidth: CGFloat = 240
     static let rowWidth: CGFloat = 224
     /// Row height in the vertical rail. The rail stacks these at 2 point spacing,
-    /// which is the drawn 36 point pitch.
-    static let rowHeight: CGFloat = 34
+    /// which is the drawn 30 point pitch.
+    static let rowHeight: CGFloat = 28
     /// Tab height in the horizontal bar.
     static let tabHeight: CGFloat = 32
-    /// The nameless cell: the icon plus its 8 point gutters. Square in the
-    /// vertical rail, and the tab's width in the horizontal bar.
+    /// The nameless cell: the icon plus its 9 point gutters, and the tab's
+    /// width in the horizontal bar.
     static let compactCellWidth: CGFloat = 36
-    /// Width of the vertical rail when the rows carry no name.
+    /// Width of the vertical rail when the rows carry no name: the gutter, and
+    /// a 44 point card round the 36 point cell.
     static let compactRailWidth: CGFloat = 52
     /// Roughly what a labelled tab measures. Used only as the drop-midpoint
     /// fallback before the first geometry pass records a real width.
     static let tabTypicalWidth: CGFloat = 120
 
+    /// The rail card's width: the rail's footprint less the gutter beside it.
+    static func railCardWidth(showsName: Bool) -> CGFloat {
+        (showsName ? railWidth : compactRailWidth) - ChorusCard.gutter
+    }
+
     private static let cornerRadius = ChorusRadius.control
-    private static let iconSize: CGFloat = 20
+    private static let iconSize: CGFloat = 18
     private static let iconCornerRadius = ChorusRadius.icon
     private static let gutter: CGFloat = 8
 
@@ -126,7 +132,7 @@ struct ServiceRowView: View {
 
     /// The icon alone, with the badge back on its corner where it lived before
     /// the row grew a name. The moon, the bell and the media glyph do not come
-    /// with it: four things on a 20 point icon is what the audit called
+    /// with it: four things on an 18 point icon is what the audit called
     /// unreadable, and all three are still in the tooltip and the spoken label.
     private var compactContent: some View {
         ServiceIconSquare(

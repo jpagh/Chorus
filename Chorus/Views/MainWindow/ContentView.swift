@@ -250,13 +250,14 @@ struct ContentView: View {
     ) -> some View {
         // The title bar is hidden, so content runs to the top edge. Reserve the
         // top-left for the traffic lights: push the leftmost top elements clear.
-        let lightsHeight: CGFloat = 28
         let lightsWidth = SpaceStripMetrics.trafficLightsWidth
 
         switch appState.railLayout {
+        // The two left rails sit under the top band, where the traffic lights
+        // are, so both cards start at the same height.
         case .sidebar:
             HStack(spacing: 0) {
-                rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: lightsHeight)
+                rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: ChorusCard.topBand)
                 webContent
             }
         case .allServices:
@@ -265,7 +266,7 @@ struct ContentView: View {
                     axis: .vertical,
                     spaceSelection: spaceSelection,
                     serviceSelection: serviceSelection,
-                    contentInset: lightsHeight,
+                    contentInset: ChorusCard.topBand,
                     showsSpaceHeader: false,
                     showsAllSpaces: true
                 )
@@ -278,10 +279,11 @@ struct ContentView: View {
             }
         case .hybrid:
             HStack(spacing: 0) {
-                SpaceStripView(selectedSpaceID: spaceSelection, contentInset: lightsHeight)
+                // The strip's card starts under the bar's height, level with
+                // the web card beside it.
+                SpaceStripView(selectedSpaceID: spaceSelection, contentInset: UnifiedRailView.barHeight)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Spaces")
-                Divider()
                 VStack(spacing: 0) {
                     // The traffic lights sit over the strip. Only what they
                     // overhang lands on this bar, so only that much is spent
@@ -335,14 +337,13 @@ struct ContentView: View {
     }
 
     /// Centres the donation button's 20 point chip in whatever the layout puts
-    /// along the top: the sidebar's nav row, 32 points tall, and the unified
-    /// rail's bar, 42. Re-measured when one rail replaced two — the old 36 and
-    /// 40 point bars are gone. The overhang comes off because the chip is
-    /// centred inside a larger click target.
+    /// along the top: the left rails' 32 point band, and the unified rail's
+    /// bar, 42. The overhang comes off because the chip is centred inside a
+    /// larger click target.
     private var supportButtonTopInset: CGFloat {
         let overhang = SupportButtonMetrics.targetOverhang
         switch appState.railLayout {
-        case .sidebar, .allServices: return 6 - overhang
+        case .sidebar, .allServices: return (ChorusCard.topBand - SupportButtonMetrics.chipSize) / 2 - overhang
         // The hybrid layout puts the same 42 point bar along the top, so the
         // button is centred in it the same way.
         case .topBars, .hybrid: return (UnifiedRailView.barHeight - SupportButtonMetrics.chipSize) / 2 - overhang
@@ -401,9 +402,9 @@ private struct SupportButton: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(isHovering ? Color.accentColor : Color.secondary)
                 .frame(width: SupportButtonMetrics.chipSize, height: SupportButtonMetrics.chipSize)
-                // The rails scroll under this button when a space holds enough
-                // services to overflow, so it needs its own fill to stay legible.
-                .background(ChorusColor.canvas)
+                // No fill of its own: nothing scrolls under this corner, since
+                // the bar's nav buttons keep it clear, and an opaque square
+                // shows as a patch once the canvas is frosted.
                 // The paint stops at the chip; the pointer gets a wider target
                 // around it. Growing the fill instead would make the button
                 // louder, which is the thing the 20 points are buying.

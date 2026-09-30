@@ -1,6 +1,6 @@
 # Open items
 
-## On branch `feat/paguro-look`: the window redesign, steps 1–3 of 7 built
+## On branch `feat/paguro-look`: the window redesign, steps 1–4 of 7 built
 
 **Started 2026-09-29.** Branch `feat/paguro-look`, cut from `fix/paguro-findings` (not from `main`, because that branch is not merged yet; rebase onto `main` once it is). Commit `dc77885`, pushed, CI green on macOS 14 and 15 (run 36653665480), 278 tests pass locally. `CHANGELOG.md` has a "Changed" line under Unreleased.
 
@@ -10,11 +10,11 @@ Built: `ChorusColor` / `ChorusType` / `ChorusMotion` / `ChorusCard` in `ChorusSt
 
 ### Still open
 
-- **Step 4, the rail card.** The rail still has its old fill (`.background(.background)` in `UnifiedRailView` at the all-services and vertical bodies, `windowBackgroundColor` in `SpaceStripView`), which hides the frost and reads brownish in dark. Make it an inset rounded card with a hairline, 28pt rows, 18pt icons. Check all four layouts, the traffic-light clearance, downloads, speaker and media marks, and the donation button.
+- **Step 4, the rail card, is built** (2026-09-29). The two left rails and the hybrid strip of spaces now sit on an inset card with a hairline edge (`railCard()`, `railCardFrame`). Its fill is ink at 3.5 percent, not an opaque grey, so it reads as EC / 20 on the flat canvas and lets the frost through when glass is on. Rows are 28 points tall with 18 point icons. The all-services rail sets each space as a 12 point heading; without names, it keeps an emoji between two short rules. Both cards in the left layouts start under a 32 point band (`ChorusCard.topBand`), so their tops line up. The divider beside the hybrid strip is gone, and so is the donation button's own fill, which showed as a dark square on glass. Checked live in all four layouts, light and dark, with names on and off, and with glass Clear and Regular. A throwaway test rendered one row with every mark on; nobody has seen the marks on a live page. Nobody has seen the download button live either, because it only shows once a download exists. Waiting on the user's go for step 5.
 - **Step 5,** a 52pt header with 28pt circular buttons (`.glassEffect` on 26 behind `#if compiler(>=6.2)`, material below).
 - **Step 6,** the Off / Clear / Regular picker in Settings, hidden below macOS 26. New strings go through the humanizer loop.
 - **Step 7,** the notice strips as floating cards. Then Reduce Motion wiring for `ChorusMotion.reorder` in the rail's reorder.
-- The live shots of steps 1–3 show a blank web card: Little Snitch held the rebuilt Debug binary's connections. The by-eye check of the page inside the card is still to do.
+- ~~The live shots of steps 1–3 show a blank web card.~~ Closed 2026-09-29: with the Debug build allowed in Little Snitch, the page loads inside the rounded card, and the corners clip cleanly.
 - A keyboard-focus ring lands on the first rail row at launch. The old build does it too; look at it with step 4.
 
 ## On branch `fix/paguro-findings`: fixes and features found in Paguro, not merged

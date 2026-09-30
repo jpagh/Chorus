@@ -17,9 +17,9 @@ import SwiftData
 struct SpaceStripView: View {
     @Query(sort: \Space.sortOrder) private var spaces: [Space]
     @Binding var selectedSpaceID: UUID?
-    /// Inset applied to the top of the content to clear the window traffic
-    /// lights — kept inside so the strip's background and dividers still run
-    /// full-length.
+    /// Room above the card for the window traffic lights. The hybrid layout
+    /// passes the bar's height, so the card's top edge is level with the web
+    /// card's.
     var contentInset: CGFloat = 0
 
     @Environment(\.modelContext) private var modelContext
@@ -40,7 +40,8 @@ struct SpaceStripView: View {
     @State private var cellSizes: [UUID: CGSize] = [:]
     private static let spaceDropMidpoint: CGFloat = 22
 
-    private var width: CGFloat { SpaceStripMetrics.width(showingNames: showsNames) }
+    /// The card is the strip's width less the gutter beside it.
+    private var cardWidth: CGFloat { SpaceStripMetrics.width(showingNames: showsNames) - ChorusCard.gutter }
 
     var body: some View {
         content
@@ -71,8 +72,6 @@ struct SpaceStripView: View {
 
     private var content: some View {
         VStack(spacing: 2) {
-            Spacer().frame(height: 6 + contentInset)
-
             // Scroll the cells so more spaces than fit the window height stay
             // reachable; the divider and add button below stay pinned.
             // No scroller: with "Always show scroll bars" on, it took width from
@@ -83,21 +82,24 @@ struct SpaceStripView: View {
                         spaceCell(space)
                     }
                 }
+                .padding(.vertical, ChorusCard.railPadding)
             }
 
-            Divider().padding(.horizontal, 8)
+            Rectangle()
+                .fill(ChorusColor.hairline)
+                .frame(height: 1)
+                .padding(.horizontal, 8)
 
             addSpaceButton
-
-            Spacer().frame(height: 6)
+                .padding(.bottom, ChorusCard.railPadding)
         }
-        .frame(width: width)
+        .railCardFrame(width: cardWidth, topInset: contentInset)
         // The OS window drag is off in this layout, because the service bar
         // beside the strip holds draggable tabs in the title-bar band (see
         // WindowMovableConfigurator). Without a handle of its own the strip
         // would be the one part of the window's top edge that could not move it.
+        // The card takes no clicks, so the handle behind it gets them there too.
         .background(WindowDragHandle())
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
@@ -314,7 +316,7 @@ private struct SpaceButton: View {
 
     @State private var isHovering = false
 
-    private static let cornerRadius: CGFloat = 9
+    private static let cornerRadius = ChorusRadius.control
 
     var body: some View {
         Button(action: action) {
@@ -383,9 +385,9 @@ private struct SpaceButton: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 36)
+        .frame(height: ServiceRowView.rowHeight)
         .background(RoundedRectangle(cornerRadius: Self.cornerRadius).fill(fillStyle))
-        .padding(.horizontal, 8)
+        .padding(.horizontal, ChorusCard.railPadding)
         .contentShape(Rectangle())
     }
 
