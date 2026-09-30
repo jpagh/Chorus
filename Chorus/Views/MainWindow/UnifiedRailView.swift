@@ -444,7 +444,7 @@ struct UnifiedRailView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeRow)
         .help(title)
         .accessibilityLabel(title)
         .disabled(disabled)
@@ -881,7 +881,7 @@ struct UnifiedRailView: View {
             .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeRow)
         .help("Add service")
         .accessibilityLabel("Add service")
         // Without a space there is nothing to add a service to, and

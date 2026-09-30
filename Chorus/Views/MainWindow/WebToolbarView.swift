@@ -32,7 +32,7 @@ struct WebNavButtons: View {
                     .frame(width: 16, height: 14)
                     .navCircle()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.chromeCircle)
             .disabled(webViewState.webView == nil)
             .help(webViewState.isLoading ? "Stop" : "Reload")
             .accessibilityLabel(webViewState.isLoading ? "Stop loading" : "Reload page")
@@ -63,7 +63,7 @@ struct WebNavButtons: View {
             // the whole 28 points open the menu. The borderless style drew only
             // the glyph and took clicks on it alone.
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .buttonStyle(.chromeCircle)
             .menuIndicator(.hidden)
             .fixedSize()
             .disabled(currentPageURL == nil)
@@ -114,7 +114,7 @@ struct WebNavButtons: View {
                 .frame(width: 16, height: 14)
                 .navCircle()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeCircle)
         .disabled(!enabled)
         .help(label)
         .accessibilityLabel(label)

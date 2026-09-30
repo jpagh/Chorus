@@ -208,7 +208,10 @@ struct SpaceStripView: View {
             .frame(height: 28)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeRow)
+        // In from the column's edges, as the space rows are, so the hover
+        // fill lines up with theirs.
+        .padding(.horizontal, ChorusCard.railPadding)
         .help("Add space")
         .accessibilityLabel("Add space")
     }

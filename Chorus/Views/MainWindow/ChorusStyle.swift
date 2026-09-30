@@ -339,3 +339,60 @@ extension View {
             )
     }
 }
+
+/// The hover and press marks for the chrome's own buttons: the add buttons,
+/// the nav circles, and the like. The pointer over one draws the same faint
+/// ink fill a hovered row gets, a press draws the selection's, and a disabled
+/// button draws neither. A row-shaped button takes the fill behind its label;
+/// a nav circle takes it over its glass or material, which would otherwise
+/// hide it.
+struct ChromeButtonStyle<S: Shape>: ButtonStyle {
+    let shape: S
+    var overLabel = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        ChromeButtonBody(configuration: configuration, shape: shape, overLabel: overLabel)
+    }
+}
+
+private struct ChromeButtonBody<S: Shape>: View {
+    let configuration: ButtonStyleConfiguration
+    let shape: S
+    let overLabel: Bool
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let mark = shape.fill(fill).allowsHitTesting(false)
+        Group {
+            if overLabel {
+                configuration.label.overlay(mark)
+            } else {
+                configuration.label.background(mark)
+            }
+        }
+        .contentShape(shape)
+        .onHover { isHovering = $0 }
+    }
+
+    private var fill: AnyShapeStyle {
+        guard isEnabled else { return AnyShapeStyle(Color.clear) }
+        if configuration.isPressed { return AnyShapeStyle(ChorusColor.selectedFill) }
+        if isHovering { return AnyShapeStyle(ChorusColor.hoverFill) }
+        return AnyShapeStyle(Color.clear)
+    }
+}
+
+extension ButtonStyle where Self == ChromeButtonStyle<RoundedRectangle> {
+    /// A row-shaped chrome button, such as Add service.
+    static var chromeRow: Self {
+        ChromeButtonStyle(shape: RoundedRectangle(cornerRadius: ChorusRadius.control, style: .continuous))
+    }
+}
+
+extension ButtonStyle where Self == ChromeButtonStyle<Circle> {
+    /// A nav circle in the top band.
+    static var chromeCircle: Self {
+        ChromeButtonStyle(shape: Circle(), overLabel: true)
+    }
+}
