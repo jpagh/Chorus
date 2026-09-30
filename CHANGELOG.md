@@ -5,6 +5,8 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.5.22] - 2026-09-29
+
 ### Added
 
 - A download button joins the navigation buttons once something downloads. While files come in it fills a ring, and a click lists every download since Chorus opened, from every service: which service it came from, how far along it is, and how it ended. You can stop one that is still running, show a finished file in Finder, or double-click it to open it. Before this, the only sign of a download was the Downloads stack bouncing in the Dock.
@@ -22,7 +24,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 - Trello can sign in inside Chorus. Its Log in button goes to an Atlassian page on another domain, and Chorus sent that page to your browser, where signing in did nothing for Chorus. Chorus now keeps a sign-in page in the service when it says it will come back there, which should help other services that sign in on another domain too. Jira and Confluence use the same Atlassian page. The same goes for Zoho outside the US, Coda, and ChatGPT, and for company sign-ins through Okta, Auth0, OneLogin, Duo, PingOne, JumpCloud, Azure AD B2C, Cloudflare Access and AWS.
 - A call keeps its sound when you switch to another service. Chorus paused the sound of every service you left, so the other person went quiet while your microphone kept sending.
-- WhatsApp should stay signed in when you quit and reopen Chorus. Pages save their state when they go out of view, and a quit gave them no warning. Chorus now tells every open page it is going away and gives it a moment to save before it quits. I have not yet seen this work on a real WhatsApp account, so tell me if you still get signed out.
+- Before it quits, Chorus now tells every open page it is going away and gives it a moment to save, the way a browser does. A quit used to give pages no warning.
 - Chorus no longer loads a hidden second copy of WhatsApp or another chat app to read its unread count. Two copies on one sign-in can sign WhatsApp out.
 - The grey loading ring on a service stops when you press Stop or a download starts. It used to spin forever. A download no longer puts up "Unable to connect", and Reload now works on a service whose first page never loaded.
 - A link that opens another of your services in a new window, such as a Linear link in Slack, now switches to that service. Sign-in windows still open as windows.
