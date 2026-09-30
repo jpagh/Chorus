@@ -8,7 +8,8 @@ import SwiftUI
 /// were two identical squares and the name lived only in a tooltip. Both axes
 /// now carry the name.
 ///
-/// Geometry: a 224 by 28 row inside the 232 point rail card, an 18 point icon
+/// Geometry: a 28 point row as wide as the rail allows (220 at the default
+/// width), an 18 point icon
 /// at x 8, the label at x 34, and the badge trailing. The horizontal tab keeps
 /// the same parts and hugs its label instead of taking a fixed width.
 ///
@@ -19,6 +20,8 @@ struct ServiceRowView: View {
     let isSelected: Bool
     var axis: Axis = .vertical
     var badgeCount: Int = 0
+    /// The count went up while you were elsewhere. See `BadgeManager.attentionIDs`.
+    var needsAttention: Bool = false
     var isHibernated: Bool = false
     var isMuted: Bool = false
     var cameraActive: Bool = false
@@ -43,26 +46,35 @@ struct ServiceRowView: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    /// The rail's width, which the named row fills. See `RailWidth`.
+    @Environment(\.railWidth) private var railWidth
 
-    /// What the vertical rail takes from the window: the 8 point gutter and the
-    /// card, whose 4 point padding holds the 224 point row. The gap between
-    /// the rail card and the web card is the web card's own gutter.
+    /// The rail's default width with names, gutter included; the rail itself can
+    /// be dragged from 150 to 300 (see `RailWidth`). A row is that less the 8
+    /// point gutter and 6 points of padding each side, 220 at the default. The
+    /// gap between the rail and the web card is the web card's own gutter.
     static let railWidth: CGFloat = 240
-    static let rowWidth: CGFloat = 224
+    static let rowWidth: CGFloat = rowWidth(forRail: railWidth)
+
+    /// A named row's width in a rail `rail` points wide: less the gutter and
+    /// the card's padding.
+    static func rowWidth(forRail rail: CGFloat) -> CGFloat {
+        rail - ChorusCard.gutter - 2 * ChorusCard.railPadding
+    }
     /// Row height in the vertical rail. The rail stacks these at 2 point spacing,
     /// which is the drawn 30 point pitch.
     static let rowHeight: CGFloat = 28
     /// Tab height in the horizontal bar.
     static let tabHeight: CGFloat = 32
-    /// The nameless cell: the icon plus its 9 point gutters, and the tab's
-    /// width in the horizontal bar.
+    /// The nameless tab in the horizontal bar: the icon plus its 9 point
+    /// gutters.
     static let compactCellWidth: CGFloat = 36
+    /// The nameless cell in the vertical rail: what the 44 point card leaves
+    /// inside its padding.
+    static let compactRailCellWidth: CGFloat = compactRailWidth - ChorusCard.gutter - 2 * ChorusCard.railPadding
     /// Width of the vertical rail when the rows carry no name: the gutter, and
-    /// a 44 point card round the 36 point cell.
+    /// a 44 point card round the 32 point cell.
     static let compactRailWidth: CGFloat = 52
-    /// Roughly what a labelled tab measures. Used only as the drop-midpoint
-    /// fallback before the first geometry pass records a real width.
-    static let tabTypicalWidth: CGFloat = 120
 
     /// The rail card's width: the rail's footprint less the gutter beside it.
     static func railCardWidth(showsName: Bool) -> CGFloat {
@@ -115,18 +127,22 @@ struct ServiceRowView: View {
             micActive: micActive,
             micMuted: micMuted,
             isPlayingAudio: isPlayingAudio,
-            health: health
+            health: health,
+            needsAttention: needsAttention
         )
         guard let spaceName else { return label }
         return "\(label), \(spaceName)"
     }
 
+    /// The two forms cross-fade when the rail changes between them.
     @ViewBuilder
     private var content: some View {
         if showsName {
             namedContent
+                .transition(.opacity)
         } else {
             compactContent
+                .transition(.opacity)
         }
     }
 
@@ -144,16 +160,13 @@ struct ServiceRowView: View {
             ServiceHealthDot(health: health)
                 .offset(x: 3, y: 3)
         }
-        .overlay(alignment: .topTrailing) {
-            if badgeCount > 0 && instance.showBadge {
-                BadgeCountView(count: badgeCount)
-                    .offset(x: 8, y: -6)
-            }
-        }
         .frame(
-            width: Self.compactCellWidth,
+            width: axis == .vertical ? Self.compactRailCellWidth : Self.compactCellWidth,
             height: axis == .vertical ? Self.rowHeight : Self.tabHeight
         )
+        // On the cell, not the icon, so it sits over the corner that the
+        // selection fill and the focus ring are drawn on.
+        .cornerBadge(badgeCount, visible: instance.showBadge, needsAttention: needsAttention)
     }
 
     private var namedContent: some View {
@@ -190,7 +203,7 @@ struct ServiceRowView: View {
         }
         .padding(.horizontal, Self.gutter)
         .frame(
-            width: axis == .vertical ? Self.rowWidth : nil,
+            width: axis == .vertical ? Self.rowWidth(forRail: railWidth) : nil,
             height: axis == .vertical ? Self.rowHeight : Self.tabHeight
         )
         // The tab takes exactly the width its label needs and no more. Left
@@ -237,7 +250,13 @@ struct ServiceRowView: View {
             }
 
             if badgeCount > 0 && instance.showBadge {
-                BadgeCountView(count: badgeCount)
+                // Down the side, a Notes-style number; in the tab bar the red
+                // badge, which reads at a glance across a row of tabs.
+                if axis == .vertical {
+                    SidebarCount(count: badgeCount, isSelected: isSelected, needsAttention: needsAttention)
+                } else {
+                    BadgeCountView(count: badgeCount, needsAttention: needsAttention)
+                }
             }
         }
     }

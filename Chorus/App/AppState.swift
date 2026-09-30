@@ -38,7 +38,10 @@ final class AppState {
     let networkMonitor: NetworkMonitor
 
     var selectedSpaceID: UUID?
-    var selectedServiceID: UUID?
+    var selectedServiceID: UUID? {
+        // Opening a service clears the pulse on its count.
+        didSet { badgeManager.activeServiceID = selectedServiceID }
+    }
     var showAddService = false
     var showQuickSwitcher = false
 
@@ -1529,14 +1532,10 @@ final class AppState {
     /// mute/show-badge at write time, so it needs no per-service state sync here.
     func refreshBadgeState(for serviceID: UUID) {
         guard let service = currentServiceInstance(id: serviceID) else { return }
-        let count = badgeManager.rawCount(for: serviceID)
-        let isMuted = isServiceEffectivelyMuted(serviceID)
-        let showBadge = service.showBadge
-        badgeManager.updateBadge(
+        badgeManager.updateMask(
             for: serviceID,
-            count: count,
-            isMuted: isMuted,
-            showBadge: showBadge
+            isMuted: isServiceEffectivelyMuted(serviceID),
+            showBadge: service.showBadge
         )
     }
 
@@ -1623,7 +1622,10 @@ final class AppState {
         // While they were not, this exact order was one of the shapes that
         // trapped. An orphaned service's only links are in this space, so this
         // covers them too.
-        for link in space.serviceLinks where link.modelContext != nil {
+        // Only rows that still point at this space: a link that a drag or
+        // Move to Space re-pointed elsewhere could linger in this inverse on
+        // macOS 14, and deleting it would take its service's data with it.
+        for link in space.serviceLinks where link.modelContext != nil && link.liveSpace?.id == spaceID {
             context.delete(link)
         }
         for service in reclaimed { context.delete(service) }
@@ -3298,3 +3300,55 @@ final class AppState {
         }
     }
 }
+
+#if DEBUG
+extension AppState {
+    /// UserDefaults switch for made-up unread counts in a Debug build:
+    /// `defaults write com.nicojan.Chorus.debug debugMockBadges -bool true`.
+    static let debugMockBadgesKey = "debugMockBadges"
+
+    /// The made-up counts, dealt to the services in name order: small ones,
+    /// one past 99 for the "99+" badge, and some zeros so a few rows stay
+    /// clear.
+    static let debugMockBadgePattern = [3, 12, 128, 0, 1, 7, 42, 0, 5, 2]
+    private static var debugMockTicker: Task<Void, Never>?
+
+    /// Gives every service a made-up count when the switch is on, and clears
+    /// them when it is off.
+    func applyDebugMockBadges() {
+        guard UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey) else {
+            badgeManager.mockCounts = [:]
+            return
+        }
+        let services = ((try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+            .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending || ($0.label == $1.label && $0.id.uuidString < $1.id.uuidString) }
+        var mock: [UUID: Int] = [:]
+        for (index, service) in services.enumerated() {
+            mock[service.id] = Self.debugMockBadgePattern[index % Self.debugMockBadgePattern.count]
+        }
+        badgeManager.mockCounts = mock
+        startDebugMockTicker(hasServices: !services.isEmpty)
+    }
+
+    /// Every six seconds one made-up count goes up by one, so the flash and
+    /// the pulse can be seen without waiting for real mail.
+    private func startDebugMockTicker(hasServices: Bool) {
+        // One ticker for the app: the window's launch task runs again each
+        // time the window is reopened, and each run would start another.
+        Self.debugMockTicker?.cancel()
+        guard hasServices else { return }
+        Self.debugMockTicker = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(6))
+                // The services as they are now, so a deleted one never
+                // gets a made-up count back.
+                guard let self, UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey),
+                      let id = ((try? self.modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+                        .map(\.id).randomElement()
+                else { return }
+                self.badgeManager.bumpMockCount(for: id)
+            }
+        }
+    }
+}
+#endif

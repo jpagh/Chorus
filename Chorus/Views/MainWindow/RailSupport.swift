@@ -1,11 +1,10 @@
 import SwiftUI
+import Observation
+import UniformTypeIdentifiers
 
-/// Window-drag plumbing and the reorder maths the rail depends on.
-///
-/// All of it moved here verbatim when `ServiceSidebarView` and `SpaceStripView`
-/// were replaced by `UnifiedRailView` (build step 5 of concept C). It is the
-/// part the UX audit rated severity 0 — tested, and working — so it was moved
-/// rather than rewritten, and it lives in its own file so the next rail rebuild
+/// The plumbing the rails depend on: window dragging, reorder maths, the live
+/// drag-and-drop reorder, the rail's width and its resize handles, and when to
+/// draw keyboard focus. It lives in its own file so a rebuild of a rail view
 /// cannot take it down with the view it happened to sit in.
 
 enum ServiceReorderPlacement {
@@ -16,9 +15,10 @@ enum ServiceReorderPlacement {
 /// Sets whether the user can move the window by dragging its background.
 ///
 /// With `.windowStyle(.hiddenTitleBar)` the top of the window stays a title-bar
-/// drag band, 52 points tall since `TrafficLightsPositioner` grew it. In the bar layout the rail sits in that band, so a click-drag on a tab
-/// was grabbed by the window move before SwiftUI's `.draggable` reorder could
-/// start — the window slid instead of the tab reordering. A view nested in a
+/// drag band, 52 points tall since `TrafficLightsPositioner` grew it. In the
+/// bar layout the rail sits in that band, so a click-drag on a tab was grabbed
+/// by the window move before the tab's reorder drag could start — the window
+/// slid instead of the tab reordering. A view nested in a
 /// SwiftUI `ScrollView` can't opt out of that drag (the scroll view
 /// short-circuits AppKit hit-testing, so a `mouseDownCanMoveWindow == false`
 /// nested view is never consulted).
@@ -148,10 +148,10 @@ enum ServiceNameVisibility {
 /// The width of the space strip in the hybrid layout, and what that width
 /// means.
 ///
-/// The strip has two widths rather than a dragged range. A drag handle was
-/// tried first and felt bad: the strip is 40-odd points of chrome, the useful
-/// range is short, and the two widths that matter are the two ends of it.
-/// A toggle says the same thing and lands on the right width every time.
+/// The strip has two widths rather than a dragged range: it is 40-odd points
+/// of chrome, the useful range is short, and the two widths that matter are
+/// the two ends of it. Dragging its edge (`RailWidthHandle`) switches between
+/// them, as the setting does.
 enum SpaceStripMetrics {
     static let defaultsKey = "showSpaceNames"
 
@@ -174,5 +174,314 @@ enum SpaceStripMetrics {
     /// flush, while the compact one leaves 30 points of them overhanging.
     static func barLeadingInset(stripWidth: CGFloat, lightsWidth: CGFloat) -> CGFloat {
         Swift.max(0, lightsWidth - stripWidth)
+    }
+}
+
+/// Whether keyboard focus should be drawn, the way browsers answer
+/// `:focus-visible`. A key press turns the marks on and a click turns them
+/// off, so the ring that SwiftUI's first-responder pass put on the first rail
+/// row at launch no longer shows until the keyboard is in use.
+@MainActor
+@Observable
+final class FocusVisibility {
+    static let shared = FocusVisibility()
+
+    private(set) var isVisible = false
+    @ObservationIgnored private var monitor: Any?
+
+    private init() {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { event in
+            let visible = FocusVisibility.visibility(after: event.type, modifiers: event.modifierFlags)
+            MainActor.assumeIsolated {
+                if let visible, FocusVisibility.shared.isVisible != visible {
+                    FocusVisibility.shared.isVisible = visible
+                }
+            }
+            return event
+        }
+    }
+
+    /// What an event means for the marks: on after a key, off after a click,
+    /// and no change for anything else. A Command or Control shortcut is not
+    /// moving around the rail, so it leaves the marks alone, as browsers do;
+    /// Option stays, since Option-arrow reorders a row.
+    nonisolated static func visibility(after type: NSEvent.EventType, modifiers: NSEvent.ModifierFlags = []) -> Bool? {
+        switch type {
+        case .keyDown:
+            return modifiers.intersection([.command, .control]).isEmpty ? true : nil
+        case .leftMouseDown, .rightMouseDown: return false
+        default: return nil
+        }
+    }
+}
+
+/// Spaces and services reorder live while you drag one: as the pointer
+/// enters another row's slot, the dragged row moves into it, and the order is
+/// saved as it goes. The old drop-to-place version decided before or after
+/// from where the drop landed, and a drag downward never reached its drop
+/// handler.
+///
+/// Each drag carries a type of Chorus's own, which no other app reads, so a
+/// link or a file dragged over the rail can never move anything, and a space
+/// drag and a service drag never mistake each other.
+enum LiveReorder {
+    static let spaceType = UTType(exportedAs: "com.nicojan.chorus.space-id")
+    static let serviceType = UTType(exportedAs: "com.nicojan.chorus.service-link-id")
+
+    /// The order after `dragged` takes the slot of `target`: it lands after
+    /// the target when it came from above, and before it when it came from
+    /// below. Nil when nothing would move.
+    static func moving(_ dragged: UUID, over target: UUID, in ids: [UUID]) -> [UUID]? {
+        guard dragged != target,
+              let from = ids.firstIndex(of: dragged),
+              let to = ids.firstIndex(of: target)
+        else { return nil }
+        var moved = ids
+        moved.remove(at: from)
+        moved.insert(dragged, at: to)
+        return moved
+    }
+
+    /// What a drag carries: an id, under one of the Chorus-only types.
+    /// The data goes in whole rather than through a loader callback: Xcode
+    /// 16's SDK takes that callback as main-actor bound and will not compile
+    /// it. The payload is only an id under a type nothing outside Chorus reads.
+    nonisolated static func itemProvider(for id: UUID, type: UTType) -> NSItemProvider {
+        NSItemProvider(item: Data(id.uuidString.utf8) as NSData, typeIdentifier: type.identifier)
+    }
+}
+
+/// The drop side of `LiveReorder`, put on each row. A row lists the kinds of
+/// drag it takes, one `Lane` each: a space's heading in the all-services rail
+/// takes a space (to reorder spaces) and a service (to move it into that
+/// space). `move` runs as a drag of its kind enters the row, for the moves
+/// that are shown live; `drop` runs on release, for a move that must not
+/// happen until then, such as a service going into another space, which a
+/// cancelled drag must not leave behind.
+struct LiveReorderDropDelegate: DropDelegate {
+    struct Lane {
+        let type: UTType
+        /// What is being dragged, read when it is needed rather than copied
+        /// when the row was drawn, so a finished drag's id is never used.
+        let draggingID: () -> UUID?
+        var move: ((_ dragged: UUID) -> Void)? = nil
+        /// Whether the row took the drop. Nil means the live moves were all
+        /// there was to do.
+        var drop: ((_ dragged: UUID) -> Bool)? = nil
+    }
+
+    let lanes: [Lane]
+
+    private func lane(for info: DropInfo) -> Lane? {
+        lanes.first { info.hasItemsConforming(to: [$0.type]) }
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        lane(for: info) != nil
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let lane = lane(for: info), let dragged = lane.draggingID() else { return }
+        lane.move?(dragged)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let lane = lane(for: info), let dragged = lane.draggingID() else { return false }
+        return lane.drop?(dragged) ?? true
+    }
+}
+
+extension View {
+    /// Makes this row a live-reorder drop target for the given lanes.
+    func liveReorderDrop(_ lanes: [LiveReorderDropDelegate.Lane]) -> some View {
+        onDrop(of: lanes.map(\.type), delegate: LiveReorderDropDelegate(lanes: lanes))
+    }
+}
+
+/// The strip in the gap between a rail and the web card. Dragging it right
+/// shows the rail's names and widens it, dragging it left hides them and
+/// narrows it, the same as the setting in Settings. The rail has the two
+/// widths only, so the drag switches between them once it has gone far
+/// enough, and switches back if it returns within the same drag.
+struct RailWidthHandle: View {
+    @Binding var showsNames: Bool
+    /// Room left at the top, so the handle stays out of the band the traffic
+    /// lights and the nav row share.
+    var topInset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whether names were on when this drag began.
+    @State private var namesAtStart: Bool?
+
+    static let width: CGFloat = ChorusCard.gutter
+    /// How far the pointer has to travel before the rail changes width.
+    nonisolated static let threshold: CGFloat = 36
+
+    var body: some View {
+        Color.clear
+            .frame(width: Self.width)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .padding(.top, topInset)
+            .resizeCursor()
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = namesAtStart ?? showsNames
+                        namesAtStart = start
+                        let target = Self.showsNames(startingFrom: start, dragged: value.translation.width)
+                        guard target != showsNames else { return }
+                        withAnimation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion)) {
+                            showsNames = target
+                        }
+                    }
+                    .onEnded { _ in namesAtStart = nil }
+            )
+            .help(showsNames ? "Drag left to hide names" : "Drag right to show names")
+            .accessibilityHidden(true)
+    }
+
+    /// Names on or off after a drag of `dragged` points from a rail that
+    /// started with `start`.
+    nonisolated static func showsNames(startingFrom start: Bool, dragged: CGFloat) -> Bool {
+        start ? dragged > -threshold : dragged > threshold
+    }
+}
+
+/// The service rail's width. With names it can be any width from `minNamed`
+/// to `maxNamed`, set by dragging its edge; below `collapseBelow` it gives up
+/// its names and shrinks to the icon column, and a drag back out past
+/// `expandAbove` brings them back. The named width is kept in UserDefaults
+/// beside the names switch, so the Settings switch goes between the icons and
+/// the width you left it at.
+enum RailWidth {
+    static let defaultsKey = "railNamedWidth"
+    /// Room for an icon, a short name and a count.
+    static let minNamed: CGFloat = 150
+    static let maxNamed: CGFloat = 300
+    /// `ServiceRowView.railWidth`, written out: a View's statics are main-actor
+    /// isolated and these are not. A test holds the two together.
+    static let defaultNamed: CGFloat = 240
+    /// Where the edge has to be pulled to give up the names: 50 points past
+    /// the narrowest named width, so it is a deliberate pull and not the end of
+    /// a resize.
+    static let collapseBelow: CGFloat = 100
+    /// Where it has to be pushed to bring them back. Above `collapseBelow`, so
+    /// the two never overlap: between them the rail stays as it is, and it
+    /// cannot flip back and forth as the pointer wavers.
+    static let expandAbove: CGFloat = 125
+
+    static func clampNamed(_ width: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(width, minNamed), maxNamed)
+    }
+
+    /// Where a drag that puts the rail's edge at `proposed` leaves it: names on
+    /// or off, and the named width when they are on.
+    static func resolve(proposed: CGFloat, namesOn: Bool) -> (namesOn: Bool, namedWidth: CGFloat?) {
+        if namesOn {
+            return proposed < collapseBelow ? (false, nil) : (true, clampNamed(proposed))
+        }
+        return proposed > expandAbove ? (true, clampNamed(proposed)) : (false, nil)
+    }
+}
+
+private struct RailWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = RailWidth.defaultNamed
+}
+
+extension EnvironmentValues {
+    /// The width the vertical service rail takes from the window, gutter
+    /// included. Rows, headers and headings size themselves from it.
+    var railWidth: CGFloat {
+        get { self[RailWidthKey.self] }
+        set { self[RailWidthKey.self] = newValue }
+    }
+}
+
+/// The strip in the gap between the service rail and the web card. Dragging
+/// it resizes the rail live; past the narrowest named width the rail shrinks
+/// to its icons with the chrome's sidebar animation, and back out again the
+/// same way. See `RailWidth`.
+struct RailResizeHandle: View {
+    @Binding var showsNames: Bool
+    @Binding var namedWidth: Double
+    /// Room left at the top. See `RailWidthHandle.topInset`.
+    var topInset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The rail's width when this drag began.
+    @State private var startWidth: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: ChorusCard.gutter)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .padding(.top, topInset)
+            .resizeCursor()
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = startWidth ?? (showsNames ? RailWidth.clampNamed(CGFloat(namedWidth)) : ServiceRowView.compactRailWidth)
+                        startWidth = start
+                        let result = RailWidth.resolve(proposed: start + value.translation.width, namesOn: showsNames)
+                        if result.namesOn != showsNames {
+                            withAnimation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion)) {
+                                if let width = result.namedWidth {
+                                    namedWidth = Double(width)
+                                } else if start >= RailWidth.minNamed {
+                                    // Going to icons keeps the width this drag
+                                    // began at, not the narrowest one the pull
+                                    // passed on the way, so the names come back
+                                    // at the width you had.
+                                    namedWidth = Double(start)
+                                }
+                                showsNames = result.namesOn
+                            }
+                        } else if let width = result.namedWidth, Double(width) != namedWidth {
+                            // Follows the pointer: no animation, or it lags.
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) { namedWidth = Double(width) }
+                        }
+                    }
+                    .onEnded { _ in startWidth = nil }
+            )
+            .help(showsNames ? "Drag to resize. Pull it far to the left for icons only." : "Drag to the right to show names.")
+            .accessibilityHidden(true)
+    }
+}
+
+/// Shows the left-right resize arrow over a handle. It keeps count of its own
+/// push, so a hover-out that never comes (the handle rebuilt or gone while the
+/// pointer was on it) cannot leave the arrow stuck over the rest of the window.
+private struct ResizeCursor: ViewModifier {
+    @State private var isPushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                if inside, !isPushed {
+                    NSCursor.resizeLeftRight.push()
+                    isPushed = true
+                } else if !inside, isPushed {
+                    NSCursor.pop()
+                    isPushed = false
+                }
+            }
+            .onDisappear {
+                if isPushed {
+                    NSCursor.pop()
+                    isPushed = false
+                }
+            }
+    }
+}
+
+extension View {
+    fileprivate func resizeCursor() -> some View {
+        modifier(ResizeCursor())
     }
 }

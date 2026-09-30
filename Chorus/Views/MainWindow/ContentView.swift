@@ -8,6 +8,9 @@ struct ContentView: View {
     /// it sets the strip's width, and the service bar beside it has to start
     /// clear of whatever the traffic lights overhang.
     @AppStorage(SpaceStripMetrics.defaultsKey) private var showSpaceNames = true
+    /// Whether the rail carries service names, which dragging its edge sets.
+    @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
+    @AppStorage(RailWidth.defaultsKey) private var railNamedWidth = Double(RailWidth.defaultNamed)
 
     /// How much desktop the window lets through. See `WindowGlassStyle`.
     @AppStorage(WindowGlassStyle.defaultsKey) private var glassStyleRaw = WindowGlassStyle.defaultStyle.rawValue
@@ -56,6 +59,9 @@ struct ContentView: View {
         // request lands correctly. Idempotent, so re-running is harmless.
         .task {
             appState.notificationManager.requestAuthorization()
+            #if DEBUG
+            appState.applyDebugMockBadges()
+            #endif
         }
         .onChange(of: appState.selectedSpaceID) { _, newSpaceID in
             if let spaceID = newSpaceID {
@@ -160,6 +166,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 rail(axis: .vertical, spaceSelection: spaceSelection, serviceSelection: serviceSelection, contentInset: ChorusCard.topBand)
                 webContent
+                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth, topInset: ChorusCard.topBand) }
             }
         case .allServices:
             HStack(spacing: 0) {
@@ -172,6 +179,7 @@ struct ContentView: View {
                     showsAllSpaces: true
                 )
                 webContent
+                    .overlay(alignment: .leading) { RailResizeHandle(showsNames: $showServiceNames, namedWidth: $railNamedWidth, topInset: ChorusCard.topBand) }
             }
         case .topBars:
             VStack(spacing: 0) {
@@ -200,7 +208,9 @@ struct ContentView: View {
                         ),
                         showsSpaceHeader: false
                     )
+                    // The strip's edge sets its names, as the rail's does.
                     webContent
+                        .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showSpaceNames) }
                 }
             }
         }

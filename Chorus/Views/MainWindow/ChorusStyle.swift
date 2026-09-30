@@ -236,13 +236,20 @@ struct RowMark: Equatable {
 enum ChorusCard {
     /// The gap between the window edge, the rail card and the web card.
     static let gutter: CGFloat = 8
+    /// The rail cards' corners. Their rows nest inside at 14 less the padding.
     static let cornerRadius = ChorusRadius.surface
+    /// The web card's corners, set to follow a page's scroll bar: its thumb is
+    /// 11 points wide, so its end is a 5.5 point round, and it runs 3 points in
+    /// from the card's edge. 5.5 and 3 make the card's 8 (measured on
+    /// macOS 26 with "Always show scroll bars" on).
+    static let webCornerRadius = ChorusRadius.control
     /// The band along the top of every layout: the traffic lights, centred in
     /// it by `TrafficLightsPositioner`, then the bar or the nav row, and the
     /// donation button. The cards start under it, so their top edges line up.
     static let topBand: CGFloat = 52
-    /// Space between the rail card's edge and the rows inside it.
-    static let railPadding: CGFloat = 4
+    /// Space between the rail card's edge and the rows inside it. Six, so a
+    /// row's corner nests inside the card's: 14 less 6 is the rows' 8.
+    static let railPadding: CGFloat = 6
 }
 
 /// The nav buttons in the top band.
@@ -296,23 +303,33 @@ extension View {
             )
     }
 
-    /// Places a vertical rail's content on its card: the card's width, the
+    /// Places a vertical rail's content in its column: the card's width, the
     /// gutter to the window's leading and bottom edges, and `topInset` above
-    /// it for the traffic lights.
-    func railCardFrame(width: CGFloat, topInset: CGFloat) -> some View {
-        frame(width: width)
-            .railCard()
-            .padding(.leading, ChorusCard.gutter)
-            .padding(.top, topInset)
-            .padding(.bottom, ChorusCard.gutter)
+    /// it for the traffic lights. `carded` draws the card itself; a rail that
+    /// is one list leaves it off and sits on the window, and the all-services
+    /// rail draws a card per space instead.
+    @ViewBuilder
+    func railCardFrame(width: CGFloat, topInset: CGFloat, carded: Bool = true) -> some View {
+        let column = frame(width: width)
+        Group {
+            if carded {
+                column.railCard()
+            } else {
+                column
+            }
+        }
+        .padding(.leading, ChorusCard.gutter)
+        .padding(.top, topInset)
+        .padding(.bottom, ChorusCard.gutter)
     }
 
     /// Draws this view as the inset content card: the card grey behind it,
-    /// continuous 14 point corners and a hairline edge. The page itself is also
+    /// continuous corners that follow the page's scroll bar (see
+    /// `ChorusCard.webCornerRadius`) and a hairline edge. The page itself is also
     /// clipped by `WebViewHostView`'s layer, because a SwiftUI clip is not
     /// promised to reach into a hosted `NSView`.
     func contentCard() -> some View {
-        let shape = RoundedRectangle(cornerRadius: ChorusCard.cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: ChorusCard.webCornerRadius, style: .continuous)
         return background(ChorusColor.card)
             .clipShape(shape)
             .overlay(
@@ -320,5 +337,69 @@ extension View {
                     .strokeBorder(ChorusColor.hairline, lineWidth: 1)
                     .allowsHitTesting(false)
             )
+    }
+}
+
+/// The hover and press marks for the chrome's own buttons: the add buttons,
+/// the nav circles, and the like. The pointer over one draws the same faint
+/// ink fill a hovered row gets, a press draws the selection's, and a disabled
+/// button draws neither and is greyed out. The custom style takes over from
+/// SwiftUI's own dimming, so it has to do that greying itself. A row-shaped button takes the fill behind its label;
+/// a nav circle takes it over its glass or material, which would otherwise
+/// hide it.
+struct ChromeButtonStyle<S: Shape>: ButtonStyle {
+    let shape: S
+    var overLabel = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        ChromeButtonBody(configuration: configuration, shape: shape, overLabel: overLabel)
+    }
+}
+
+private struct ChromeButtonBody<S: Shape>: View {
+    let configuration: ButtonStyleConfiguration
+    let shape: S
+    let overLabel: Bool
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let mark = shape.fill(fill).allowsHitTesting(false)
+        Group {
+            if overLabel {
+                // A disabled circle keeps its circle and greys its glyph, the
+                // way a toolbar button does.
+                configuration.label
+                    .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                    .overlay(mark)
+            } else {
+                configuration.label
+                    .opacity(isEnabled ? 1 : 0.45)
+                    .background(mark)
+            }
+        }
+        .contentShape(shape)
+        .onHover { isHovering = $0 }
+    }
+
+    private var fill: AnyShapeStyle {
+        guard isEnabled else { return AnyShapeStyle(Color.clear) }
+        if configuration.isPressed { return AnyShapeStyle(ChorusColor.selectedFill) }
+        if isHovering { return AnyShapeStyle(ChorusColor.hoverFill) }
+        return AnyShapeStyle(Color.clear)
+    }
+}
+
+extension ButtonStyle where Self == ChromeButtonStyle<RoundedRectangle> {
+    /// A row-shaped chrome button, such as Add service.
+    static var chromeRow: Self {
+        ChromeButtonStyle(shape: RoundedRectangle(cornerRadius: ChorusRadius.control, style: .continuous))
+    }
+}
+
+extension ButtonStyle where Self == ChromeButtonStyle<Circle> {
+    /// A nav circle in the top band.
+    static var chromeCircle: Self {
+        ChromeButtonStyle(shape: Circle(), overLabel: true)
     }
 }

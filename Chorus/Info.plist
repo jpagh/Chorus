@@ -31,5 +31,28 @@
     <true/>
     <key>SUScheduledCheckInterval</key>
     <integer>86400</integer>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.nicojan.chorus.space-id</string>
+			<key>UTTypeDescription</key>
+			<string>Chorus space</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.nicojan.chorus.service-link-id</string>
+			<key>UTTypeDescription</key>
+			<string>Chorus service</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

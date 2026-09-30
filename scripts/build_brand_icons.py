@@ -19,11 +19,15 @@ ASSETS = os.path.normpath(
 
 # catalog id -> thesvg slug (verified to exist). fastmail has no thesvg icon and
 # intentionally falls back to its fetched favicon.
+# "linkedin" (LinkedIn Messaging) is left out on purpose: its icon is drawn by
+# hand, a white speech bubble on LinkedIn blue, so it reads apart from the full
+# LinkedIn entry ("linkedin-feed"), which keeps the real mark. Writing it from
+# thesvg would put the two back to the same picture.
 SLUGS = {
     "gmail":"gmail","outlook":"microsoft-outlook","protonmail":"proton-mail",
     "messenger":"messenger","slack":"slack","teams":"microsoft-teams",
     "discord":"discord","whatsapp":"whatsapp","telegram":"telegram",
-    "gchat":"google-chat","linkedin":"linkedin","linkedin-feed":"linkedin","x":"x",
+    "gchat":"google-chat","linkedin-feed":"linkedin","x":"x",
     "instagram":"instagram","facebook":"facebook","reddit":"reddit",
     "notion":"notion","trello":"trello","asana":"asana","linear":"linear",
     "gcal":"google-calendar","gdrive":"google-drive","figma":"figma",

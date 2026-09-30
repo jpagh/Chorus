@@ -33,9 +33,11 @@ struct SpaceHeaderView: View {
     let emoji: String
     var axis: Axis = .vertical
     var badgeCount: Int = 0
+    /// A service in this space has a count waiting to be seen.
+    var needsAttention: Bool = false
     var isMuted: Bool = false
     /// Whether the header carries the space's name. It follows the rail's
-    /// service rows: a 224 point header cannot sit above a 52 point column of
+    /// service rows: a full-width header cannot sit above a 52 point column of
     /// icons. Only the vertical rail ever asks for this — the horizontal bar has
     /// the room and keeps its name.
     var showsName: Bool = true
@@ -45,14 +47,12 @@ struct SpaceHeaderView: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.railWidth) private var railWidth
 
-    /// Matches the rail and row widths in `ServiceRowView`, so the header and
-    /// the services below it line up on both edges.
-    static let headerWidth: CGFloat = 224
     static let headerHeight: CGFloat = 36
     /// The nameless header: the emoji alone, matching the compact service cell
     /// under it.
-    static let compactWidth: CGFloat = 36
+    static let compactWidth: CGFloat = ServiceRowView.compactRailCellWidth
     /// The horizontal bar's header is a fixed width rather than hugging its
     /// name: it is the leftmost thing in the bar and a header that resized on
     /// every space switch would shove every service tab sideways.
@@ -101,13 +101,8 @@ struct SpaceHeaderView: View {
             .font(.system(size: 18))
             .opacity(isMuted ? 0.5 : 1.0)
             .accessibilityHidden(true)
-            .overlay(alignment: .topTrailing) {
-                if badgeCount > 0 {
-                    BadgeCountView(count: badgeCount)
-                        .offset(x: 10, y: -6)
-                }
-            }
             .frame(width: Self.compactWidth, height: Self.headerHeight)
+            .cornerBadge(badgeCount, needsAttention: needsAttention)
     }
 
     private var namedContent: some View {
@@ -127,7 +122,11 @@ struct SpaceHeaderView: View {
             Spacer(minLength: 0)
 
             if badgeCount > 0 {
-                BadgeCountView(count: badgeCount)
+                if axis == .vertical {
+                    SidebarCount(count: badgeCount, needsAttention: needsAttention)
+                } else {
+                    BadgeCountView(count: badgeCount, needsAttention: needsAttention)
+                }
             } else if isMuted {
                 Image(systemName: "bell.slash.fill")
                     .font(.system(size: 9))
@@ -144,7 +143,7 @@ struct SpaceHeaderView: View {
         }
         .padding(.horizontal, Self.gutter)
         .frame(
-            width: axis == .vertical ? Self.headerWidth : Self.barHeaderWidth,
+            width: axis == .vertical ? ServiceRowView.rowWidth(forRail: railWidth) : Self.barHeaderWidth,
             height: axis == .vertical ? Self.headerHeight : Self.barHeaderHeight
         )
     }

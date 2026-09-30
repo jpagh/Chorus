@@ -5,6 +5,23 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- Drag the edge of the rail to make it as wide as you like. Pull it in past its narrowest width and the rail slides down to its icons, with the unread badges popping onto them; push it back out and the names return. Settings still has the switch, and it remembers the width you chose.
+
+### Changed
+
+- Spaces and services move out of the way as you drag one past them, and the new order is saved as you go. In All services on the left you can drag a service into another space the same way. A dragged service shows its icon under the pointer.
+- In All services on the left, each space's services sit on a card of their own, with the space's name above it. The other left-hand layouts drop the card round the rail, so the page is the one card in the window. The page's corners now follow the curve of its scroll bar.
+- Unread counts look like the ones in Notes: a grey number at the end of the row. Without names, a service or space shows the red badge on its corner instead. A count that goes up flashes, and if you are elsewhere it turns red and pulses until you open that service.
+- Buttons in the rail and the Back, Forward, Reload, Home and Share buttons now light up under the pointer, and a button that can't be used looks it. The blue ring that marks the keyboard's place appears once you use the keyboard, not on the first service when Chorus opens. LinkedIn Messaging has its own icon, a speech bubble.
+
+### Fixed
+
+- A space dragged downward in the list of spaces stayed where it was.
+- A badge over 99 showed three dots instead of 99+.
+- The corners of the rows and tiles in the rail did not follow the rail's own.
+
 ## [1.5.22] - 2026-09-29
 
 ### Added

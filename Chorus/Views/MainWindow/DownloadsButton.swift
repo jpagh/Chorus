@@ -28,7 +28,7 @@ struct DownloadsButton: View {
                         }
                     }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.chromeCircle)
             .help("Downloads")
             .accessibilityLabel(center.hasRunning ? "Downloads, in progress" : "Downloads")
             .popover(isPresented: $isShowingList, arrowEdge: .bottom) {
@@ -172,8 +172,9 @@ private struct DownloadRow: View {
             Image(systemName: symbol)
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeCircle)
         .help(label)
         .accessibilityLabel(label)
     }

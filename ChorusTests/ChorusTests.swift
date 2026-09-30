@@ -2313,6 +2313,174 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("www.atlassian.com"))
     }
 
+    /// A dragged space takes the slot of the one under the pointer, in either
+    /// direction. The old drop-to-place version never ran on a drag downward.
+    func testLiveReorderMovesTheDraggedSpaceIntoTheSlotUnderThePointer() {
+        let a = UUID(), b = UUID(), c = UUID()
+        XCTAssertEqual(LiveReorder.moving(a, over: c, in: [a, b, c]), [b, c, a], "down past two")
+        XCTAssertEqual(LiveReorder.moving(a, over: b, in: [a, b, c]), [b, a, c], "down one")
+        XCTAssertEqual(LiveReorder.moving(c, over: a, in: [a, b, c]), [c, a, b], "up past two")
+        XCTAssertEqual(LiveReorder.moving(b, over: a, in: [a, b, c]), [b, a, c], "up one")
+        XCTAssertNil(LiveReorder.moving(a, over: a, in: [a, b, c]), "over itself")
+        XCTAssertNil(LiveReorder.moving(UUID(), over: a, in: [a, b, c]), "not in the list")
+        // Crossing back undoes the move, so the order follows the pointer.
+        let there = LiveReorder.moving(a, over: b, in: [a, b, c])!
+        XCTAssertEqual(LiveReorder.moving(a, over: b, in: there), [a, b, c])
+    }
+
+    /// The focus ring shows once the keyboard is used and goes on a click, so
+    /// the ring SwiftUI puts on the first rail row at launch stays hidden.
+    func testFocusMarksFollowTheLastInput() {
+        XCTAssertEqual(FocusVisibility.visibility(after: .keyDown), true)
+        XCTAssertEqual(FocusVisibility.visibility(after: .keyDown, modifiers: .option), true, "Option-arrow reorders")
+        XCTAssertNil(FocusVisibility.visibility(after: .keyDown, modifiers: .command), "a shortcut is not moving around")
+        XCTAssertNil(FocusVisibility.visibility(after: .keyDown, modifiers: [.control, .shift]))
+        XCTAssertEqual(FocusVisibility.visibility(after: .leftMouseDown), false)
+        XCTAssertEqual(FocusVisibility.visibility(after: .rightMouseDown), false)
+        XCTAssertNil(FocusVisibility.visibility(after: .mouseMoved))
+    }
+
+    /// Nested corners follow each other: a rail row's radius is the card's
+    /// less the padding between them.
+    func testRailRowCornersNestInsideTheCard() {
+        XCTAssertEqual(ChorusCard.cornerRadius - ChorusCard.railPadding, ChorusRadius.control)
+        XCTAssertEqual(ServiceRowView.compactRailCellWidth, ServiceRowView.railCardWidth(showsName: false) - 2 * ChorusCard.railPadding)
+        // At every width the rail can be dragged to, a row fills the column
+        // less the padding each side, and never gets too narrow for an icon,
+        // a name and a count.
+        for rail in stride(from: RailWidth.minNamed, through: RailWidth.maxNamed, by: 10) {
+            let row = ServiceRowView.rowWidth(forRail: rail)
+            XCTAssertEqual(row, rail - ChorusCard.gutter - 2 * ChorusCard.railPadding)
+            XCTAssertGreaterThanOrEqual(row, 130)
+        }
+    }
+
+    /// VoiceOver hears what the pulse shows.
+    func testSpokenLabelSaysACountIsNew() {
+        let plain = ServiceAccessibility.label(name: "Slack", badgeCount: 3, isHibernated: false, isMuted: false)
+        let fresh = ServiceAccessibility.label(name: "Slack", badgeCount: 3, isHibernated: false, isMuted: false, needsAttention: true)
+        XCTAssertEqual(plain, "Slack, 3 unread")
+        XCTAssertEqual(fresh, "Slack, 3 unread, new since you last looked")
+        XCTAssertEqual(ServiceAccessibility.label(name: "Slack", badgeCount: 0, isHibernated: false, isMuted: false, needsAttention: true), "Slack")
+    }
+
+    /// Dragging the rail's edge switches names once the drag has gone far
+    /// enough, either way, and back again if it returns within the drag.
+    func testRailEdgeDragSwitchesNamesPastTheThreshold() {
+        let t = RailWidthHandle.threshold
+        XCTAssertFalse(RailWidthHandle.showsNames(startingFrom: false, dragged: t - 1))
+        XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: false, dragged: t + 1))
+        XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: true, dragged: -(t - 1)))
+        XCTAssertFalse(RailWidthHandle.showsNames(startingFrom: true, dragged: -(t + 1)))
+        // Dragging the wrong way does nothing.
+        XCTAssertFalse(RailWidthHandle.showsNames(startingFrom: false, dragged: -200))
+        XCTAssertTrue(RailWidthHandle.showsNames(startingFrom: true, dragged: 200))
+    }
+
+    /// The rail's width follows a drag between its narrowest and widest named
+    /// widths, shrinks to its icons past the collapse point, and comes back
+    /// out past the expand point.
+    func testRailWidthFollowsTheDragAndCollapsesToIcons() {
+        XCTAssertEqual(RailWidth.defaultNamed, ServiceRowView.railWidth)
+        // A dead zone between the two thresholds, so the rail cannot flip
+        // back and forth as the pointer wavers.
+        XCTAssertLessThan(RailWidth.collapseBelow, RailWidth.expandAbove)
+        XCTAssertLessThan(RailWidth.expandAbove, RailWidth.minNamed)
+        XCTAssertGreaterThan(RailWidth.collapseBelow, ServiceRowView.compactRailWidth)
+
+        let within = RailWidth.resolve(proposed: 190, namesOn: true)
+        XCTAssertTrue(within.namesOn); XCTAssertEqual(within.namedWidth, 190)
+        let pinnedLow = RailWidth.resolve(proposed: 130, namesOn: true)
+        XCTAssertTrue(pinnedLow.namesOn); XCTAssertEqual(pinnedLow.namedWidth, RailWidth.minNamed)
+        XCTAssertEqual(RailWidth.resolve(proposed: 500, namesOn: true).namedWidth, RailWidth.maxNamed)
+
+        // Inside the dead zone nothing changes, whichever state it is in.
+        let middle = (RailWidth.collapseBelow + RailWidth.expandAbove) / 2
+        XCTAssertTrue(RailWidth.resolve(proposed: middle, namesOn: true).namesOn)
+        XCTAssertFalse(RailWidth.resolve(proposed: middle, namesOn: false).namesOn)
+        // Past either threshold, it changes.
+        XCTAssertFalse(RailWidth.resolve(proposed: RailWidth.collapseBelow - 1, namesOn: true).namesOn)
+        let out = RailWidth.resolve(proposed: RailWidth.expandAbove + 1, namesOn: false)
+        XCTAssertTrue(out.namesOn); XCTAssertEqual(out.namedWidth, RailWidth.minNamed)
+    }
+
+    /// A count that goes up while you are elsewhere waits to be seen; opening
+    /// the service, or the count reaching zero, lets it go. For the first
+    /// minute every count is taken as it stands, so nothing pulses at launch;
+    /// after that a first message on a service that had reported nothing
+    /// pulses too.
+    @MainActor
+    func testACountThatGoesUpElsewhereWaitsUntilTheServiceIsOpened() {
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let badges = BadgeManager(now: { clock })
+        let away = UUID(), here = UUID(), quiet = UUID()
+        badges.activeServiceID = here
+
+        // Launch: reports, a slow page's 0 then its real count, all settle.
+        badges.updateBadge(for: away, count: 2, isMuted: false)
+        badges.updateBadge(for: here, count: 1, isMuted: false)
+        badges.updateBadge(for: quiet, count: 0, isMuted: false)
+        badges.updateBadge(for: quiet, count: 3, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(anyOf: [away, here, quiet]), "nothing pulses while the counts settle")
+
+        clock += BadgeManager.settlingTime + 1
+        badges.updateBadge(for: away, count: 3, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.updateBadge(for: here, count: 3, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(here), "on screen, it only flashes")
+        XCTAssertTrue(badges.needsAttention(anyOf: [here, away]))
+
+        // A service that had reported nothing (hibernated at inbox zero) gets
+        // its first message: that is new mail.
+        let fresh = UUID()
+        badges.updateBadge(for: fresh, count: 1, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(fresh))
+
+        // Going down does not ask for attention; zero lets it go.
+        badges.updateBadge(for: away, count: 1, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.updateBadge(for: away, count: 0, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(away))
+
+        // Opening it lets it go.
+        badges.updateBadge(for: away, count: 4, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.activeServiceID = away
+        XCTAssertFalse(badges.needsAttention(away))
+
+        // A rise while muted does not pulse, and unmuting does not start one.
+        let muted = UUID()
+        badges.updateBadge(for: muted, count: 5, isMuted: true)
+        badges.updateBadge(for: muted, count: 6, isMuted: true)
+        badges.updateMask(for: muted, isMuted: false, showBadge: true)
+        XCTAssertFalse(badges.needsAttention(muted))
+        XCTAssertEqual(badges.badgeCount(for: muted), 6, "unmuting shows the count it kept")
+
+        // A mask change never writes a count, so one that arrives later is
+        // still read against nothing, not against a made-up 0.
+        let unseen = UUID()
+        badges.updateMask(for: unseen, isMuted: false, showBadge: true)
+        XCTAssertEqual(badges.rawCount(for: unseen), 0)
+        XCTAssertFalse(badges.needsAttention(unseen))
+
+        // And a deleted one forgets it.
+        badges.activeServiceID = here
+        badges.updateBadge(for: away, count: 5, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(away))
+        badges.removeBadge(for: away)
+        XCTAssertFalse(badges.needsAttention(away))
+    }
+
+    /// The web card's corner follows a page's scroll bar: an 11 point thumb
+    /// (a 5.5 point round end) 3 points in from the edge.
+    func testWebCardCornerFollowsTheScrollBar() {
+        // Measured: an 11 point thumb, so a 5.5 point round end, 3 points in.
+        let thumbWidth: CGFloat = 11, inset: CGFloat = 3
+        XCTAssertEqual(ChorusCard.webCornerRadius, (thumbWidth / 2 + inset).rounded(.down))
+        // The rail cards keep their larger corner so their rows still nest.
+        XCTAssertNotEqual(ChorusCard.cornerRadius, ChorusCard.webCornerRadius)
+    }
+
     /// Pause Audio has to hold on a service in the background. Measured on
     /// YouTube: a plain pause lasted until the ad ended, then the video played
     /// again with nobody looking. The service on screen keeps a plain pause so

@@ -120,11 +120,14 @@ enum ServiceAccessibility {
         micActive: Bool = false,
         micMuted: Bool = false,
         isPlayingAudio: Bool = false,
-        health: ServiceHealth = .live
+        health: ServiceHealth = .live,
+        needsAttention: Bool = false
     ) -> String {
         var parts = [name]
         if badgeCount > 0 {
             parts.append(badgeCount == 1 ? "1 unread" : "\(badgeCount) unread")
+            // What the pulse says to the eye, said to VoiceOver.
+            if needsAttention { parts.append("new since you last looked") }
         }
         if isHibernated { parts.append("hibernated") }
         if isMuted { parts.append("muted") }
@@ -178,10 +181,15 @@ struct MediaIndicatorGlyph: View {
 
 struct BadgeCountView: View {
     let count: Int
+    /// The count went up while you were elsewhere: it pulses until seen.
+    var needsAttention = false
 
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
             .font(.system(size: 9, weight: .bold))
+            // Its own width, whatever it is offered: laid over an 18 point
+            // icon, "99+" was cut down to an ellipsis.
+            .fixedSize()
             .foregroundStyle(.white)
             .padding(.horizontal, 4)
             .frame(minWidth: 16, minHeight: 16)
@@ -193,6 +201,143 @@ struct BadgeCountView: View {
                             .strokeBorder(.white.opacity(0.3), lineWidth: 0.5)
                     )
             )
+            .countMotion(count, needsAttention: needsAttention)
             .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// Puts a count badge over this view's top-trailing corner, the way the
+    /// Dock does: the badge's middle sits inside the corner, so it plainly
+    /// overlaps the edge, a selection fill or a focus ring, instead of grazing
+    /// it. Used on the nameless cells and tiles; rows with names carry their
+    /// badge inline.
+    func cornerBadge(_ count: Int, visible: Bool = true, needsAttention: Bool = false) -> some View {
+        overlay(alignment: .topTrailing) {
+            if visible && count > 0 {
+                PoppingBadge(count: count, needsAttention: needsAttention)
+                    .offset(x: 5, y: -5)
+            }
+        }
+    }
+}
+
+/// What a service looks like under the pointer while it is dragged: its own
+/// icon, a little larger than in the rail, on a soft shadow so it lifts off
+/// whatever it passes over.
+struct ServiceDragPreview: View {
+    let service: ServiceInstance
+
+    var body: some View {
+        ServiceIconSquare(instance: service, size: 28, cornerRadius: 6)
+            .padding(4)
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+    }
+}
+
+/// An unread count the way the Notes sidebar shows one: a plain number at the
+/// end of a row that carries a name, in the row's own type, grey, and the
+/// label's colour on the selected row. The red badge is for places where
+/// there is no name to sit beside: nameless cells, tiles and the tab bar.
+struct SidebarCount: View {
+    let count: Int
+    var isSelected = false
+    /// The count went up while you were elsewhere: red, and pulsing until seen.
+    var needsAttention = false
+
+    var body: some View {
+        Text(count > 999 ? "999+" : "\(count)")
+            .font(ChorusType.label)
+            .fontWeight(needsAttention ? .semibold : .regular)
+            .monospacedDigit()
+            .foregroundStyle(color)
+            .fixedSize()
+            .countMotion(count, needsAttention: needsAttention)
+            .accessibilityHidden(true)
+    }
+
+    private var color: AnyShapeStyle {
+        if needsAttention { return AnyShapeStyle(ServiceIconPalette.badgeRed) }
+        return isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(ChorusColor.secondaryText)
+    }
+}
+
+/// How a count moves: a quick flash when it goes up, and a slow pulse while
+/// it waits to be seen (see `BadgeManager.attentionIDs`). Under Reduce Motion
+/// it stays still; the red of a waiting count still marks it.
+private struct CountMotion: ViewModifier {
+    let count: Int
+    let needsAttention: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isFlashing = false
+    @State private var isPulsing = false
+
+    func body(content: Content) -> some View {
+        content
+            // One scale each, so the flash's spring never takes over the
+            // pulse's repeating animation and leaves it frozen part way.
+            .scaleEffect(isPulsing ? 1.12 : 1)
+            .scaleEffect(isFlashing ? 1.25 : 1)
+            .onChange(of: reduceMotion) { _, reduced in
+                if reduced {
+                    isPulsing = false
+                } else if needsAttention {
+                    startPulse()
+                }
+            }
+            .onChange(of: count) { old, new in
+                guard new > old, !reduceMotion else { return }
+                withAnimation(.spring(response: 0.16, dampingFraction: 0.45)) { isFlashing = true }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isFlashing = false }
+                }
+            }
+            .onChange(of: needsAttention, initial: true) { _, waiting in
+                guard !reduceMotion else { isPulsing = false; return }
+                if waiting {
+                    startPulse()
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) { isPulsing = false }
+                }
+            }
+    }
+
+    private func startPulse() {
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { isPulsing = true }
+    }
+}
+
+extension View {
+    /// Flashes this count when it goes up and pulses it while it waits to be
+    /// seen. See `CountMotion`.
+    func countMotion(_ count: Int, needsAttention: Bool) -> some View {
+        modifier(CountMotion(count: count, needsAttention: needsAttention))
+    }
+}
+
+/// A corner badge that springs up as it appears: when the rail shrinks to its
+/// icons, and when a count arrives. It just appears under Reduce Motion.
+private struct PoppingBadge: View {
+    let count: Int
+    let needsAttention: Bool
+    @State private var isShown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        BadgeCountView(count: count, needsAttention: needsAttention)
+            .scaleEffect(isShown ? 1 : 0.3)
+            .opacity(isShown ? 1 : 0)
+            .onAppear {
+                if reduceMotion {
+                    isShown = true
+                } else {
+                    // A beat after the rail starts to shrink, so the badges
+                    // land once the icons are in place.
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.6).delay(0.12)) {
+                        isShown = true
+                    }
+                }
+            }
     }
 }

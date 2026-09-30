@@ -15,9 +15,9 @@ import os
 /// `hybrid` and `topBars` collapsed into a single layout: with one rail there
 /// are only two arrangements left, on the left or along the top.
 ///
-/// Everything the audit rated severity 0 came across untouched: the reorder
-/// maths (`ServiceReorder`), drag and drop, the arrow keys, the VoiceOver move
-/// actions, and the donation button's reserved corner. The space half of that
+/// The arrow keys, the VoiceOver move actions and the donation button's
+/// reserved corner came across from the old rails. Drag and drop has since
+/// been rewritten as a live reorder; see `LiveReorder`. The space half of that
 /// plumbing now lives in `SpacePaletteView`, which the header opens.
 struct UnifiedRailView: View {
     @Binding var selectedSpaceID: UUID?
@@ -38,9 +38,15 @@ struct UnifiedRailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Draws the focus ring only once the keyboard is in use. See
+    /// `FocusVisibility`. Computed, not stored: a private stored property
+    /// makes the memberwise initialiser private on Xcode 16's compiler.
+    private var focusVisibility: FocusVisibility { .shared }
 
     /// Whether service cells carry their names. See `ServiceNameVisibility`.
     @AppStorage(ServiceNameVisibility.defaultsKey) private var showServiceNames = true
+    /// The rail's width while it carries names. See `RailWidth`.
+    @AppStorage(RailWidth.defaultsKey) private var namedWidth = Double(RailWidth.defaultNamed)
 
     @State private var showingPalette = false
     @State private var showingAddService = false
@@ -60,19 +66,10 @@ struct UnifiedRailView: View {
     /// The all-services rail can show one service in more than one space, so
     /// focus follows the membership link rather than the shared service id.
     @FocusState private var focusedAllServicesLinkID: UUID?
-    // Fallback drop midpoints, used only until the first geometry pass records a
-    // cell's real size. Both are half of what `ServiceRowView` draws: a 28 point
-    // row in the vertical rail, and a labelled tab of roughly 120 points in the
-    // horizontal bar. A wrong (too large) value would make every drop on that
-    // axis resolve `.before` and leave the last slot unreachable.
-    private static let serviceDropMidpoint: CGFloat = ServiceRowView.rowHeight / 2
-    private static let serviceDropMidpointHorizontal: CGFloat = ServiceRowView.tabTypicalWidth / 2
-    /// The same fallback for a bar of nameless tabs, which are a fixed width.
-    private static let compactDropMidpointHorizontal: CGFloat = ServiceRowView.compactCellWidth / 2
-    /// Measured size of each drop cell, so the before/after split uses the target's
-    /// true midpoint instead of a hardcoded guess.
-    @State private var cellSizes: [UUID: CGSize] = [:]
-    @State private var spaceSeparatorSizes: [UUID: CGSize] = [:]
+    /// The space being dragged in the all-services rail. See `LiveReorder`.
+    @State private var draggingSpaceID: UUID?
+    /// The service membership being dragged. See `LiveReorder`.
+    @State private var draggingLinkID: UUID?
 
     /// The horizontal bar is the top band: a 32 point header and 32 point tabs
     /// with 10 points clear above and below.
@@ -80,11 +77,25 @@ struct UnifiedRailView: View {
     /// How much of the scrolling tab row's trailing edge is softened to say the
     /// row runs past the window.
     private static let overflowFadeFraction: CGFloat = 0.06
+    /// Room above each space's heading in the all-services rail, between one
+    /// group's card and the next.
+    private static let groupGap: CGFloat = 10
 
     private var filteredLinks: [SpaceServiceLink] {
         guard let spaceID = selectedSpaceID else { return [] }
         return links(in: spaceID)
     }
+
+    /// What the vertical rail takes from the window now, gutter included.
+    private var railFootprint: CGFloat {
+        showServiceNames ? RailWidth.clampNamed(CGFloat(namedWidth)) : ServiceRowView.compactRailWidth
+    }
+
+    /// The rail's column, less the gutter.
+    private var railColumnWidth: CGFloat { railFootprint - ChorusCard.gutter }
+
+    /// A named row's width at the rail's current width.
+    private var namedRowWidth: CGFloat { ServiceRowView.rowWidth(forRail: railFootprint) }
 
     private func links(in spaceID: UUID) -> [SpaceServiceLink] {
         allLinks
@@ -177,9 +188,10 @@ struct UnifiedRailView: View {
         }
     }
 
-    /// Every space in sort order, followed by its services in link order.
-    /// Headings stay identical for full and empty spaces; an empty space puts
-    /// its status in the service area beneath the heading.
+    /// Every space in sort order, each as a card of its services with the
+    /// space's name (or, without names, its emoji) above the card, on the
+    /// window itself. The card does the grouping, so there are no rules
+    /// between groups and the rows are not indented.
     private var allServicesBody: some View {
         // Grouped once per render: the rows and the reorder key both need it.
         let groups = spaces.map { (space: $0, links: links(in: $0.id)) }
@@ -197,37 +209,42 @@ struct UnifiedRailView: View {
                         let space = group.space
                         let spaceLinks = group.links
                         allServicesHeading(for: space)
-                            // A gap before every group but the first, which
-                            // the card's own padding already clears.
-                            .padding(.top, space.id == spaces.first?.id ? 0 : 6)
+                            .padding(.top, space.id == spaces.first?.id ? 0 : Self.groupGap)
+                            .padding(.bottom, 4)
 
-                        if spaceLinks.isEmpty {
-                            emptySpaceCell(for: space)
-                        } else {
-                            ForEach(spaceLinks) { link in
-                                if let service = link.liveService {
-                                    allServicesRow(for: link, service: service, in: space)
-                                        .id("\(space.id.uuidString)-\(link.id.uuidString)")
+                        VStack(spacing: 2) {
+                            if spaceLinks.isEmpty {
+                                emptySpaceCell(for: space)
+                            } else {
+                                ForEach(spaceLinks) { link in
+                                    if let service = link.liveService {
+                                        allServicesRow(for: link, service: service, in: space)
+                                            .id("\(space.id.uuidString)-\(link.id.uuidString)")
+                                    }
                                 }
                             }
                         }
+                        .padding(ChorusCard.railPadding)
+                        .railCard()
                     }
                 }
                 .animation(reorderAnimation, value: ReorderKey(ids: groups.flatMap(\.links).map(\.id)))
-                .padding(.vertical, ChorusCard.railPadding)
+                .padding(.bottom, ChorusCard.railPadding)
             }
 
-            railRule
             allServicesAddButtons
                 .padding(.vertical, ChorusCard.railPadding)
         }
-        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset)
+        .railCardFrame(width: railColumnWidth, topInset: contentInset, carded: false)
+        .environment(\.railWidth, railFootprint)
+        // Names on and off move the rail between its two forms; the width
+        // itself follows the pointer while it is dragged and does not animate.
+        .animation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion), value: showServiceNames)
     }
 
-    /// A space's name over its services, set like the row labels below it:
-    /// the emoji where their icons are, the name where their names are. The
-    /// nameless rail has no room for a name, so the emoji sits between two
-    /// short rules instead, which also keep the groups apart.
+    /// A space's name over its card, lined up with the service names in it:
+    /// the emoji over their icons, the name over their names. Without names,
+    /// the emoji alone, centred over the card.
     private func allServicesHeading(for space: Space) -> some View {
         let selected = selectedSpaceID == space.id
 
@@ -238,85 +255,65 @@ struct UnifiedRailView: View {
                 if showServiceNames {
                     HStack(spacing: 8) {
                         Text(space.emoji)
-                            .font(.system(size: 12))
+                            .font(.system(size: 14))
                             .frame(width: 18)
                             .opacity(space.isMutedEffective ? 0.5 : 1)
                             .accessibilityHidden(true)
+                        // Set like a Notes section heading: the row size, bold,
+                        // grey; the current space's in the label colour.
                         Text(space.name)
-                            .font(ChorusType.caption)
-                            .fontWeight(.semibold)
+                            .font(ChorusType.label)
+                            .fontWeight(.bold)
                             .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(ChorusColor.secondaryText))
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth)
+                    // Card padding plus the row's own, so the emoji sits over
+                    // the service icons.
+                    .padding(.horizontal, ChorusCard.railPadding + 8)
+                    .frame(width: railColumnWidth)
                 } else {
-                    HStack(spacing: 3) {
-                        separatorLine(selected: selected)
-                        // Fixed, or the rules squeeze the emoji to fit 36 points.
-                        Text(space.emoji)
-                            .font(.system(size: 12))
-                            .fixedSize()
-                            .opacity(space.isMutedEffective ? 0.5 : 1)
-                            .accessibilityHidden(true)
-                        separatorLine(selected: selected)
-                    }
-                    .frame(width: ServiceRowView.compactCellWidth)
+                    Text(space.emoji)
+                        .font(.system(size: 16))
+                        .fixedSize()
+                        .opacity(space.isMutedEffective ? 0.5 : 1)
+                        .accessibilityHidden(true)
+                        .frame(width: ServiceRowView.railCardWidth(showsName: false))
                 }
             }
-            .frame(height: 24)
+            .frame(height: 22)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(space.isMutedEffective ? "\(space.name) (muted)" : space.name)
         .accessibilityLabel(space.name)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .draggable(space.id.uuidString) {
+        // Spaces reorder live as a heading is dragged over the others; a
+        // service dropped on a heading moves into that space. See
+        // `LiveReorder`.
+        .onDrag {
+            draggingSpaceID = space.id
+            return LiveReorder.itemProvider(for: space.id, type: LiveReorder.spaceType)
+        } preview: {
             Text(space.emoji)
                 .font(.title3)
                 .padding(6)
                 .background(.ultraThickMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
         }
-        .dropDestination(for: String.self) { items, location in
-            guard let raw = items.first, let droppedID = UUID(uuidString: raw) else { return false }
-
-            if spaces.contains(where: { $0.id == droppedID }) {
-                let midpoint = (spaceSeparatorSizes[space.id]?.height).map { $0 / 2 } ?? 12
-                let placement: ServiceReorderPlacement = location.y < midpoint ? .before : .after
-                return reorderSpace(
-                    droppedSpaceID: droppedID,
-                    relativeTo: space,
-                    placement: placement
-                )
-            }
-
-            return placeService(
-                droppedLinkID: droppedID,
-                in: space,
-                relativeTo: nil,
-                placement: .before
-            )
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size, initial: true) {
-                    spaceSeparatorSizes[space.id] = proxy.size
-                }
-            }
-        )
+        .liveReorderDrop([
+            .init(type: LiveReorder.spaceType, draggingID: { draggingSpaceID }, move: { liveMoveSpace($0, over: space.id) }),
+            .init(
+                type: LiveReorder.serviceType,
+                draggingID: { draggingLinkID },
+                move: { liveMoveLinkToTop($0, of: space) },
+                drop: { dropLinkAtTop($0, of: space) }
+            ),
+        ])
         .contextMenu { spaceContextMenu(for: space) }
         .accessibilityAction(named: "Move up") { moveSpace(space, forward: false) }
         .accessibilityAction(named: "Move down") { moveSpace(space, forward: true) }
-    }
-
-    /// Ink, not the accent: blue is kept for the focus ring.
-    private func separatorLine(selected: Bool) -> some View {
-        Rectangle()
-            .fill(selected ? ChorusColor.secondaryText : ChorusColor.hairline)
-            .frame(height: 1)
     }
 
     /// The rule over the add buttons, inset to the rows' width.
@@ -335,7 +332,7 @@ struct UnifiedRailView: View {
             Text("Empty")
                 .font(ChorusType.caption)
                 .foregroundStyle(ChorusColor.secondaryText)
-                // 34 puts the word where the row labels start.
+                // Where the row labels start.
                 .frame(maxWidth: .infinity, alignment: showServiceNames ? .leading : .center)
                 .padding(.horizontal, showServiceNames ? 34 : 0)
                 .frame(height: ServiceRowView.rowHeight)
@@ -344,15 +341,9 @@ struct UnifiedRailView: View {
         .buttonStyle(.plain)
         .help("\(space.name), empty")
         .accessibilityLabel("\(space.name), empty")
-        .dropDestination(for: String.self) { items, _ in
-            guard let raw = items.first, let droppedID = UUID(uuidString: raw) else { return false }
-            return placeService(
-                droppedLinkID: droppedID,
-                in: space,
-                relativeTo: nil,
-                placement: .before
-            )
-        }
+        .liveReorderDrop([
+            .init(type: LiveReorder.serviceType, draggingID: { draggingLinkID }, drop: { dropLinkAtTop($0, of: space) }),
+        ])
     }
 
     @ViewBuilder
@@ -377,7 +368,7 @@ struct UnifiedRailView: View {
             muted: muted,
             media: media,
             health: health,
-            focused: focusedAllServicesLinkID == link.id,
+            focused: focusedAllServicesLinkID == link.id && focusVisibility.isVisible,
             showsName: showServiceNames,
             spaceName: space.name,
             selectionAction: {
@@ -386,34 +377,21 @@ struct UnifiedRailView: View {
                 focusedAllServicesLinkID = link.id
             }
         )
-        .draggable(link.id.uuidString) {
-            Text(service.label)
-                .font(ChorusType.caption)
-                .padding(6)
-                .background(.ultraThickMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
+        // Live reorder, within a space or into another one. See `LiveReorder`.
+        .onDrag {
+            draggingLinkID = link.id
+            return LiveReorder.itemProvider(for: link.id, type: LiveReorder.serviceType)
+        } preview: {
+            ServiceDragPreview(service: service)
         }
-        .dropDestination(for: String.self) { items, location in
-            guard let raw = items.first,
-                  let droppedID = UUID(uuidString: raw),
-                  droppedID != link.id
-            else { return false }
-
-            let midpoint = (cellSizes[link.id]?.height).map { $0 / 2 } ?? Self.serviceDropMidpoint
-            return placeService(
-                droppedLinkID: droppedID,
-                in: space,
-                relativeTo: link,
-                placement: location.y < midpoint ? .before : .after
-            )
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear.onChange(of: proxy.size, initial: true) {
-                    cellSizes[link.id] = proxy.size
-                }
-            }
-        )
+        .liveReorderDrop([
+            .init(
+                type: LiveReorder.serviceType,
+                draggingID: { draggingLinkID },
+                move: { liveMoveLink($0, over: link, in: space) },
+                drop: { dropLink($0, over: link, in: space) }
+            ),
+        ])
         .accessibilityAction(named: "Move up") { moveServiceWithinSpace(link, forward: false) }
         .accessibilityAction(named: "Move down") { moveServiceWithinSpace(link, forward: true) }
         .contextMenu { serviceContextMenu(for: link) }
@@ -425,42 +403,24 @@ struct UnifiedRailView: View {
         }
     }
 
+    /// Add service over Add space, one full cell each with or without names:
+    /// side by side, the nameless pair shared 32 points and read as one
+    /// cramped control.
     private var allServicesAddButtons: some View {
-        Group {
-            if showServiceNames {
-                VStack(spacing: 2) {
-                    allServicesAddButton(
-                        title: "Add service",
-                        systemImage: "plus",
-                        disabled: selectedSpaceID == nil
-                    ) {
-                        showingAddService = true
-                    }
-                    allServicesAddButton(
-                        title: "Add space",
-                        systemImage: "folder.badge.plus",
-                        disabled: false
-                    ) {
-                        showingAddSpace = true
-                    }
-                }
-            } else {
-                HStack(spacing: 0) {
-                    allServicesAddButton(
-                        title: "Add service",
-                        systemImage: "plus",
-                        disabled: selectedSpaceID == nil
-                    ) {
-                        showingAddService = true
-                    }
-                    allServicesAddButton(
-                        title: "Add space",
-                        systemImage: "folder.badge.plus",
-                        disabled: false
-                    ) {
-                        showingAddSpace = true
-                    }
-                }
+        VStack(spacing: 2) {
+            allServicesAddButton(
+                title: "Add service",
+                systemImage: "plus",
+                disabled: selectedSpaceID == nil
+            ) {
+                showingAddService = true
+            }
+            allServicesAddButton(
+                title: "Add space",
+                systemImage: "folder.badge.plus",
+                disabled: false
+            ) {
+                showingAddSpace = true
             }
         }
         .foregroundStyle(.secondary)
@@ -484,17 +444,16 @@ struct UnifiedRailView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth, height: ServiceRowView.rowHeight)
+                    .frame(width: namedRowWidth, height: ServiceRowView.rowHeight)
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: ServiceRowView.rowHeight)
+                        .frame(width: ServiceRowView.compactRailCellWidth, height: ServiceRowView.rowHeight)
                 }
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeRow)
         .help(title)
         .accessibilityLabel(title)
         .disabled(disabled)
@@ -573,9 +532,9 @@ struct UnifiedRailView: View {
         }
     }
 
-    /// A card 232 points wide under the traffic lights, its top edge level with
-    /// the web card's. The header sits at y 56: the 52 point band, then the
-    /// card's 4 points of padding.
+    /// One list, on the window under the traffic lights, as wide as the rail
+    /// has been dragged (see `RailWidth`); its top edge is level with the web
+    /// card's. The header sits at y 58: the 52 point band, then 6 of padding.
     private var verticalBody: some View {
         VStack(spacing: 0) {
             spaceHeader
@@ -602,7 +561,11 @@ struct UnifiedRailView: View {
             addServiceButton
                 .padding(.vertical, ChorusCard.railPadding)
         }
-        .railCardFrame(width: ServiceRowView.railCardWidth(showsName: showServiceNames), topInset: contentInset)
+        // One list needs no card of its own: it sits on the window, and the
+        // web card beside it is the one card in the layout.
+        .railCardFrame(width: railColumnWidth, topInset: contentInset, carded: false)
+        .environment(\.railWidth, railFootprint)
+        .animation(ChorusMotion.animation(ChorusMotion.sidebar, reduceMotion: reduceMotion), value: showServiceNames)
     }
 
     private var horizontalBody: some View {
@@ -661,6 +624,7 @@ struct UnifiedRailView: View {
             emoji: space?.emoji ?? "🏠",
             axis: axis,
             badgeCount: badgeCount,
+            needsAttention: !muted && appState.badgeManager.needsAttention(anyOf: serviceIDs),
             isMuted: muted,
             showsName: axis == .horizontal || showServiceNames,
             isPaletteOpen: showingPalette
@@ -786,46 +750,17 @@ struct UnifiedRailView: View {
         // already says why it is not loaded — so it reports live and draws no dot.
         let health = hibernated ? ServiceHealth.live : appState.webViewPool.health(for: service.id)
 
-        cell(for: link, service: service, isSelected: isSel, badge: badge, hibernated: hibernated, muted: muted, media: media, health: health, focused: focusedServiceID == service.id)
-            .draggable(link.id.uuidString) {
-                // Custom drag preview. Source-dimming is left to SwiftUI:
-                // manually tracking a "dragging" id can't be cleared reliably —
-                // a drop on itself or a cancelled drag never fires the drop
-                // handler — which left the row stuck at 0.4 opacity.
-                Text(service.label)
-                    .font(ChorusType.caption)
-                    .padding(6)
-                    .background(.ultraThickMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.control))
+        cell(for: link, service: service, isSelected: isSel, badge: badge, hibernated: hibernated, muted: muted, media: media, health: health, focused: focusedServiceID == service.id && focusVisibility.isVisible)
+            // Live reorder along the rail or the bar. See `LiveReorder`.
+            .onDrag {
+                draggingLinkID = link.id
+                return LiveReorder.itemProvider(for: link.id, type: LiveReorder.serviceType)
+            } preview: {
+                ServiceDragPreview(service: service)
             }
-            .dropDestination(for: String.self) { items, location in
-                guard let droppedIDString = items.first,
-                      let droppedID = UUID(uuidString: droppedIDString),
-                      droppedID != link.id
-                else { return false }
-                let placement: ServiceReorderPlacement = {
-                    let size = cellSizes[link.id]
-                    if axis == .vertical {
-                        let mid = (size?.height).map { $0 / 2 } ?? Self.serviceDropMidpoint
-                        return location.y < mid ? .before : .after
-                    }
-                    let fallback = showServiceNames ? Self.serviceDropMidpointHorizontal : Self.compactDropMidpointHorizontal
-                    let mid = (size?.width).map { $0 / 2 } ?? fallback
-                    return location.x < mid ? .before : .after
-                }()
-                return reorderService(
-                    droppedLinkID: droppedID,
-                    relativeTo: link,
-                    placement: placement
-                )
-            }
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.onChange(of: proxy.size, initial: true) {
-                        cellSizes[link.id] = proxy.size
-                    }
-                }
-            )
+            .liveReorderDrop([
+                .init(type: LiveReorder.serviceType, draggingID: { draggingLinkID }, move: { liveMoveLinkInSpace($0, over: link) }),
+            ])
             .accessibilityAction(named: "Move up") { moveServiceUp(link) }
             .accessibilityAction(named: "Move down") { moveServiceDown(link) }
             .contextMenu { serviceContextMenu(for: link) }
@@ -863,6 +798,7 @@ struct UnifiedRailView: View {
             isSelected: isSelected,
             axis: axis,
             badgeCount: badge,
+            needsAttention: appState.badgeManager.needsAttention(service.id),
             isHibernated: hibernated,
             isMuted: muted,
             cameraActive: media?.cameraActive ?? false,
@@ -928,7 +864,7 @@ struct UnifiedRailView: View {
     /// In the wide vertical rail this is a labelled row like the services above
     /// it, with the plus sitting in an 18 point box so its text starts on the same
     /// x as theirs. Everywhere else it is the plus alone: the horizontal bar has
-    /// no width to spare, and a nameless rail is 52 points wide, so the 224 point
+    /// no width to spare, and a nameless rail is 52 points wide, so the full-width
     /// labelled row would hang out of it.
     private var addServiceButton: some View {
         Button {
@@ -945,12 +881,12 @@ struct UnifiedRailView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(width: ServiceRowView.rowWidth, height: ServiceRowView.rowHeight)
+                    .frame(width: namedRowWidth, height: ServiceRowView.rowHeight)
                 } else {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))
                         .frame(
-                            width: ServiceRowView.compactCellWidth,
+                            width: axis == .vertical ? ServiceRowView.compactRailCellWidth : ServiceRowView.compactCellWidth,
                             height: axis == .vertical ? ServiceRowView.rowHeight : ServiceRowView.tabHeight
                         )
                 }
@@ -958,7 +894,7 @@ struct UnifiedRailView: View {
             .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.chromeRow)
         .help("Add service")
         .accessibilityLabel("Add service")
         // Without a space there is nothing to add a service to, and
@@ -1243,26 +1179,80 @@ struct UnifiedRailView: View {
         save(forward ? "move space down" : "move space up")
     }
 
-    @discardableResult
-    private func reorderSpace(
-        droppedSpaceID: UUID,
-        relativeTo target: Space,
-        placement: ServiceReorderPlacement
-    ) -> Bool {
+    /// Moves the dragged space into the slot of the one under the pointer and
+    /// saves at once. See `LiveReorder`.
+    private func liveMoveSpace(_ dragged: UUID, over target: UUID) {
+        guard let ids = LiveReorder.moving(dragged, over: target, in: spaces.map(\.id)) else { return }
         let spacesByID = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
-        guard let reorderedIDs = ServiceReorder.reorderedIDs(
-            spaces.map(\.id),
-            moving: droppedSpaceID,
-            relativeTo: target.id,
-            placement: placement
-        ) else {
-            return false
+        for (index, id) in ids.enumerated() {
+            spacesByID[id]?.sortOrder = index
         }
+        save("reorder spaces")
+    }
 
-        for (order, id) in reorderedIDs.enumerated() {
-            spacesByID[id]?.sortOrder = order
+    /// Moves the dragged service into the slot of the one under the pointer,
+    /// in the rail or the bar that shows one space. Saves at once.
+    private func liveMoveLinkInSpace(_ dragged: UUID, over target: SpaceServiceLink) {
+        let links = filteredLinks
+        guard let ids = LiveReorder.moving(dragged, over: target.id, in: links.map(\.id)) else { return }
+        let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
+        for (index, id) in ids.enumerated() {
+            linksByID[id]?.sortOrder = index
         }
-        return save("reorder spaces")
+        save("reorder services")
+    }
+
+    /// In the all-services rail, over a row of the dragged service's own space:
+    /// it takes that row's slot, live. Over another space's row nothing moves
+    /// until the drop (`dropLink`), so a cancelled drag leaves the service
+    /// where it was.
+    private func liveMoveLink(_ dragged: UUID, over target: SpaceServiceLink, in space: Space) {
+        guard let source = allLinks.first(where: { $0.id == dragged })?.liveSpace,
+              source.id == space.id
+        else { return }
+        let links = links(in: space.id)
+        guard let ids = LiveReorder.moving(dragged, over: target.id, in: links.map(\.id)) else { return }
+        let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
+        for (index, id) in ids.enumerated() {
+            linksByID[id]?.sortOrder = index
+        }
+        save("reorder services")
+    }
+
+    /// Over a space's heading: a service of that same space goes to its top,
+    /// live. One from another space waits for the drop (`dropLinkAtTop`).
+    private func liveMoveLinkToTop(_ dragged: UUID, of space: Space) {
+        guard let first = links(in: space.id).first else { return }
+        liveMoveLink(dragged, over: first, in: space)
+    }
+
+    /// Released over a row: a service from another space moves into this one
+    /// at that row. `placeService` keeps the membership and its data, and
+    /// refuses a second copy of a service in one space, which reports the
+    /// drop as not taken.
+    private func dropLink(_ dragged: UUID, over target: SpaceServiceLink, in space: Space) -> Bool {
+        guard let source = allLinks.first(where: { $0.id == dragged })?.liveSpace else { return false }
+        guard source.id != space.id else { return true }
+        return moveLinkAcrossSpaces(dragged, into: space, relativeTo: target)
+    }
+
+    /// Released over a space's heading or its empty slot: a service from
+    /// another space goes to the top of this one.
+    private func dropLinkAtTop(_ dragged: UUID, of space: Space) -> Bool {
+        guard let source = allLinks.first(where: { $0.id == dragged })?.liveSpace else { return false }
+        guard source.id != space.id else { return true }
+        return moveLinkAcrossSpaces(dragged, into: space, relativeTo: links(in: space.id).first)
+    }
+
+    /// Moves a membership into another space and brings its badge up to date,
+    /// since the new space may be muted when the old one was not.
+    private func moveLinkAcrossSpaces(_ dragged: UUID, into space: Space, relativeTo target: SpaceServiceLink?) -> Bool {
+        let serviceID = allLinks.first(where: { $0.id == dragged })?.liveService?.id
+        let moved = placeService(droppedLinkID: dragged, in: space, relativeTo: target, placement: .before)
+        if moved, let serviceID {
+            appState.refreshBadgeState(for: serviceID)
+        }
+        return moved
     }
 
     private func moveServiceWithinSpace(_ link: SpaceServiceLink, forward: Bool) {
@@ -1381,32 +1371,6 @@ struct UnifiedRailView: View {
         links.swapAt(index, index + 1)
         for (i, l) in links.enumerated() { l.sortOrder = i }
         save("move service down")
-    }
-
-    @discardableResult
-    private func reorderService(
-        droppedLinkID: UUID,
-        relativeTo target: SpaceServiceLink,
-        placement: ServiceReorderPlacement
-    ) -> Bool {
-        var links = filteredLinks
-        let linksByID = Dictionary(uniqueKeysWithValues: links.map { ($0.id, $0) })
-        guard let reorderedIDs = ServiceReorder.reorderedIDs(
-            links.map(\.id),
-            moving: droppedLinkID,
-            relativeTo: target.id,
-            placement: placement
-        ) else {
-            return false
-        }
-        links = reorderedIDs.compactMap { linksByID[$0] }
-        guard links.count == reorderedIDs.count else { return false }
-
-        for (index, link) in links.enumerated() {
-            link.sortOrder = index
-        }
-        save("reorder services")
-        return true
     }
 
     private func deleteService(link: SpaceServiceLink) {

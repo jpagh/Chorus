@@ -23,7 +23,7 @@ final class WebViewHostView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = ChorusCard.cornerRadius
+        layer?.cornerRadius = ChorusCard.webCornerRadius
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
     }
