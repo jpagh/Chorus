@@ -221,7 +221,7 @@ final class FocusVisibility {
 /// from where the drop landed, and a drag downward never reached its drop
 /// handler.
 ///
-/// Each drag carries a type of Chorus's own, visible only inside the app, so a
+/// Each drag carries a type of Chorus's own, which no other app reads, so a
 /// link or a file dragged over the rail can never move anything, and a space
 /// drag and a service drag never mistake each other.
 enum LiveReorder {
@@ -243,15 +243,11 @@ enum LiveReorder {
     }
 
     /// What a drag carries: an id, under one of the Chorus-only types.
+    /// The data goes in whole rather than through a loader callback: Xcode
+    /// 16's SDK takes that callback as main-actor bound and will not compile
+    /// it. The payload is only an id under a type nothing outside Chorus reads.
     nonisolated static func itemProvider(for id: UUID, type: UTType) -> NSItemProvider {
-        let provider = NSItemProvider()
-        let data = Data(id.uuidString.utf8)
-        // The loader may run off the main thread, so it must not be tied to it.
-        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { @Sendable completion in
-            completion(data, nil)
-            return nil
-        }
-        return provider
+        NSItemProvider(item: Data(id.uuidString.utf8) as NSData, typeIdentifier: type.identifier)
     }
 }
 

@@ -41,17 +41,35 @@ final class BadgeManager {
         ids.contains { needsAttention($0) }
     }
 
-    /// Records a change of count for the attention rule: up while elsewhere
-    /// asks for attention, down to zero lets it go. The first count seen for a
-    /// service this session (`old` nil) is where it starts, not a rise: at
-    /// launch every service reports its unread count, and treating those as
-    /// new would set every one of them pulsing after each relaunch.
-    private func noteCountChange(_ id: UUID, from old: Int?, to new: Int) {
+    /// How long after launch the counts are taken as they stand. In that time
+    /// every service reports its unread count, and slow pages report a 0 and
+    /// then the real number; none of that is mail arriving. After it, any rise
+    /// is, including a first message on a service that had reported nothing
+    /// at all (a hibernated one at inbox zero reports only when mail comes).
+    static let settlingTime: TimeInterval = 60
+
+    /// When this session's counts started; see `settlingTime`.
+    private let startedAt: Date
+    /// The clock, so a test can move past the settling time.
+    private let now: () -> Date
+
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+        self.startedAt = now()
+    }
+
+    /// Records a change of count for the attention rule: once the counts have
+    /// settled, up while you are elsewhere asks for attention; down to zero
+    /// lets it go. A rise on a masked service (muted, badge hidden) does not,
+    /// so unmuting does not set old mail pulsing.
+    private func noteCountChange(_ id: UUID, from old: Int?, to new: Int, masked: Bool) {
         if new == 0 {
             attentionIDs.remove(id)
-        } else if let old, new > old, id != activeServiceID {
-            attentionIDs.insert(id)
+            return
         }
+        let settled = now().timeIntervalSince(startedAt) >= Self.settlingTime
+        guard settled, !masked, id != activeServiceID, new > (old ?? 0) else { return }
+        attentionIDs.insert(id)
     }
 
     #if DEBUG
@@ -66,7 +84,7 @@ final class BadgeManager {
     func bumpMockCount(for id: UUID) {
         let old = mockCounts[id] ?? 0
         mockCounts[id] = old + 1
-        noteCountChange(id, from: old, to: old + 1)
+        noteCountChange(id, from: old, to: old + 1, masked: maskedIDs.contains(id))
     }
     #endif
 
@@ -128,12 +146,34 @@ final class BadgeManager {
         // garbage-large value would corrupt totalCount/aggregateCount — one
         // negative can zero out or hide the dock badge for every other service.
         let clamped = max(0, min(count, 999))
-        noteCountChange(instanceID, from: counts[instanceID], to: clamped)
+        #if DEBUG
+        // A made-up count stands in for this one, so the page's own reading
+        // must not start or stop its pulse.
+        let mocked = mockCounts[instanceID] != nil
+        #else
+        let mocked = false
+        #endif
+        if !mocked {
+            noteCountChange(instanceID, from: counts[instanceID], to: clamped, masked: isMuted || !showBadge)
+        }
         // Always store the (clamped) true count; muting / show-badge only
         // toggles the display mask. Storing the real value (rather than 0) keeps
         // adaptive polling's delta detection correct for muted services and
         // makes un-muting instantaneous.
         counts[instanceID] = clamped
+        if isMuted || !showBadge {
+            maskedIDs.insert(instanceID)
+        } else {
+            maskedIDs.remove(instanceID)
+        }
+        updateDockBadge()
+    }
+
+    /// Updates only whether a service's badge shows, after a mute or a badge
+    /// setting changes, without touching its count. `updateBadge` with the
+    /// stored count would write a 0 for a service that has not reported yet,
+    /// and its real count arriving later would then read as a rise.
+    func updateMask(for instanceID: UUID, isMuted: Bool, showBadge: Bool) {
         if isMuted || !showBadge {
             maskedIDs.insert(instanceID)
         } else {

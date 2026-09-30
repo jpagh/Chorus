@@ -1532,14 +1532,10 @@ final class AppState {
     /// mute/show-badge at write time, so it needs no per-service state sync here.
     func refreshBadgeState(for serviceID: UUID) {
         guard let service = currentServiceInstance(id: serviceID) else { return }
-        let count = badgeManager.rawCount(for: serviceID)
-        let isMuted = isServiceEffectivelyMuted(serviceID)
-        let showBadge = service.showBadge
-        badgeManager.updateBadge(
+        badgeManager.updateMask(
             for: serviceID,
-            count: count,
-            isMuted: isMuted,
-            showBadge: showBadge
+            isMuted: isServiceEffectivelyMuted(serviceID),
+            showBadge: service.showBadge
         )
     }
 
@@ -3331,21 +3327,24 @@ extension AppState {
             mock[service.id] = Self.debugMockBadgePattern[index % Self.debugMockBadgePattern.count]
         }
         badgeManager.mockCounts = mock
-        startDebugMockTicker(serviceIDs: services.map(\.id))
+        startDebugMockTicker(hasServices: !services.isEmpty)
     }
 
     /// Every six seconds one made-up count goes up by one, so the flash and
     /// the pulse can be seen without waiting for real mail.
-    private func startDebugMockTicker(serviceIDs: [UUID]) {
+    private func startDebugMockTicker(hasServices: Bool) {
         // One ticker for the app: the window's launch task runs again each
         // time the window is reopened, and each run would start another.
         Self.debugMockTicker?.cancel()
-        guard !serviceIDs.isEmpty else { return }
+        guard hasServices else { return }
         Self.debugMockTicker = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(6))
+                // The services as they are now, so a deleted one never
+                // gets a made-up count back.
                 guard let self, UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey),
-                      let id = serviceIDs.randomElement()
+                      let id = ((try? self.modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+                        .map(\.id).randomElement()
                 else { return }
                 self.badgeManager.bumpMockCount(for: id)
             }

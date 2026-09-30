@@ -2405,25 +2405,36 @@ final class ChorusTests: XCTestCase {
     }
 
     /// A count that goes up while you are elsewhere waits to be seen; opening
-    /// the service, or the count reaching zero, lets it go. Going up on the
-    /// service you are looking at does not wait.
+    /// the service, or the count reaching zero, lets it go. For the first
+    /// minute every count is taken as it stands, so nothing pulses at launch;
+    /// after that a first message on a service that had reported nothing
+    /// pulses too.
     @MainActor
     func testACountThatGoesUpElsewhereWaitsUntilTheServiceIsOpened() {
-        let badges = BadgeManager()
-        let away = UUID(), here = UUID()
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let badges = BadgeManager(now: { clock })
+        let away = UUID(), here = UUID(), quiet = UUID()
         badges.activeServiceID = here
 
-        // The first count a service reports is where it starts, not a rise:
-        // otherwise every service with unread mail pulses after each launch.
+        // Launch: reports, a slow page's 0 then its real count, all settle.
         badges.updateBadge(for: away, count: 2, isMuted: false)
-        XCTAssertFalse(badges.needsAttention(away), "the launch report must not pulse")
         badges.updateBadge(for: here, count: 1, isMuted: false)
+        badges.updateBadge(for: quiet, count: 0, isMuted: false)
+        badges.updateBadge(for: quiet, count: 3, isMuted: false)
+        XCTAssertFalse(badges.needsAttention(anyOf: [away, here, quiet]), "nothing pulses while the counts settle")
 
+        clock += BadgeManager.settlingTime + 1
         badges.updateBadge(for: away, count: 3, isMuted: false)
         XCTAssertTrue(badges.needsAttention(away))
         badges.updateBadge(for: here, count: 3, isMuted: false)
-        XCTAssertFalse(badges.needsAttention(here))
+        XCTAssertFalse(badges.needsAttention(here), "on screen, it only flashes")
         XCTAssertTrue(badges.needsAttention(anyOf: [here, away]))
+
+        // A service that had reported nothing (hibernated at inbox zero) gets
+        // its first message: that is new mail.
+        let fresh = UUID()
+        badges.updateBadge(for: fresh, count: 1, isMuted: false)
+        XCTAssertTrue(badges.needsAttention(fresh))
 
         // Going down does not ask for attention; zero lets it go.
         badges.updateBadge(for: away, count: 1, isMuted: false)
@@ -2437,11 +2448,20 @@ final class ChorusTests: XCTestCase {
         badges.activeServiceID = away
         XCTAssertFalse(badges.needsAttention(away))
 
-        // A muted service never pulses.
+        // A rise while muted does not pulse, and unmuting does not start one.
         let muted = UUID()
         badges.updateBadge(for: muted, count: 5, isMuted: true)
         badges.updateBadge(for: muted, count: 6, isMuted: true)
+        badges.updateMask(for: muted, isMuted: false, showBadge: true)
         XCTAssertFalse(badges.needsAttention(muted))
+        XCTAssertEqual(badges.badgeCount(for: muted), 6, "unmuting shows the count it kept")
+
+        // A mask change never writes a count, so one that arrives later is
+        // still read against nothing, not against a made-up 0.
+        let unseen = UUID()
+        badges.updateMask(for: unseen, isMuted: false, showBadge: true)
+        XCTAssertEqual(badges.rawCount(for: unseen), 0)
+        XCTAssertFalse(badges.needsAttention(unseen))
 
         // And a deleted one forgets it.
         badges.activeServiceID = here
