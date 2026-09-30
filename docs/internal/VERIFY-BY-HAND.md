@@ -20,6 +20,7 @@ Run these on the build that will ship as 1.5.22. None has been run yet.
 10. **Tabs in the band.** In Bar along the top, click a tab, drag one to reorder it, and drag an empty part of the bar to move the window. A double-click on the empty part zooms.
 11. **Glass on macOS 26.** In Settings, set Window glass to Clear and then Regular, in light and dark. The desktop shows faintly behind the rail and the page stays solid. With Reduce Transparency on, the window goes solid.
 12. **A notice.** Turn Wi-Fi off. The offline card sits between the band and the page, and goes away when Wi-Fi comes back.
+13. **Trello signs in.** Add Trello, press Log in, and sign in with a real Atlassian account. The sign-in stays in the service, and Trello's boards load there. Try Continue with Google once too.
 
 ## Start here: 1.5.21 is published
 
