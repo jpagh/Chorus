@@ -16,7 +16,9 @@ struct EditServiceSheet: View {
     @State private var hibernationPolicy: HibernationPolicy = .followGlobal
     @State private var hibernateAfterMinutes: Int = 10
     @State private var mobileView: Bool = false
-    @State private var openLinksInApp: Bool = false
+    /// The service's own outside-link choice; nil follows the Settings default.
+    @State private var openLinksInApp: Bool? = nil
+    @AppStorage(OutsideLinkDefault.defaultsKey) private var linksOpenInChorusByDefault = false
     @State private var stayActive: Bool = false
     @State private var darkMode: ServiceDarkMode = .off
     @State private var notify: Bool = true
@@ -107,8 +109,12 @@ struct EditServiceSheet: View {
                 Toggle("Mobile view", isOn: $mobileView)
                     .help("Loads this service as if on an iPhone, so it serves its mobile web layout. Applied on save.")
 
-                Toggle("Open outside links in Chorus", isOn: $openLinksInApp)
-                    .help("When a link in this service points somewhere no Chorus service covers, open it in a Chorus window instead of your browser. Links that another service does cover still switch to that service.")
+                Picker("Open outside links in", selection: $openLinksInApp) {
+                    Text(linksOpenInChorusByDefault ? "Follow global setting (Chorus window)" : "Follow global setting (browser)").tag(Bool?.none)
+                    Text("Chorus window").tag(Bool?.some(true))
+                    Text("Browser").tag(Bool?.some(false))
+                }
+                .help("Where a link opens when it points somewhere no Chorus service covers. A link that another service covers still switches to that service.")
 
                 Toggle("Always appear active", isOn: $stayActive)
                     .help("Keeps this service from showing you as away or idle while Chorus is in the background, so your status stays active even when you work in other apps. Useful for Microsoft Teams. May hold back some of this service's notifications, since it now thinks you're looking at it.")
@@ -172,7 +178,7 @@ struct EditServiceSheet: View {
             hibernateAfterMinutes = service.hibernateAfterMinutesEffective
             mobileView = service.userAgent == UserAgentProvider.mobileSafari
             initialUserAgent = service.userAgent
-            openLinksInApp = service.opensExternalLinksInAppEffective
+            openLinksInApp = service.openExternalLinksInApp
             stayActive = service.staysActiveInBackgroundEffective
             darkMode = service.darkMode
             notify = !service.isMuted

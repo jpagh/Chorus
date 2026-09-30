@@ -221,28 +221,50 @@ final class UserScriptManager {
     /// Deliberately does NOT fake `document.hasFocus()` — it stays false for a
     /// background view — so apps that gate desktop notifications on *focus* keep
     /// firing them, preserving Chorus's `window.Notification` forwarding.
+    ///
+    /// The override has one way out, for quitting. Pages save their state when
+    /// they go hidden — WhatsApp Web writes its session then — and an app that
+    /// quits kills its pages without a `visibilitychange` or a `pagehide`. With
+    /// the page pinned to visible it never got a save point at all, and WhatsApp
+    /// could come back signed out. `quitReleaseJS` calls the function below,
+    /// which lets the page go hidden and sends it both events.
     static func makeVisibilityOverrideScript() -> String {
         return """
         (function() {
             try {
+                var released = false;
                 Object.defineProperty(document, 'visibilityState', {
                     configurable: true,
-                    get: function() { return 'visible'; }
+                    get: function() { return released ? 'hidden' : 'visible'; }
                 });
                 Object.defineProperty(document, 'hidden', {
                     configurable: true,
-                    get: function() { return false; }
+                    get: function() { return released; }
                 });
                 // Swallow real visibilitychange events so a page can't react to
                 // the view actually going off-screen and revert to "hidden"
                 // behavior; the overridden getters keep reporting visible.
                 document.addEventListener('visibilitychange', function(e) {
-                    e.stopImmediatePropagation();
+                    if (!released) { e.stopImmediatePropagation(); }
                 }, true);
+                Object.defineProperty(window, '__chorusReleaseForQuit', {
+                    configurable: false,
+                    enumerable: false,
+                    value: function() {
+                        if (released) { return; }
+                        released = true;
+                        document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+                        window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+                    }
+                });
             } catch (e) {}
         })();
         """
     }
+
+    /// Evaluated in each live page just before quit. See
+    /// `makeVisibilityOverrideScript`.
+    nonisolated static let quitReleaseJS = "window.__chorusReleaseForQuit && window.__chorusReleaseForQuit(); true"
 
     /// Reports the page as focused even when its web view is in the background,
     /// so a service that flips your status to "away"/"idle" on window blur

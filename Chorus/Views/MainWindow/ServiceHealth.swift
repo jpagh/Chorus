@@ -24,6 +24,9 @@ enum ServiceHealth: Equatable, CaseIterable {
     enum Event: CaseIterable {
         case startedLoading
         case finishedLoading
+        /// A load that ended without finishing or failing: the user pressed
+        /// Stop, another navigation replaced it, or it turned into a download.
+        case stoppedLoading
         case failed
     }
 
@@ -37,6 +40,9 @@ enum ServiceHealth: Equatable, CaseIterable {
         switch event {
         case .startedLoading: return .loading
         case .finishedLoading: return .live
+        // The ring comes down; the page that was on screen before the load is
+        // still there. A failure standing from earlier stays up.
+        case .stoppedLoading: return self == .failed ? .failed : .live
         case .failed: return .failed
         }
     }

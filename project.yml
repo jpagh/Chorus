@@ -19,6 +19,14 @@ targets:
       - path: Chorus
         excludes:
           - "**/.DS_Store"
+      # The notices the bundled lists and libraries ask for travel with the app.
+      - path: LICENSE
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
+      - path: licenses
+        type: folder
+        buildPhase: resources
     resources:
       - path: Chorus/Resources/ServiceCatalog.json
       - path: Chorus/Resources/hagezi-light.json

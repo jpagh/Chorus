@@ -5,18 +5,13 @@ import AppKit
 @MainActor
 final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
 
-    private var popupWebView: WKWebView?
-    private var popupWindow: NSWindow?
-    private var popupTitleObservation: NSKeyValueObservation?
+    /// The popups this service has open, first-opened first. Usually none or
+    /// one; a sign-in popup that opens its own adds a second. See `PopupChain`.
+    private var popups: [ServicePopup] = []
 
     /// The service's main web view that opened the current popup. Kept so we can
     /// reload it once the sign-in popup closes (see reloadOpenerAfterPopup).
     private weak var openerWebView: WKWebView?
-
-    /// Whether the current popup was *opened at* a known sign-in gateway. Set
-    /// once, from the URL that opened it — see `shouldReloadOpener` for why the
-    /// rest of the navigation chain is deliberately not consulted.
-    private var popupOpenedAtAuthHost = false
 
     /// Fallback URL to load if the WebContent process crashes before any
     /// navigation has committed (so `webView.reload()` has nothing to retry).
@@ -25,10 +20,6 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// Timestamps of recent WebContent terminations, used to break a crash →
     /// reload → crash loop. Accessed only from main-thread delegate callbacks.
     private var crashTimestamps: [Date] = []
-    /// Same, for the OAuth/sign-in popup web view — tracked separately so a
-    /// looping popup gets the same backoff the main view has instead of
-    /// reloading forever.
-    private var popupCrashTimestamps: [Date] = []
     // nonisolated so the nonisolated `shouldAutoReload` can use them as default
     // argument values — they're immutable Sendable constants.
     private nonisolated static let maxCrashesInWindow = 3
@@ -41,6 +32,12 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// Chorus" choice. When nil the coordinator falls back to `NSWorkspace.open`
     /// directly.
     var externalLinkHandler: ((URL, UUID?) -> Void)?
+
+    /// Whether some Chorus service owns a URL, so a page's `window.open` to it
+    /// can switch to that service instead of opening a window. Set by
+    /// `WebViewPool`. Nil ⇒ nothing is handed off.
+    /// The second argument is this service's id, which never counts as the owner.
+    var serviceOwnsURL: ((URL, UUID?) -> Bool)?
 
     /// The service this coordinator drives, set by `WebViewPool` so navigation
     /// callbacks can be attributed to a specific service.
@@ -116,16 +113,20 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     deinit {
         // A backstop for the popup lifecycle, which is normally torn down by
         // popupWindowWillClose / webViewDidClose. deinit is nonisolated, so it
-        // can't call the main-actor-isolated cleanupPopup(); invalidate the
-        // (thread-safe) KVO observation here and close any still-open popup
-        // window on the main actor. The window is captured as a local so the
-        // hop never touches `self`, which is being deallocated.
-        //
-        popupTitleObservation?.invalidate()
-        if let window = popupWindow {
-            Task { @MainActor in window.close() }
+        // can't call the main-actor-isolated closePopups(); hand the popups to
+        // a main-actor task that invalidates their title observations and
+        // closes their windows. The list is captured as a local so the hop
+        // never touches `self`, which is being deallocated.
+        let openPopups = popups
+        if !openPopups.isEmpty {
+            Task { @MainActor in
+                for popup in openPopups {
+                    popup.titleObservation?.invalidate()
+                    popup.window.close()
+                }
+            }
         }
-        // Mirror cleanupPopup's removeObserver so the willClose observer is gone
+        // Mirror closePopups' removeObserver so the willClose observer is gone
         // even if the coordinator is deallocated with a popup still open. Must
         // come LAST: passing `self` copies it, after which isolated stored
         // properties can't be touched in a deinit. removeObserver(self) is
@@ -236,7 +237,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // Only the service's main web view carries a badge — ignore OAuth
         // popups (the coordinator is their navigation delegate too).
-        guard webView !== popupWebView, let instanceID else { return }
+        guard !isPopup(webView), let instanceID else { return }
         if errorPageLoadInFlight {
             errorPageLoadInFlight = false
         } else {
@@ -257,18 +258,19 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         // popup's own page. Reload its own page, but with the same crash-window
         // backoff the main view has: a popup that crashes deterministically
         // would otherwise reload-crash forever. Give up by closing the popup.
-        if webView === popupWebView {
+        if let index = popupIndex(of: webView) {
+            let popup = popups[index]
             let now = Date()
-            popupCrashTimestamps.append(now)
-            popupCrashTimestamps = popupCrashTimestamps.filter { now.timeIntervalSince($0) <= Self.crashWindow }
+            popup.crashTimestamps.append(now)
+            popup.crashTimestamps = popup.crashTimestamps.filter { now.timeIntervalSince($0) <= Self.crashWindow }
             guard Self.shouldAutoReload(
-                crashTimestamps: popupCrashTimestamps,
+                crashTimestamps: popup.crashTimestamps,
                 now: now,
                 maxCrashes: Self.maxCrashesInWindow,
                 window: Self.crashWindow
             ) else {
                 AppLogger.webView.error("OAuth popup WebContent terminated repeatedly — closing popup")
-                cleanupPopup()
+                closePopups(PopupChain.closedWhenClosing(at: index, count: popups.count))
                 return
             }
             if webView.url != nil { webView.reload() }
@@ -323,11 +325,15 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         // can't render, a captive-portal blip) would break the OAuth flow.
         // Let the popup's own site handle it. (didFinish already skips the
         // popup; this keeps the failure path symmetric.)
-        if webView === popupWebView { return }
+        if isPopup(webView) { return }
 
         let nsError = error as NSError
-        // Ignore cancelled loads (e.g., user navigated away)
-        guard nsError.code != NSURLErrorCancelled else { return }
+        guard !Self.keepsCurrentPage(afterProvisionalFailure: nsError, hasCommittedPage: webView.url != nil) else {
+            // No error page, but the rail's loading ring has to come down, or it
+            // spins forever.
+            reportStoppedLoading(webView)
+            return
+        }
 
         // Same page the generic error page below is about, reported to the rail
         // so a service that failed while you were looking at another one still
@@ -349,6 +355,61 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         )
         errorPageLoadInFlight = true
         webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    /// A load that failed after it committed. The page it committed is on
+    /// screen, part-loaded, so it stays — but without this the rail's ring kept
+    /// spinning. Stop is a stop; anything else, a connection lost mid-load, is a
+    /// failure the rail should show.
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if isPopup(webView) { return }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+            reportStoppedLoading(webView)
+        } else if let instanceID {
+            onHealthEvent?(instanceID, .failed)
+        }
+    }
+
+    /// Tells the rail a load ended with neither a finish nor a failure worth an
+    /// error page. A replacing navigation also cancels the old one, so this
+    /// waits a turn and leaves the ring alone while a load is still running.
+    private func reportStoppedLoading(_ webView: WKWebView) {
+        Task { @MainActor [weak self, weak webView] in
+            await Task.yield()
+            guard let self, let webView, !webView.isLoading,
+                  let instanceID = self.instanceID else { return }
+            self.onHealthEvent?(instanceID, .stoppedLoading)
+        }
+    }
+
+    /// Whether a provisional failure leaves the current page up instead of the
+    /// error page. None of these is a connection problem: a cancelled load
+    /// (Stop, or another navigation replaced it), a URL WebKit has no way to
+    /// show, and a response WebKit handed to a download instead of rendering.
+    /// Showing "Unable to connect" for a download that worked would be wrong.
+    ///
+    /// A cancel always keeps the page, even an empty one: the user pressed
+    /// Stop, or something replaced the load. The other two keep it only when a
+    /// page has committed. On a first load there is nothing to keep, and a
+    /// blank view with a healthy rail would hide a service that never came up.
+    nonisolated static func keepsCurrentPage(afterProvisionalFailure error: NSError, hasCommittedPage: Bool) -> Bool {
+        if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled { return true }
+        guard hasCommittedPage else { return false }
+        // WebKitErrorCannotShowURL (101) and
+        // WebKitErrorFrameLoadInterruptedByPolicyChange (102), still reported
+        // under the legacy domain.
+        if error.domain == "WebKitErrorDomain" { return error.code == 101 || error.code == 102 }
+        return false
+    }
+
+    /// Reloads a web view, or loads `fallbackURL` when there is nothing to
+    /// reload. A first load stopped before it committed leaves no page, and
+    /// `reload()` on that does nothing, so Reload looked broken.
+    static func reload(_ webView: WKWebView, fallbackURL: URL?) {
+        if webView.reload() == nil, let fallbackURL {
+            webView.load(URLRequest(url: fallbackURL))
+        }
     }
 
     // MARK: - Crash backoff / error page (pure, testable)
@@ -478,19 +539,37 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             return nil
         }
 
-        // Clean up any existing popup before opening a new one
-        cleanupPopup()
+        let openerIndex = popupIndex(of: webView)
+
+        // A page opening another Chorus service's link with `window.open` — a
+        // Linear link in Slack — switches to that service, the way a clicked
+        // link already does.
+        if let url = navigationAction.request.url,
+           Self.shouldHandOffScriptedWindow(
+               navigationType: navigationAction.navigationType,
+               openerIsPopup: openerIndex != nil,
+               requestedSize: windowFeatures.width != nil || windowFeatures.height != nil,
+               targetURL: url,
+               openerHost: webView.url?.host,
+               ownedByAnotherService: serviceOwnsURL?(url, instanceID) ?? false
+           ) {
+            if let handler = externalLinkHandler {
+                handler(url, instanceID)
+            } else {
+                Self.openExternally(url)
+            }
+            return nil
+        }
+
+        closePopups(PopupChain.closedWhenOpening(fromPopupAt: openerIndex, count: popups.count))
 
         // Remember the service's main web view so we can reload it after the
         // popup closes. The popup shares this data store, so once sign-in
         // finishes the session cookies are already here — the main view just
         // needs to reload to leave its signed-out page.
-        openerWebView = webView
-
-        // The sign-in signal, taken from the URL that opened the popup and not
-        // touched again: a service asking the user to sign in again opens
-        // straight at its provider. See `shouldReloadOpener`.
-        popupOpenedAtAuthHost = navigationAction.request.url?.host.map(Self.isAuthHost) ?? false
+        if openerIndex == nil {
+            openerWebView = webView
+        }
 
         // CRITICAL: Use the configuration passed in — it inherits the parent's data store
         let popup = WKWebView(frame: .zero, configuration: configuration)
@@ -515,8 +594,8 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             backing: .buffered,
             defer: false
         )
-        // We hold this window in a strong property (`popupWindow`) and release
-        // it ourselves in cleanupPopup. Left at its `true` default, AppKit would
+        // We hold this window in a strong property (`popups`) and release
+        // it ourselves in closePopups. Left at its `true` default, AppKit would
         // also release the window when it closes — an over-release that crashes
         // the app when an OAuth/sign-in popup (e.g. Gmail) window is closed.
         window.isReleasedWhenClosed = false
@@ -525,19 +604,25 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         window.center()
         window.makeKeyAndOrderFront(nil)
 
-        self.popupWebView = popup
-        self.popupWindow = window
+        // The sign-in signal, taken from the URL that opened the popup and not
+        // touched again: a service asking the user to sign in again opens
+        // straight at its provider. See `shouldReloadOpener`.
+        let entry = ServicePopup(
+            webView: popup,
+            window: window,
+            openedAtAuthHost: navigationAction.request.url?.host.map(Self.isAuthHost) ?? false
+        )
+        popups.append(entry)
 
         // Mirror the page's <title> into the NSWindow title bar so the user
         // sees what's actually loaded (e.g. "Google Drive — Sign in") rather
         // than the stale initial host name.
-        popupTitleObservation?.invalidate()
         // Read the new title from the (Sendable String?) KVO change value rather
         // than reaching back into the web view — the observe closure is
         // nonisolated/@Sendable, and touching the main-actor-isolated WKWebView
         // from it is a data race under Swift 6. An empty title leaves the bar on
         // its current text (the host it was seeded with) instead of clearing it.
-        popupTitleObservation = popup.observe(\.title, options: [.new]) { [weak window] _, change in
+        entry.titleObservation = popup.observe(\.title, options: [.new]) { [weak window] _, change in
             guard let newTitle = change.newValue ?? nil, !newTitle.isEmpty else { return }
             Task { @MainActor in
                 window?.title = newTitle
@@ -557,10 +642,9 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
 
     @objc private func popupWindowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-              window === popupWindow else { return }
+              let index = popups.firstIndex(where: { $0.window === window }) else { return }
         // Closed by the user (red button / ⌘W), not by the page.
-        reloadOpenerAfterPopup(selfClosed: false)
-        cleanupPopup()
+        closePopup(at: index, selfClosed: false)
     }
 
     /// Whether closing a popup should reload the service that opened it.
@@ -603,10 +687,10 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     }
 
     /// Reloads the service that opened the popup, when the rule above says to.
-    private func reloadOpenerAfterPopup(selfClosed: Bool) {
+    private func reloadOpenerAfterPopup(selfClosed: Bool, openedAtAuthHost: Bool) {
         guard Self.shouldReloadOpener(
             selfClosed: selfClosed,
-            openedAtAuthHost: popupOpenedAtAuthHost
+            openedAtAuthHost: openedAtAuthHost
         ) else { return }
         guard let opener = openerWebView else { return }
         if opener.url != nil {
@@ -616,35 +700,49 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         }
     }
 
-    private func cleanupPopup() {
-        if let window = popupWindow {
+    private func popupIndex(of webView: WKWebView) -> Int? {
+        popups.firstIndex { $0.webView === webView }
+    }
+
+    private func isPopup(_ webView: WKWebView) -> Bool {
+        popupIndex(of: webView) != nil
+    }
+
+    /// Closes the popup at `index` and every popup it opened. Only the first
+    /// popup's close can reload the service: a child closing hands control
+    /// back to its parent popup, and the flow is not over yet.
+    private func closePopup(at index: Int, selfClosed: Bool) {
+        if index == 0 {
+            reloadOpenerAfterPopup(selfClosed: selfClosed, openedAtAuthHost: popups[0].openedAtAuthHost)
+        }
+        closePopups(PopupChain.closedWhenClosing(at: index, count: popups.count))
+    }
+
+    /// Tears down the popups in `range`, last-opened first. The close observer
+    /// comes off before `close()`, so a teardown never re-enters
+    /// `popupWindowWillClose`.
+    private func closePopups(_ range: Range<Int>) {
+        guard !range.isEmpty else { return }
+        for popup in popups[range].reversed() {
             NotificationCenter.default.removeObserver(
                 self,
                 name: NSWindow.willCloseNotification,
-                object: window
+                object: popup.window
             )
+            popup.titleObservation?.invalidate()
+            popup.titleObservation = nil
+            popup.webView.navigationDelegate = nil
+            popup.webView.uiDelegate = nil
+            popup.window.close()
         }
-        popupTitleObservation?.invalidate()
-        popupTitleObservation = nil
-        popupWebView?.navigationDelegate = nil
-        popupWebView?.uiDelegate = nil
-        popupWindow?.close()
-        popupWebView = nil
-        popupWindow = nil
-        // Give the next popup its own crash budget — a prior popup's tally must
-        // not shorten the backoff for an unrelated sign-in opened soon after.
-        popupCrashTimestamps = []
-        // Likewise the sign-in signal: a link popup opened after a sign-in must
-        // not inherit its predecessor's reason to reload the service.
-        popupOpenedAtAuthHost = false
+        popups.removeSubrange(range)
     }
 
     func webViewDidClose(_ webView: WKWebView) {
-        if webView === popupWebView {
+        if let index = popupIndex(of: webView) {
             // The page called window.close() on itself — the shape an OAuth
             // popup takes when it finishes.
-            reloadOpenerAfterPopup(selfClosed: true)
-            cleanupPopup()
+            closePopup(at: index, selfClosed: true)
         }
     }
 
@@ -870,14 +968,43 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     private var activeDownloads: Set<WKDownload> = []
     private var selfRetainWhileDownloading: WebViewCoordinator?
 
+    /// The app-wide download list, and each running download's row in it. Set
+    /// by `WebViewPool`.
+    var downloadCenter: DownloadCenter?
+    private var downloadItemIDs: [ObjectIdentifier: UUID] = [:]
+
     private func trackDownload(_ download: WKDownload) {
         activeDownloads.insert(download)
         selfRetainWhileDownloading = self
+        let guessedName = download.originalRequest?.url?.lastPathComponent
+        downloadItemIDs[ObjectIdentifier(download)] = downloadCenter?.begin(
+            serviceID: instanceID,
+            filename: Self.sanitizedDownloadFilename(guessedName ?? ""),
+            progress: download.progress,
+            cancel: { [weak self, weak download] in
+                guard let self, let download else { return }
+                self.cancelDownload(download)
+            }
+        )
     }
 
-    private func untrackDownload(_ download: WKDownload) {
+    /// Cancel from the download list. WebKit sends no failure callback for a
+    /// download it was told to cancel (`DownloadProxy::didFail` returns early
+    /// once cancelled), so the bookkeeping the failure handler would do has to
+    /// happen here — otherwise the self-retain above keeps this coordinator
+    /// alive for the rest of the run.
+    private func cancelDownload(_ download: WKDownload) {
+        download.cancel(nil)
+        downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
+        untrackDownload(download)
+    }
+
+    /// Takes the download off the books and returns its row in the list.
+    @discardableResult
+    private func untrackDownload(_ download: WKDownload) -> UUID? {
         activeDownloads.remove(download)
         if activeDownloads.isEmpty { selfRetainWhileDownloading = nil }
+        return downloadItemIDs.removeValue(forKey: ObjectIdentifier(download))
     }
 
     /// Cancels every in-flight download and clears the self-retain. Called when
@@ -887,8 +1014,14 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// an acceptable tradeoff (the user can retry).
     private func cancelActiveDownloads() {
         guard !activeDownloads.isEmpty else { return }
-        for download in activeDownloads { download.cancel(nil) }
+        for download in activeDownloads {
+            download.cancel(nil)
+            if let itemID = downloadItemIDs[ObjectIdentifier(download)] {
+                downloadCenter?.fail(itemID, message: "The page stopped responding")
+            }
+        }
         activeDownloads.removeAll()
+        downloadItemIDs.removeAll()
         downloadDestinations.removeAll()
         selfRetainWhileDownloading = nil
     }
@@ -922,13 +1055,18 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             fileExists: { fileManager.fileExists(atPath: $0.path) }
         )
         downloadDestinations[ObjectIdentifier(download)] = destination
+        if let itemID = downloadItemIDs[ObjectIdentifier(download)] {
+            downloadCenter?.setDestination(destination, for: itemID)
+        }
         return destination
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         let key = ObjectIdentifier(download)
         let destination = downloadDestinations.removeValue(forKey: key)
-        untrackDownload(download)
+        if let itemID = untrackDownload(download) {
+            downloadCenter?.finish(itemID)
+        }
         guard let destination else { return }
         AppLogger.webView.info("Download finished: \(destination.lastPathComponent)")
         // Bounce the Downloads stack in the Dock — the standard macOS
@@ -941,11 +1079,23 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
-        untrackDownload(download)
+        if let itemID = untrackDownload(download) {
+            downloadCenter?.fail(itemID, message: Self.downloadFailureMessage(error))
+        }
         AppLogger.webView.error("Download failed: \(error.localizedDescription)")
     }
 
     // MARK: - Helpers
+
+    /// What the download list says went wrong. URL-loading errors already read
+    /// as plain words ("The Internet connection appears to be offline."); what
+    /// WebKit reports in its own domain reads as "WebKitErrorDomain error 102",
+    /// which means nothing to anyone, so that gets one plain line instead.
+    nonisolated static func downloadFailureMessage(_ error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain { return nsError.localizedDescription }
+        return "The download stopped before it finished."
+    }
 
     /// Reduces a server-suggested filename to a safe single path component:
     /// strips any directory parts and path separators so a crafted name can't
@@ -1085,6 +1235,64 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         return belongsToService(targetHost, serviceHost: openerHost)
             || isAuthHost(targetHost)
     }
+
+    /// Whether a page's `window.open` should switch to another Chorus service
+    /// instead of opening a window. Clicked links never get here — they were
+    /// routed in `decidePolicyFor`. So this is script, and only the narrow case
+    /// is handed off: the service's own page (not a popup) opening an unsized
+    /// window to a web URL that another Chorus service owns.
+    ///
+    /// Anything else keeps its window. A size asked for is how sign-in popups
+    /// ask, a popup's own children are sign-in steps, and a host no service owns
+    /// might be a company's own identity provider that Chorus doesn't list.
+    /// Sending that to the browser would strand the sign-in there, which is a
+    /// worse failure than a link in a window. A URL shaped like a sign-in stays
+    /// too, even on a host a service owns: Linear's "Connect Slack" opens
+    /// Slack's OAuth page, and handing that to the Slack service would run the
+    /// consent in the wrong data store and lose the callback.
+    nonisolated static func shouldHandOffScriptedWindow(
+        navigationType: WKNavigationType,
+        openerIsPopup: Bool,
+        requestedSize: Bool,
+        targetURL: URL,
+        openerHost: String?,
+        ownedByAnotherService: Bool
+    ) -> Bool {
+        guard navigationType != .linkActivated,
+              !openerIsPopup,
+              !requestedSize,
+              ownedByAnotherService,
+              let scheme = targetURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let targetHost = targetURL.host,
+              let openerHost
+        else { return false }
+        return !belongsToService(targetHost, serviceHost: openerHost)
+            && !isAuthHost(targetHost)
+            && !looksLikeSignIn(targetURL)
+    }
+
+    /// Whether a URL reads as a step in a sign-in or an authorization, whatever
+    /// its host: OAuth and SAML parameters in the query, or a path segment such
+    /// as `oauth`, `authorize` or `login`. Errs toward yes; a false yes costs a
+    /// link its switch to another service, and a false no costs a sign-in.
+    nonisolated static func looksLikeSignIn(_ url: URL) -> Bool {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryKeys = Set((components?.queryItems ?? []).map { $0.name.lowercased() })
+        if !queryKeys.isDisjoint(with: signInQueryKeys) { return true }
+        let segments = url.pathComponents.map { $0.lowercased() }
+        return segments.contains { segment in
+            signInPathSegments.contains(segment)
+                || signInPathSegments.contains { segment.hasPrefix($0 + ".") }
+        }
+    }
+
+    nonisolated private static let signInQueryKeys: Set<String> = [
+        "client_id", "redirect_uri", "response_type", "samlrequest", "samlresponse", "code_challenge",
+    ]
+    nonisolated private static let signInPathSegments: Set<String> = [
+        "oauth", "oauth2", "authorize", "auth", "login", "signin", "sign-in", "sso", "saml", "openid",
+    ]
 
     /// Whether `targetHost` belongs to the service whose current (or home) host
     /// is `serviceHost`. Same registrable domain counts as the same service — so

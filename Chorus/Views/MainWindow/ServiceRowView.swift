@@ -25,6 +25,9 @@ struct ServiceRowView: View {
     var cameraActive: Bool = false
     var micActive: Bool = false
     var micMuted: Bool = false
+    /// The page is making sound. Drawn as a speaker so a tune that keeps playing
+    /// after you switch away can be traced back to its service.
+    var isPlayingAudio: Bool = false
     var health: ServiceHealth = .live
     /// Whether the row carries the service's name. Off, it is the icon alone in
     /// a compact cell — the pre-audit shape, offered back as a setting for
@@ -105,6 +108,7 @@ struct ServiceRowView: View {
             cameraActive: cameraActive,
             micActive: micActive,
             micMuted: micMuted,
+            isPlayingAudio: isPlayingAudio,
             health: health
         )
         guard let spaceName else { return label }
@@ -203,6 +207,13 @@ struct ServiceRowView: View {
             // spends a spacing slot on it and the row picks up 4 dead points.
             if cameraActive || micActive || micMuted {
                 MediaIndicatorGlyph(cameraActive: cameraActive, micActive: micActive, micMuted: micMuted)
+            }
+
+            if isPlayingAudio {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
 
             if isHibernated {

@@ -301,11 +301,7 @@ struct SpacePaletteView: View {
     }
 
     private func save(_ context: String) {
-        do {
-            try modelContext.save()
-        } catch {
-            AppLogger.dataStore.error("Failed to save (\(context)): \(error.localizedDescription)")
-        }
+        modelContext.saveOrRollBack(context)
     }
 }
 

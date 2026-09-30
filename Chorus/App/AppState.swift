@@ -27,6 +27,8 @@ final class AppState {
     let dataStoreManager: DataStoreManager
     let userScriptManager: UserScriptManager
     let badgeManager: BadgeManager
+    /// Every download this session, for the toolbar's download list.
+    let downloadCenter = DownloadCenter()
 
     /// Navigation state (back/forward/loading) for the active service's web view,
     /// shared so the top tab bar can host the nav buttons.
@@ -498,11 +500,20 @@ final class AppState {
         setupSystemSleepHandling()
         setupNetworkHandling()
         setupExternalLinkRouting()
+        setupDownloads()
         setupMediaPermissions()
         setupTerminationRecording()
         let didSeedDefaults = seedDefaultDataIfNeeded()
         backfillPasskeyNoticeIfNeeded(freshInstall: didSeedDefaults)
         reapOrphanedServices()
+        // Only on a store that is really the user's. On a damaged, restored or
+        // in-memory launch the flag is cleared instead, so the store that comes
+        // back gets its pins cleared at the next clean launch.
+        if isSafeToReclaim {
+            OutsideLinkDefault.clearUnchosenPins(in: modelContainer.mainContext)
+        } else {
+            UserDefaults.standard.removeObject(forKey: OutsideLinkDefault.pinsClearedKey)
+        }
         restoreWindowState()
         let didUpdate = Self.recordLaunchVersionAndCheckUpdate()
         fetchMissingAndStaleFavicons(force: didUpdate)
@@ -540,6 +551,36 @@ final class AppState {
     private func setupExternalLinkRouting() {
         webViewPool.externalLinkHandler = { [weak self] url, sourceServiceID in
             self?.handleExternalLink(url, from: sourceServiceID)
+        }
+        webViewPool.serviceOwnsURL = { [weak self] url, sourceServiceID in
+            guard let self, let host = url.host else { return false }
+            return self.serviceOwning(host: host, excluding: sourceServiceID) != nil
+        }
+    }
+
+    // MARK: - Setup export and import
+
+    /// The current setup as a file's contents. See `SetupArchive`.
+    func exportSetup() throws -> Data {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return try SetupArchive.capture(from: modelContainer.mainContext, appVersion: version).encoded()
+    }
+
+    /// Adds a checked archive to the store, then fetches icons for the new
+    /// services, which arrive without the favicon cache.
+    func importSetup(_ archive: SetupArchive) throws -> SetupArchive.ImportSummary {
+        let summary = try archive.apply(to: modelContainer.mainContext)
+        fetchMissingAndStaleFavicons()
+        AppLogger.dataStore.info("Imported a setup: \(summary.servicesAdded) services, \(summary.spacesAdded) new spaces")
+        return summary
+    }
+
+    /// Hands the download list to the pool, which passes it to each service's
+    /// coordinator, and names each row after its service.
+    private func setupDownloads() {
+        webViewPool.downloadCenter = downloadCenter
+        downloadCenter.serviceName = { [weak self] id in
+            self?.fetchService(id: id)?.label
         }
     }
 
@@ -865,13 +906,23 @@ final class AppState {
 
         // No Chorus service owns this link. Open it in an in-app window when the
         // source service opted into that; otherwise hand it to the browser.
+        let globalDefault = OutsideLinkDefault.opensInChorus()
         let optedIn = sourceServiceID
             .flatMap { fetchService(id: $0) }?
-            .opensExternalLinksInAppEffective ?? false
+            .opensExternalLinksInApp(globalDefault: globalDefault) ?? globalDefault
         if WebViewCoordinator.shouldOpenInAppBrowser(sourceOptedIn: optedIn, url: url) {
             InAppBrowserWindow.open(url)
         } else {
             WebViewCoordinator.openExternally(url)
+        }
+    }
+
+    /// Some service other than `excluded` whose home URL covers `host`.
+    private func serviceOwning(host: String, excluding excluded: UUID?) -> ServiceInstance? {
+        let services = (try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? []
+        return services.first { service in
+            guard service.id != excluded, let serviceHost = URL(string: service.url)?.host else { return false }
+            return WebViewCoordinator.belongsToService(host, serviceHost: serviceHost)
         }
     }
 
@@ -967,6 +1018,56 @@ final class AppState {
         })
     }
 
+    /// Gives every live page a save point before the app quits, then lets it
+    /// go. Called from `applicationShouldTerminate`, so every way out — the
+    /// menu, ⌘Q, a relaunch, a Sparkle install — passes through it.
+    ///
+    /// Pages save when they go hidden, and a quit kills them with no
+    /// `visibilitychange` or `pagehide` at all. Chorus pins every page to
+    /// visible besides, so WhatsApp Web never reached the point where it writes
+    /// its session, and could come back signed out. Three steps, each capped so
+    /// a wedged page can't hold the quit hostage, about a second in all:
+    /// release every page to hidden, give the pages a moment to write, then read
+    /// each data store's records — a round trip through the storage process that
+    /// lands behind the writes just queued. That last step is best effort.
+    func releasePagesForQuit() async {
+        let webViews = webViewPool.liveWebViews
+        guard !webViews.isEmpty else { return }
+
+        // Started together, awaited in turn: all the pages get the signal at
+        // once, and the deadline bounds the wait for the slowest.
+        await withDeadline(seconds: 0.3, fallback: ()) {
+            let releases = webViews.map { webView in
+                Task { @MainActor in
+                    _ = try? await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+                }
+            }
+            for release in releases { await release.value }
+        }
+
+        try? await Task.sleep(for: Self.quitWriteWindow)
+
+        var seen = Set<ObjectIdentifier>()
+        let stores = webViews
+            .map { $0.configuration.websiteDataStore }
+            .filter { seen.insert(ObjectIdentifier($0)).inserted }
+        await withDeadline(seconds: 0.5, fallback: ()) {
+            let flushes = stores.map { store in
+                Task { @MainActor in
+                    _ = await store.dataRecords(ofTypes: [
+                        WKWebsiteDataTypeLocalStorage,
+                        WKWebsiteDataTypeIndexedDBDatabases,
+                    ])
+                }
+            }
+            for flush in flushes { await flush.value }
+        }
+        AppLogger.webView.info("Released \(webViews.count) pages for quit")
+    }
+
+    /// How long pages get to write after going hidden before quit goes on.
+    static let quitWriteWindow: Duration = .milliseconds(250)
+
     /// Pauses or resumes polling when network connectivity toggles. While
     /// offline every poll (active, background, and hibernated) would only fire
     /// doomed requests, draining battery for nothing; on reconnect we restart
@@ -1058,7 +1159,7 @@ final class AppState {
     func reloadActiveService() {
         guard let id = webViewPool.activeServiceID,
               let webView = webViewPool.liveWebView(for: id) else { return }
-        webView.reload()
+        WebViewCoordinator.reload(webView, fallbackURL: fetchService(id: id).flatMap { URL(string: $0.url) })
     }
 
     /// Applies user edits to a service: persists label/URL/keep-loaded, syncs
@@ -1948,11 +2049,11 @@ final class AppState {
     ///   store's diminished content overwrite the record before the restore
     ///   actually applies: if that restore then failed to take effect, the
     ///   record would agree with the diminished store, and the banner that
-    ///   depends on the mismatch would never come back. On the ordinary path
-    ///   `NSApp.terminate(nil)` never returns, so the offer is never actually
-    ///   cleared before `willTerminate` fires — this guard is what keeps that
-    ///   correct on purpose rather than by that accident, for whenever
-    ///   termination is deferred or cancelled. `applyPendingRestore` clears the
+    ///   depends on the mismatch would never come back. Termination is
+    ///   deferred now — `ChorusAppDelegate` holds a quit for up to a second
+    ///   while pages save, so `NSApp.terminate(nil)` returns and the offer can
+    ///   be cleared before `willTerminate` fires. This guard is what keeps the
+    ///   record correct through that window. `applyPendingRestore` clears the
     ///   pending key at the top of the next `init`, so the launch-time record
     ///   write right after is unaffected.
     static func shouldRecordContent(
@@ -2531,6 +2632,20 @@ final class AppState {
     /// room to work.
     static let maxCrossSpaceCriticalServices = 5
 
+    /// Whether the transient badge sweep renders `service` in a hidden web view.
+    /// A live web view already runs a poll that covers the badge, and muted or
+    /// badge-hidden services never show a count. Chat services are left out too:
+    /// a second, hidden copy of WhatsApp Web on the same data store competes with
+    /// the real one for the session and can sign it out. A chat service past the
+    /// cross-space cap therefore shows no count until it is opened, which is the
+    /// cheaper failure.
+    static func badgeSweepIncludes(_ service: ServiceInstance, hasLiveWebView: Bool) -> Bool {
+        !hasLiveWebView
+            && !service.isNotificationCritical
+            && !service.isEffectivelyMuted
+            && service.showBadge
+    }
+
     /// Wires the transient badge fetcher's collaborators and starts its
     /// launch + slow-periodic sweep. The fetcher renders each service that has no
     /// live web view (everything outside the active space, plus anything the pool
@@ -2551,12 +2666,10 @@ final class AppState {
                 return []
             }
             return services.compactMap { service in
-                // A live web view already runs a poll that covers the badge, so
-                // skip it; muted / badge-hidden services never show a count.
-                guard !self.webViewPool.hasWebView(for: service.id),
-                      !service.isEffectivelyMuted,
-                      service.showBadge
-                else { return nil }
+                guard Self.badgeSweepIncludes(
+                    service,
+                    hasLiveWebView: self.webViewPool.hasWebView(for: service.id)
+                ) else { return nil }
                 let badgeJS = service.catalogEntryID
                     .flatMap { ServiceCatalog.shared.entry(for: $0) }?.badgeJS
                 return TransientBadgeFetcher.Target(

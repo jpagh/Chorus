@@ -35,6 +35,7 @@ Write plain, direct, active, concrete prose. No marketing gloss, no AI tells.
 - The project is generated from `project.yml` via XcodeGen. When you change build
   settings (for example a version bump), edit both `project.yml` and the
   `.pbxproj` so a later `xcodegen generate` stays consistent.
+- `xcodegen generate` reproduces the checked-in `.pbxproj` byte for byte, so add a new `.swift` file and run it; commit the regenerated project. To ship a file that is not under `Chorus/`, add a `sources:` entry with `buildPhase: resources`. A target-level `resources:` key is not XcodeGen's, and it ignores it silently.
 - **Never add `-configuration Release` to that test command.** `ChorusTests` is
   app-hosted, and `ChorusApp.init` builds an `AppState`, so every test run
   executes the launch path, including `StoreRepair.applyPendingRestore`, which

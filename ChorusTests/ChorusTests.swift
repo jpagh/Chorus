@@ -3,6 +3,7 @@ import SwiftData
 import SQLite3
 import JavaScriptCore
 import WebKit
+import CryptoKit
 @testable import Chorus
 
 @MainActor
@@ -1800,14 +1801,39 @@ final class ChorusTests: XCTestCase {
         }
     }
 
-    func testOpensExternalLinksInAppDefaultsToOff() {
-        // A legacy row (nil) keeps opening external links in the system browser.
-        XCTAssertFalse(ServiceInstance(label: "S", url: "https://s.example")
-            .opensExternalLinksInAppEffective)
-        XCTAssertTrue(ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: true)
-            .opensExternalLinksInAppEffective)
-        XCTAssertFalse(ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: false)
-            .opensExternalLinksInAppEffective)
+    /// A service with no choice of its own follows the global setting; its own
+    /// choice beats the global either way.
+    func testOutsideLinksFollowTheGlobalDefaultUnlessTheServiceChose() {
+        let unset = ServiceInstance(label: "S", url: "https://s.example")
+        XCTAssertFalse(unset.opensExternalLinksInApp(globalDefault: false))
+        XCTAssertTrue(unset.opensExternalLinksInApp(globalDefault: true))
+        let chorus = ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: true)
+        XCTAssertTrue(chorus.opensExternalLinksInApp(globalDefault: false))
+        let browser = ServiceInstance(label: "S", url: "https://s.example", openExternalLinksInApp: false)
+        XCTAssertFalse(browser.opensExternalLinksInApp(globalDefault: true))
+    }
+
+    /// The old editor wrote `false` on every save. Those are cleared once so the
+    /// services follow the global setting; a `true` was a choice and stays. The
+    /// cleanup runs once only, so a `false` chosen afterwards survives.
+    @MainActor
+    func testUnchosenOutsideLinkPinsAreClearedOnce() throws {
+        let container = try ModelContainer(for: ServiceInstance.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let pinnedOff = ServiceInstance(label: "A", url: "https://a.example", openExternalLinksInApp: false)
+        let chosenOn = ServiceInstance(label: "B", url: "https://b.example", openExternalLinksInApp: true)
+        context.insert(pinnedOff)
+        context.insert(chosenOn)
+        try context.save()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "outside-link-test-\(UUID().uuidString)"))
+
+        OutsideLinkDefault.clearUnchosenPins(in: context, defaults: defaults)
+        XCTAssertNil(pinnedOff.openExternalLinksInApp)
+        XCTAssertEqual(chosenOn.openExternalLinksInApp, true)
+
+        pinnedOff.openExternalLinksInApp = false
+        OutsideLinkDefault.clearUnchosenPins(in: context, defaults: defaults)
+        XCTAssertEqual(pinnedOff.openExternalLinksInApp, false, "a later, real choice must not be cleared")
     }
 
     // MARK: - OS-notification gate + per-service notify flag
@@ -2259,6 +2285,307 @@ final class ChorusTests: XCTestCase {
         XCTAssertFalse(WebViewCoordinator.isAuthHost("example.com"))
     }
 
+    // MARK: - Setup export and import
+
+    /// Every stored service field is either carried by the setup file or left
+    /// out on purpose. A field added later that is neither fails here, which is
+    /// the reminder to decide.
+    func testSetupArchiveAccountsForEveryStoredServiceField() throws {
+        let schema = Schema(versionedSchema: ChorusSchemaVCurrent.self)
+        let entity = try XCTUnwrap(schema.entities.first { $0.name == "ServiceInstance" })
+        let stored = Set(entity.attributes.map(\.name))
+        let exported = Set(SetupArchive.ServiceRecord.CodingKeys.allCases.map(\.rawValue))
+        XCTAssertTrue(exported.isDisjoint(with: SetupArchive.excludedServiceFields))
+        XCTAssertEqual(exported.union(SetupArchive.excludedServiceFields), stored)
+    }
+
+    /// Export from one store, import into another that already has a "Work"
+    /// space: Work merges, Personal is new, every service is new with its own
+    /// data store, settings survive, and merged services go after what was there.
+    @MainActor
+    func testSetupRoundTripsIntoAStoreThatAlreadyHasASpace() throws {
+        let source = try makeGroupingContainer()
+        let src = source.mainContext
+        let personal = Space(name: "Personal", emoji: "🏠", sortOrder: 0)
+        let work = Space(name: "Work", emoji: "💼", sortOrder: 1, isMuted: true)
+        let slack = ServiceInstance(label: "Slack", url: "https://app.slack.com", catalogEntryID: "slack", isMuted: true, customCSS: "body{}", hibernationPolicyRaw: "never")
+        let gmail = ServiceInstance(label: "Gmail", url: "https://mail.google.com", catalogEntryID: "gmail")
+        [personal, work].forEach(src.insert)
+        [slack, gmail].forEach(src.insert)
+        try src.save()
+        link(gmail, to: personal, sortOrder: 0, in: src)
+        link(slack, to: personal, sortOrder: 1, in: src)
+        link(slack, to: work, sortOrder: 0, in: src)
+        try src.save()
+
+        let data = try SetupArchive.capture(from: src, appVersion: "1.5.22").encoded()
+        let archive = try SetupArchive.decode(data)
+        XCTAssertEqual(archive.services.count, 2, "a service in two spaces is carried once")
+
+        let target = try makeGroupingContainer()
+        let dst = target.mainContext
+        let existingWork = Space(name: "Work", emoji: "🧰", sortOrder: 0)
+        let jira = ServiceInstance(label: "Jira", url: "https://example.atlassian.net")
+        dst.insert(existingWork)
+        dst.insert(jira)
+        try dst.save()
+        link(jira, to: existingWork, sortOrder: 0, in: dst)
+        try dst.save()
+
+        let summary = try archive.apply(to: dst)
+        XCTAssertEqual(summary, .init(spacesAdded: 1, spacesMerged: 1, servicesAdded: 2))
+
+        let spaces = try dst.fetch(FetchDescriptor<Space>())
+        XCTAssertEqual(Set(spaces.map(\.name)), ["Work", "Personal"])
+        XCTAssertEqual(spaces.first { $0.name == "Work" }?.emoji, "🧰", "a merged space keeps its own look")
+
+        let links = try dst.fetch(FetchDescriptor<SpaceServiceLink>()).compactMap(\.liveEnds)
+        let workMembers = links.filter { $0.space.name == "Work" }.map(\.service.label)
+        XCTAssertEqual(Set(workMembers), ["Jira", "Slack"])
+        let importedSlackLink = try dst.fetch(FetchDescriptor<SpaceServiceLink>())
+            .first { $0.liveEnds?.space.name == "Work" && $0.liveEnds?.service.label == "Slack" }
+        XCTAssertEqual(importedSlackLink?.sortOrder, 1, "merged services go after the ones already there")
+
+        let importedSlack = try XCTUnwrap(try dst.fetch(FetchDescriptor<ServiceInstance>()).first { $0.label == "Slack" })
+        XCTAssertNotEqual(importedSlack.id, slack.id)
+        XCTAssertNotEqual(importedSlack.dataStoreIdentifier, slack.dataStoreIdentifier, "an import never shares a data store")
+        XCTAssertEqual(importedSlack.isMuted, true)
+        XCTAssertEqual(importedSlack.customCSS, "body{}")
+        XCTAssertEqual(importedSlack.hibernationPolicyRaw, "never")
+        XCTAssertEqual(links.filter { $0.service.label == "Slack" }.count, 2, "Slack sits in both spaces again")
+    }
+
+    /// A setup file is something people send each other, so nothing in it is
+    /// trusted: an address that isn't a web page, a login in the address, a
+    /// dangling index, a newer format, or a file that isn't a setup at all.
+    func testSetupFileIsCheckedBeforeAnythingIsImported() throws {
+        func archive(url: String = "https://example.com", member: Int = 0, version: Int = 1, format: String = SetupArchive.format) throws -> Data {
+            let service = SetupArchive.ServiceRecord(
+                label: "X", url: url, catalogEntryID: nil, customIconData: nil, isMuted: false, showBadge: true,
+                neverHibernate: false, userAgent: nil, pageZoom: nil, osNotificationsEnabled: nil, customCSS: nil,
+                darkModeRaw: nil, openExternalLinksInApp: nil,
+                stayActiveInBackground: nil, hibernationPolicyRaw: nil, hibernateAfterMinutes: nil
+            )
+            return try SetupArchive(
+                format: format, version: version, exportedAt: Date(), appVersion: nil,
+                spaces: [.init(name: "S", emoji: "S", sortOrder: 0, isMuted: nil, members: [.init(service: member, sortOrder: 0)])],
+                services: [service]
+            ).encoded()
+        }
+        XCTAssertNoThrow(try SetupArchive.decode(archive()))
+        for bad in ["javascript:alert(1)", "file:///etc/passwd", "https://user:pass@example.com", "https://"] {
+            XCTAssertThrowsError(try SetupArchive.decode(archive(url: bad)), bad)
+        }
+        XCTAssertThrowsError(try SetupArchive.decode(archive(member: 5)))
+        XCTAssertThrowsError(try SetupArchive.decode(archive(version: 99))) { error in
+            XCTAssertEqual(error as? SetupArchive.ReadError, .newerVersion(99))
+        }
+        XCTAssertThrowsError(try SetupArchive.decode(archive(format: "something-else"))) { error in
+            XCTAssertEqual(error as? SetupArchive.ReadError, .notASetupFile)
+        }
+        XCTAssertThrowsError(try SetupArchive.decode(Data("not json".utf8)))
+        XCTAssertThrowsError(try SetupArchive.decode(Data(count: SetupArchive.Limit.fileBytes + 1))) { error in
+            XCTAssertEqual(error as? SetupArchive.ReadError, .tooLarge)
+        }
+    }
+
+    /// What a shared file could otherwise smuggle in or leak: a camera grant
+    /// for an address of its choosing, a password written into an address, an
+    /// absurd zoom, one service listed twice, a service no space shows.
+    @MainActor
+    func testSetupImportAndExportCloseTheGapsAFileCouldUse() throws {
+        let source = try makeGroupingContainer()
+        let src = source.mainContext
+        let space = Space(name: "Home", emoji: "🏠", sortOrder: 0)
+        let nas = ServiceInstance(label: "NAS", url: "https://me:secret@nas.local/ui", pageZoom: 40, cameraPolicyRaw: "allow")
+        src.insert(space)
+        src.insert(nas)
+        try src.save()
+        link(nas, to: space, sortOrder: 0, in: src)
+        try src.save()
+
+        var archive = try SetupArchive.decode(SetupArchive.capture(from: src, appVersion: nil).encoded())
+        XCTAssertEqual(archive.services.first?.url, "https://nas.local/ui", "the login in the address stays behind")
+
+        // A second, unlisted service, and the first one listed twice.
+        archive.services.append(archive.services[0])
+        archive.spaces[0].members.append(.init(service: 0, sortOrder: 5))
+        XCTAssertEqual(archive.listedServiceIndices, [0])
+        XCTAssertEqual(archive.hosts, ["nas.local"])
+
+        let target = try makeGroupingContainer()
+        let summary = try archive.apply(to: target.mainContext)
+        XCTAssertEqual(summary.servicesAdded, 1, "a service no space lists is not created")
+        let imported = try XCTUnwrap(try target.mainContext.fetch(FetchDescriptor<ServiceInstance>()).first)
+        XCTAssertNil(imported.cameraPolicyRaw, "an imported service asks for the camera again")
+        XCTAssertEqual(imported.pageZoom, 3.0, "zoom is held to what Chorus offers")
+        XCTAssertEqual(try target.mainContext.fetch(FetchDescriptor<SpaceServiceLink>()).count, 1, "one link, not two")
+    }
+
+    // MARK: - Download list
+
+    @MainActor
+    func testDownloadRowFollowsItsDownloadToTheEnd() async throws {
+        let center = DownloadCenter()
+        let service = UUID()
+        center.serviceName = { $0 == service ? "Slack" : nil }
+        let progress = Progress(totalUnitCount: 100)
+        let id = center.begin(serviceID: service, filename: "report", progress: progress, cancel: {})
+
+        XCTAssertEqual(center.items.first?.serviceName, "Slack")
+        XCTAssertTrue(center.hasRunning)
+
+        progress.completedUnitCount = 40
+        for _ in 0..<50 where center.items.first?.fraction != 0.4 { await Task.yield() }
+        XCTAssertEqual(center.items.first?.fraction, 0.4)
+
+        center.setDestination(URL(fileURLWithPath: "/tmp/report 2.pdf"), for: id)
+        XCTAssertEqual(center.items.first?.filename, "report 2.pdf", "the row shows the name the file was saved under")
+
+        center.finish(id)
+        XCTAssertEqual(center.items.first?.state, .finished)
+        XCTAssertEqual(center.items.first?.fraction, 1)
+        XCTAssertFalse(center.hasRunning)
+    }
+
+    /// Cancel runs the coordinator's cancel (which does its own cleanup, since
+    /// WebKit sends no callback for a cancelled download) and marks the row. A
+    /// finish that crosses the Cancel must not flip the row back.
+    @MainActor
+    func testCancelledDownloadStaysCancelled() {
+        let center = DownloadCenter()
+        var cancelled = false
+        let id = center.begin(serviceID: nil, filename: "big.zip", progress: nil, cancel: { cancelled = true })
+        center.cancel(id)
+        center.finish(id)
+        XCTAssertTrue(cancelled)
+        XCTAssertEqual(center.items.first?.state, .cancelled)
+    }
+
+    /// Clear takes the ended rows and leaves the running ones. The cap drops
+    /// the oldest ended rows and never a running one.
+    @MainActor
+    func testClearAndTheCapNeverDropARunningDownload() {
+        let center = DownloadCenter()
+        let running = center.begin(serviceID: nil, filename: "still going", progress: nil, cancel: {})
+        for n in 0..<DownloadCenter.maxItems {
+            let id = center.begin(serviceID: nil, filename: "file \(n)", progress: nil, cancel: {})
+            center.finish(id)
+        }
+        XCTAssertEqual(center.items.count, DownloadCenter.maxItems)
+        XCTAssertTrue(center.items.contains { $0.id == running }, "the running download must survive the cap")
+
+        center.clearFinished()
+        XCTAssertEqual(center.items.map(\.id), [running])
+    }
+
+    /// A download of unknown size reads 0 in `fractionCompleted`; that must
+    /// show as "unknown", not a ring stuck at empty.
+    func testUnknownSizeIsNotZeroProgress() {
+        XCTAssertNil(DownloadCenter.knownFraction(of: Progress(totalUnitCount: -1)))
+        let half = Progress(totalUnitCount: 10)
+        half.completedUnitCount = 5
+        XCTAssertEqual(DownloadCenter.knownFraction(of: half), 0.5)
+    }
+
+    // MARK: - Third-party notices
+
+    /// The GPL list and the libraries ask for their notices to travel with the
+    /// app, not only to sit in the repository.
+    func testLicenseNoticesShipInTheApp() {
+        XCTAssertNotNil(Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "LICENSE", withExtension: nil))
+        for name in ["GPL-3.0", "CC-BY-3.0", "DarkReader-MIT", "Sparkle"] {
+            XCTAssertNotNil(
+                Bundle.main.url(forResource: name, withExtension: "txt", subdirectory: "licenses"),
+                "licenses/\(name).txt is missing from the app"
+            )
+        }
+    }
+
+    /// `vendor/blocklists` is the source of the GPL list the app ships, so it has
+    /// to describe the JSON actually bundled. Regenerating a list by any route
+    /// other than `convert_blocklist.sh` would leave the two apart.
+    func testBlocklistManifestMatchesTheBundledLists() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let manifestURL = root.appendingPathComponent("vendor/blocklists/manifest.json")
+        let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
+        let lists = try XCTUnwrap(manifest?["lists"] as? [[String: Any]])
+        XCTAssertEqual(lists.count, 2)
+        for list in lists {
+            let name = try XCTUnwrap(list["name"] as? String)
+            for (fileKey, hashKey) in [("source_file", "source_sha256"), ("output_file", "output_sha256")] {
+                let path = try XCTUnwrap(list[fileKey] as? String)
+                let data = try Data(contentsOf: root.appendingPathComponent(path))
+                let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                XCTAssertEqual(digest, list[hashKey] as? String, "\(name): \(path) no longer matches the manifest")
+            }
+            let bundled = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "json"))
+            let bundledDigest = SHA256.hash(data: try Data(contentsOf: bundled)).map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(bundledDigest, list["output_sha256"] as? String, "\(name): the app ships a different list")
+        }
+    }
+
+    // MARK: - Scripted new windows and the popup chain
+
+    private func handOff(
+        _ url: String,
+        type: WKNavigationType = .other,
+        fromPopup: Bool = false,
+        sized: Bool = false,
+        opener: String? = "app.slack.com",
+        owned: Bool = true
+    ) -> Bool {
+        WebViewCoordinator.shouldHandOffScriptedWindow(
+            navigationType: type,
+            openerIsPopup: fromPopup,
+            requestedSize: sized,
+            targetURL: URL(string: url)!,
+            openerHost: opener,
+            ownedByAnotherService: owned
+        )
+    }
+
+    /// Slack opens a Linear link with `window.open`. When Linear is a Chorus
+    /// service, that is a switch to it, the same as a clicked link.
+    func testScriptedWindowToAnotherServiceIsHandedOff() {
+        XCTAssertTrue(handOff("https://linear.app/team/issue/ABC-1"))
+    }
+
+    /// Everything that could be a sign-in keeps its window, and so does a host
+    /// no Chorus service owns: it might be a company's own identity provider.
+    func testScriptedWindowsThatKeepTheirWindow() {
+        XCTAssertFalse(handOff("https://linear.app/x", owned: false), "no service owns it")
+        XCTAssertFalse(handOff("https://linear.app/x", sized: true), "a sized window is how sign-in popups ask")
+        XCTAssertFalse(handOff("https://linear.app/x", fromPopup: true), "a popup's child is a sign-in step")
+        XCTAssertFalse(handOff("https://accounts.google.com/o/oauth2", owned: true), "a sign-in gateway")
+        XCTAssertFalse(handOff("https://files.slack.com/x"), "the service's own host")
+        XCTAssertFalse(handOff("https://linear.app/x", type: .linkActivated), "clicks were routed in decidePolicyFor")
+        XCTAssertFalse(handOff("about:blank"), "not a web URL")
+    }
+
+    /// A sign-in on a host another service owns stays in its window: Linear's
+    /// "Connect Slack" opening Slack's consent page must not land in the Slack
+    /// service, where the callback would go to the wrong data store.
+    func testScriptedSignInToAnOwnedHostKeepsItsWindow() {
+        XCTAssertFalse(handOff("https://slack.com/oauth/v2/authorize?client_id=1&redirect_uri=https%3A%2F%2Flinear.app"))
+        XCTAssertFalse(handOff("https://github.com/login/oauth/authorize?client_id=1"))
+        XCTAssertFalse(handOff("https://notion.so/install-integration?response_type=code&client_id=1"))
+        XCTAssertFalse(handOff("https://discord.com/login"))
+        XCTAssertFalse(handOff("https://idp.example.com/saml/sso?SAMLRequest=abc"))
+        XCTAssertTrue(handOff("https://github.com/nicojan/Chorus/pull/34"), "an ordinary link still switches")
+    }
+
+    /// The service opening a popup replaces the chain; a popup opening one
+    /// replaces only its own children. Closing a popup closes what it opened.
+    func testPopupChainRanges() {
+        XCTAssertEqual(PopupChain.closedWhenOpening(fromPopupAt: nil, count: 2), 0..<2)
+        XCTAssertEqual(PopupChain.closedWhenOpening(fromPopupAt: 0, count: 1), 1..<1, "the parent stays open")
+        XCTAssertEqual(PopupChain.closedWhenOpening(fromPopupAt: 0, count: 3), 1..<3)
+        XCTAssertEqual(PopupChain.closedWhenClosing(at: 1, count: 3), 1..<3)
+        XCTAssertEqual(PopupChain.closedWhenClosing(at: 0, count: 1), 0..<1)
+    }
+
     // MARK: - New-window requests (shouldLoadNewWindowInPlace)
 
     func testClickedSameServiceLinkLoadsInPlace() {
@@ -2636,6 +2963,39 @@ final class ChorusTests: XCTestCase {
         XCTFail("Fake Gmail page never finished loading")
     }
 
+    /// The page is pinned to visible, and a real `visibilitychange` is
+    /// swallowed, until the quit release. Then it reads hidden and gets both the
+    /// `visibilitychange` and the `pagehide` it saves its state on.
+    func testVisibilityOverrideReleasesThePageForQuit() async throws {
+        let config = WKWebViewConfiguration()
+        config.userContentController.addUserScript(WKUserScript(
+            source: UserScriptManager.makeVisibilityOverrideScript(),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.loadHTMLString("""
+        <html><body><div role="main"></div><script>
+        window.seen = [];
+        document.addEventListener('visibilitychange', () => seen.push('visibility:' + document.visibilityState));
+        window.addEventListener('pagehide', () => seen.push('pagehide'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        </script></body></html>
+        """, baseURL: URL(string: "https://web.whatsapp.com/"))
+        try await waitForFixture(webView)
+
+        let before = try await webView.evaluateJavaScript("[document.hidden, seen.join(',')].join('|')") as? String
+        XCTAssertEqual(before, "false|", "pinned visible, and a visibilitychange before the release is swallowed")
+
+        _ = try await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+        let after = try await webView.evaluateJavaScript("[document.hidden, seen.join(',')].join('|')") as? String
+        XCTAssertEqual(after, "true|visibility:hidden,pagehide")
+
+        _ = try await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+        let again = try await webView.evaluateJavaScript("seen.length") as? Int
+        XCTAssertEqual(again, 2, "a second release sends nothing more")
+    }
+
     func testGmailBadgeInRealWebViewIgnoresCachedRowsFromOtherLabels() async throws {
         // The JSC tests above check the expression's logic; this one runs it
         // through the real path — WebKit's engine, the catalog string, and
@@ -2903,6 +3263,39 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(ServiceHealth.live.next(.finishedLoading), .live)
     }
 
+    /// Stop, a replacing navigation or a download ends a load with neither
+    /// callback. The ring must come down, and an earlier failure must stay.
+    func testServiceHealthStoppingALoadClearsTheRingButNotAFailure() {
+        XCTAssertEqual(ServiceHealth.loading.next(.stoppedLoading), .live)
+        XCTAssertEqual(ServiceHealth.live.next(.stoppedLoading), .live)
+        XCTAssertEqual(ServiceHealth.failed.next(.stoppedLoading), .failed)
+    }
+
+    /// A download or a URL WebKit can't show is not a connection failure, so the
+    /// page stays instead of "Unable to connect". A real network error does not.
+    func testProvisionalFailuresThatKeepTheCurrentPage() {
+        let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        let download = NSError(domain: "WebKitErrorDomain", code: 102)
+        let cannotShow = NSError(domain: "WebKitErrorDomain", code: 101)
+        let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cancelled, hasCommittedPage: true))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: download, hasCommittedPage: true))
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cannotShow, hasCommittedPage: true))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: offline, hasCommittedPage: true))
+    }
+
+    /// On a first load there is no page to keep, so a download or an unshowable
+    /// URL there is a service that never came up and must say so. A Stop is
+    /// still a Stop.
+    func testWithNoCommittedPageOnlyACancelKeepsTheBlankView() {
+        let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        let download = NSError(domain: "WebKitErrorDomain", code: 102)
+        let cannotShow = NSError(domain: "WebKitErrorDomain", code: 101)
+        XCTAssertTrue(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cancelled, hasCommittedPage: false))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: download, hasCommittedPage: false))
+        XCTAssertFalse(WebViewCoordinator.keepsCurrentPage(afterProvisionalFailure: cannotShow, hasCommittedPage: false))
+    }
+
     func testServiceHealthFailureWins() {
         XCTAssertEqual(ServiceHealth.loading.next(.failed), .failed)
         XCTAssertEqual(ServiceHealth.live.next(.failed), .failed)
@@ -2950,6 +3343,24 @@ final class ChorusTests: XCTestCase {
             ServiceAccessibility.label(name: "Slack", badgeCount: 0, isHibernated: false, isMuted: true, health: .signedOut),
             "Slack, muted, signed out"
         )
+    }
+
+    func testSpokenLabelSaysWhenAServiceIsPlayingAudio() {
+        XCTAssertEqual(
+            ServiceAccessibility.label(name: "Spotify", badgeCount: 0, isHibernated: false, isMuted: false, isPlayingAudio: true),
+            "Spotify, playing audio"
+        )
+    }
+
+    // MARK: - Media on switch-away
+
+    /// Leaving a service in a call must not silence it: the other person would
+    /// go quiet while the microphone kept sending. Leaving one that is playing
+    /// music must not stop the music. Anything else is paused.
+    func testSwitchingAwayKeepsCallsAndAudioPlaying() {
+        XCTAssertFalse(WebViewPool.suspendsMediaOnSwitchAway(isCapturing: true, isPlayingAudio: false), "a call keeps its sound")
+        XCTAssertFalse(WebViewPool.suspendsMediaOnSwitchAway(isCapturing: false, isPlayingAudio: true), "music keeps playing")
+        XCTAssertTrue(WebViewPool.suspendsMediaOnSwitchAway(isCapturing: false, isPlayingAudio: false), "a quiet page is paused")
     }
 
     // MARK: - Space header and palette (build step 4)
@@ -5609,6 +6020,21 @@ final class ChorusTests: XCTestCase {
 
         let shuffled = AppState.criticalServicesToKeepLive(among: services.shuffled(), covered: [], limit: 5)
         XCTAssertEqual(first.map(\.id), shuffled.map(\.id), "the same services must win the cap regardless of fetch order")
+    }
+
+    /// The badge sweep renders a hidden copy of each service it covers. For a
+    /// chat service that copy is a second client on the same session, which can
+    /// sign WhatsApp Web out, so chat services must never be swept.
+    func testBadgeSweepSkipsChatServices() {
+        let whatsapp = makeService(label: "WhatsApp", catalogID: "whatsapp")
+        let reddit = makeService(label: "Reddit", catalogID: "reddit")
+        let hidden = makeService(label: "Reddit (no badge)", catalogID: "reddit")
+        hidden.showBadge = false
+
+        XCTAssertFalse(AppState.badgeSweepIncludes(whatsapp, hasLiveWebView: false), "a chat service must not get a hidden copy")
+        XCTAssertTrue(AppState.badgeSweepIncludes(reddit, hasLiveWebView: false))
+        XCTAssertFalse(AppState.badgeSweepIncludes(reddit, hasLiveWebView: true), "a live web view already polls its badge")
+        XCTAssertFalse(AppState.badgeSweepIncludes(hidden, hasLiveWebView: false))
     }
 
     // MARK: - Protecting a live service's cookies

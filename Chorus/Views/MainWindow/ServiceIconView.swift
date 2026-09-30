@@ -119,6 +119,7 @@ enum ServiceAccessibility {
         cameraActive: Bool = false,
         micActive: Bool = false,
         micMuted: Bool = false,
+        isPlayingAudio: Bool = false,
         health: ServiceHealth = .live
     ) -> String {
         var parts = [name]
@@ -137,6 +138,7 @@ enum ServiceAccessibility {
         } else if micMuted {
             parts.append("microphone muted")
         }
+        if isPlayingAudio { parts.append("playing audio") }
         return parts.joined(separator: ", ")
     }
 }

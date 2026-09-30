@@ -192,10 +192,9 @@ final class ServiceInstance {
 
     /// Open a link that leaves this service in an in-app Chorus window instead of
     /// the system browser. Only affects links that no other Chorus service owns —
-    /// a link matching another service still switches to it. Optional for
-    /// SwiftData lightweight migration; nil is treated as off (today's behaviour:
-    /// external links open in the default browser). Read via
-    /// `opensExternalLinksInAppEffective`.
+    /// a link matching another service still switches to it. nil follows the
+    /// global default in Settings (`OutsideLinkDefault`), which starts at the
+    /// browser. Read via `opensExternalLinksInApp(globalDefault:)`.
     var openExternalLinksInApp: Bool?
 
     /// Report the page as focused even while Chorus is in the background, so a
@@ -271,9 +270,11 @@ final class ServiceInstance {
         set { microphonePolicyRaw = newValue.rawValue }
     }
 
-    /// Materialises the storage-optional in-app-links flag (nil → false), so
-    /// existing services keep opening external links in the system browser.
-    var opensExternalLinksInAppEffective: Bool { openExternalLinksInApp ?? false }
+    /// Materialises the storage-optional in-app-links flag: the service's own
+    /// choice, or the global default when it has none.
+    func opensExternalLinksInApp(globalDefault: Bool) -> Bool {
+        openExternalLinksInApp ?? globalDefault
+    }
 
     /// Materialises the storage-optional stay-active flag (nil → false), so a
     /// service only fakes focus when the user has explicitly opted in.
