@@ -3,6 +3,33 @@
     <channel>
         <title>Chorus</title>
         <item>
+            <title>1.5.23</title>
+            <pubDate>Wed, 30 Sep 2026 10:35:00 -0700</pubDate>
+            <sparkle:version>36</sparkle:version>
+            <sparkle:shortVersionString>1.5.23</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>Drag the edge of the rail to make it as wide as you like. Pull it in past its narrowest width and the rail slides down to its icons, with the unread badges popping onto them; push it back out and the names return. Settings still has the switch, and it remembers the width you chose.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Spaces and services move out of the way as you drag one past them, and the new order is saved as you go. In All services on the left you can drag a service into another space the same way. A dragged service shows its icon under the pointer.</li>
+<li>In All services on the left, each space's services sit on a card of their own, with the space's name above it. The other left-hand layouts drop the card round the rail, so the page is the one card in the window. The page's corners now follow the curve of its scroll bar.</li>
+<li>Unread counts look like the ones in Notes: a grey number at the end of the row. Without names, a service or space shows the red badge on its corner instead. A count that goes up flashes, and if you are elsewhere it turns red and pulses until you open that service.</li>
+<li>Buttons in the rail and the Back, Forward, Reload, Home and Share buttons now light up under the pointer, and a button that can't be used looks it. The blue ring that marks the keyboard's place appears once you use the keyboard, not on the first service when Chorus opens. LinkedIn Messaging has its own icon, a speech bubble.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>A space dragged downward in the list of spaces stayed where it was.</li>
+<li>A badge over 99 showed three dots instead of 99+.</li>
+<li>The corners of the rows and tiles in the rail did not follow the rail's own.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/nicojan/Chorus/releases/download/v1.5.23/Chorus-1.5.23.dmg" length="9534338" type="application/octet-stream" sparkle:edSignature="ES95zYuweLek2Kh+1y+OgvlLfTMhhGi/0QBDhUaA+p3vRPZE5JsKQc6qLt0OIRmaU1XQEXKZNB8hHKFtJDRzBw=="/>
+        </item>
+        <item>
             <title>1.5.22</title>
             <pubDate>Tue, 29 Sep 2026 22:05:00 -0700</pubDate>
             <sparkle:version>35</sparkle:version>
