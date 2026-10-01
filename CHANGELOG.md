@@ -5,6 +5,16 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.5.25] - 2026-10-01
+
+### Fixed
+
+- Gmail could open with its top bar, and the search box in it, out of sight above the page until you moved the window. Chorus now has Gmail measure the window again once the page has loaded.
+
+### Changed
+
+- When the rail holds more services than fit, its bottom edge fades out above Add service instead of cutting a row in half. At the end of the list the fade moves to the top edge.
+
 ## [1.5.24] - 2026-09-30
 
 ### Fixed
