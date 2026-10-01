@@ -219,6 +219,10 @@ final class WebViewPool {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = instance.userAgent ?? UserAgentProvider.safariDefault
+        #if DEBUG
+        // Lets Safari's Develop menu attach to the page, to watch a sign-in.
+        webView.isInspectable = true
+        #endif
 
         let coordinator = makeCoordinator(for: instance)
         webView.navigationDelegate = coordinator
@@ -261,6 +265,10 @@ final class WebViewPool {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = instance.userAgent ?? UserAgentProvider.safariDefault
+        #if DEBUG
+        // Lets Safari's Develop menu attach to the page, to watch a sign-in.
+        webView.isInspectable = true
+        #endif
 
         let coordinator = makeCoordinator(for: instance)
         webView.navigationDelegate = coordinator

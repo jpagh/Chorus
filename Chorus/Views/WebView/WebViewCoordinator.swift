@@ -592,6 +592,9 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         // so the popup does not inherit it. Left at WebKit's default, Gmail in a
         // popup shows "This browser version is no longer supported".
         popup.customUserAgent = webView.customUserAgent
+        #if DEBUG
+        popup.isInspectable = true
+        #endif
 
         // Honor the page's requested popup size when reasonable; otherwise
         // default to a comfortable 1100×800 (the previous 800×600 was too
