@@ -118,6 +118,7 @@ Build each release into a folder of its own, `build/r1.5.23` and so on, and use 
      --keychain-profile "chorus-notary" --wait
    xcrun stapler staple build/Chorus-X.Y.Z.dmg
    ```
+   If `notarytool` answers HTTP 403 with "A required agreement is missing or has expired", the build is fine. Apple has a new developer agreement, and only the Account Holder can accept it at developer.apple.com/account. On 1.5.25 the notary service kept refusing for about two minutes after the agreement was accepted, then took the same zip. Nothing needs rebuilding.
 
 ### If you stop here, the DMG has a shelf life
 

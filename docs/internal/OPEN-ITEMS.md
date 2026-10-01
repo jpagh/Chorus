@@ -4,6 +4,19 @@
 
 Found while recording demo clips on 2026-09-30. Type a filter into the ⌘K switcher and the first row keeps showing the service it held before, Slack in that run, while the rows under it update. Enter still opens the right service, so only the label is wrong. The likely cause is `.id(index)` in `QuickSwitcherView.resultsList`: the row keeps its identity when its service changes, so SwiftUI does not redraw it. Not fixed yet.
 
+## Shipped in 1.5.25: Gmail's top bar at launch, and a fade on the rail
+
+**Shipped on 2026-10-01 as `v1.5.25`, build 38, tag on `19868be`. The DMG is 9,504,327 bytes, and both feeds and the cask serve it.**
+
+The user saw Gmail open at launch with its top bar above the visible area, until they moved the window. `WebContentView` sends a synthetic `resize` 250 ms after a service is selected, so that Gmail measures again. A Debug probe showed that at launch this event reaches a blank page, before the service has started loading, so Gmail never got it. The same probe found the page's `innerWidth` and `innerHeight` matching the web view's bounds, so WebKit had the size right. Two changes: `nudgeLayout(of:)` runs again when a load finishes, and the pool makes web views at `WebViewHostView.lastSize` instead of 0 by 0.
+
+The rail cut its last row in half where the list ran under Add service. `FadingVerticalScrollView` in `RailSupport.swift` fades the top or bottom edge while more of the list lies past it. Both the all-services rail and the single-list rail use it. Checked in a Debug build at the window's smallest height, scrolled to each end.
+
+### Still open
+
+- Nobody has seen the Gmail fix work. The Debug store's Gmail is signed out, and the bug did not show on every launch. If Gmail opens without its top bar on 1.5.25, the cause is somewhere else.
+- No one checked 1.5.25 by hand on real data before it went out.
+
 ## Merged: a Debug-only remote for demo recordings (`b4f8c1e`)
 
 A Debug build now listens for two commands from a script: `bumpBadge <label>` raises a made-up count, and `setRailLayout <layout>` switches the layout. A `debugMockTickerOff` default stops the random six-second ticker. Release builds compile none of it. The recording scripts and the clips live outside this repo, in `~/dev/chorus-demo`.
