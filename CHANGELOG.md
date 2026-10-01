@@ -5,6 +5,8 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.5.24] - 2026-09-30
+
 ### Fixed
 
 - Figma's sign-in with Google stayed on the sign-in page after the Google window closed. Chorus reloaded the page as soon as the window shut, before Figma could finish signing you in. Chorus now waits a few seconds, and skips the reload if the page has moved on by itself.
