@@ -5,6 +5,11 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Figma's sign-in with Google stayed on the sign-in page after the Google window closed. Chorus reloaded the page as soon as the window shut, before Figma could finish signing you in. Chorus now waits a few seconds, and skips the reload if the page has moved on by itself.
+- The list of services showed a teal loading mark for Figma instead of its logo. The list now shows the same logos as the rail.
+
 ## [1.5.23] - 2026-09-30
 
 ### Added

@@ -171,9 +171,23 @@ private struct CatalogEntryButton: View {
         }
     }
 
+    /// The bundled brand mark (`brand-<id>`), the same one the rail draws once
+    /// the service is added. Checked before the fetched favicon because some
+    /// favicons are not the logo: Figma's file browser serves a teal loading
+    /// glyph.
+    private var brandAssetName: String? {
+        let name = "brand-\(entry.id)"
+        return NSImage(named: name) != nil ? name : nil
+    }
+
     @ViewBuilder
     private var iconView: some View {
-        if let icon {
+        if let brand = brandAssetName {
+            Image(brand)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(.primary)
+        } else if let icon {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
