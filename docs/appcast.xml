@@ -3,6 +3,21 @@
     <channel>
         <title>Chorus</title>
         <item>
+            <title>1.5.24</title>
+            <pubDate>Wed, 30 Sep 2026 20:15:00 -0700</pubDate>
+            <sparkle:version>37</sparkle:version>
+            <sparkle:shortVersionString>1.5.24</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>Figma's sign-in with Google stayed on the sign-in page after the Google window closed. Chorus reloaded the page as soon as the window shut, before Figma could finish signing you in. Chorus now waits a few seconds, and skips the reload if the page has moved on by itself.</li>
+<li>The list of services showed a teal loading mark for Figma instead of its logo. The list now shows the same logos as the rail.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/nicojan/Chorus/releases/download/v1.5.24/Chorus-1.5.24.dmg" length="10251402" type="application/octet-stream" sparkle:edSignature="IdXHH+W3l2GoWYKNOinZyw/QkuEriLi/CX+EuGXIvHPwWGU6GpU0L4m/yPg8Kz/x9cB6dX3BCaOcFWO1U+j1Ag=="/>
+        </item>
+        <item>
             <title>1.5.23</title>
             <pubDate>Wed, 30 Sep 2026 10:35:00 -0700</pubDate>
             <sparkle:version>36</sparkle:version>
