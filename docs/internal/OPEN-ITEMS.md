@@ -1,5 +1,20 @@
 # Open items
 
+## Shipped in 1.5.24: Figma's Google sign-in and the catalog logos
+
+**Shipped on 2026-09-30 as `v1.5.24`, build 37, tag on `ab4274a`. The DMG is 10,251,402 bytes, and both feeds and the cask serve it.**
+
+Figma's sign-in page opens `/start_google_sso` in a popup, then checks every 250 ms for a cookie, `__Host-google_sso_temp`, that the popup writes before it closes. Once it finds the cookie, it posts the token and goes to the files page. Chorus reloaded the opener the moment the popup closed, which killed that script, so the page stayed on the form. The reload now waits three seconds (`openerReloadDelay`) and is dropped if the page has moved or is loading (`shouldRunDeferredOpenerReload`). The user signed in to Figma with Google in a Debug build and landed on the file browser.
+
+The Add Service grid drew only the fetched favicon, and Figma's file browser serves a teal loading glyph. The grid now draws `brand-<id>` first, as the rail does.
+
+Debug builds now let Safari's Develop menu attach to service pages and popups (`isInspectable`, `b3287dc`). That is how the Figma sign-in was confirmed.
+
+### Still open
+
+- Nobody has watched a popup sign-in on a service that already worked, such as Gmail or Slack, since the reload became deferred. If one starts staying on its sign-in page after a popup, look here first.
+- A page whose own sign-in takes longer than three seconds after the popup closes still gets reloaded in the middle of it.
+
 ## Shipped in 1.5.23: live reorder, a resizable rail, Notes-style counts
 
 **Shipped on 2026-09-30 as `v1.5.23`, build 36, tag on `c43abe2`. The DMG is 9,534,338 bytes, and both feeds and the cask serve it.**

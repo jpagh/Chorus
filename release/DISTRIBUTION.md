@@ -159,6 +159,8 @@ When a release takes a fix, a feature, a look or code from another project, such
 
 `docs/internal/VERIFY-BY-HAND.md` is that pass, and its Start here block says what is still unchecked. Steps 2 to 5 publish nothing, so stopping after them is fine. Step 6 is the first one users see. A tick in that file against an older build is not a tick against this one. A rebuild makes a new binary, and the checks are owed again.
 
+Test the build at the repo root, not the one in the Dock. The Dock opens `/Applications/Chorus.app`, which is the last release, and on 1.5.24 a by-hand check run there reported the fix as broken.
+
 6. **Push `main` first, then publish the DMG as a GitHub Release** (the DMG host):
    ```sh
    git push origin main                      # do this BEFORE the next command
