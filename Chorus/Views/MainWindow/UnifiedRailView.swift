@@ -198,7 +198,7 @@ struct UnifiedRailView: View {
         return VStack(spacing: 0) {
             // No scroller: with "Always show scroll bars" on, it took width from
             // the fixed-width cells and pushed them off the rail's centre line.
-            ScrollView(.vertical, showsIndicators: false) {
+            FadingVerticalScrollView {
                 // A plain VStack, not lazy: a membership that moves between
                 // spaces would keep the same `link.id`, and a lazy stack
                 // matches that id across groups and reuses the cell. The cell
@@ -543,7 +543,7 @@ struct UnifiedRailView: View {
 
             // No scroller: with "Always show scroll bars" on, it took width from
             // the fixed-width cells and pushed them off the rail's centre line.
-            ScrollView(.vertical, showsIndicators: false) {
+            FadingVerticalScrollView {
                 // 2 points between 28 point rows is the drawn 30 point pitch.
                 LazyVStack(spacing: 2) {
                     ForEach(filteredLinks) { link in

@@ -485,3 +485,63 @@ extension View {
         modifier(ResizeCursor())
     }
 }
+
+/// A vertical list that softens its top or bottom edge while more of the list
+/// lies past it. A rail longer than the window ran under the add buttons and
+/// was cut mid-row, which reads as broken rather than as a list that scrolls.
+/// At either end of the list that edge stays sharp, so the first and last rows
+/// show in full.
+struct FadingVerticalScrollView<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    @State private var viewportHeight: CGFloat = 0
+    @State private var contentFrame: CGRect = .zero
+
+    private static var fadeHeight: CGFloat { 24 }
+    private static var space: String { "FadingVerticalScrollView" }
+
+    var body: some View {
+        // Measured with `onChange(of:initial:)` rather than a preference: an
+        // `onPreferenceChange` action is not main-actor isolated under Swift 6.
+        ScrollView(.vertical, showsIndicators: false) {
+            content
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.onChange(of: proxy.frame(in: .named(Self.space)), initial: true) { _, frame in
+                            contentFrame = frame
+                        }
+                    }
+                )
+        }
+        .coordinateSpace(name: Self.space)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
+                    viewportHeight = height
+                }
+            }
+        )
+        .mask {
+            VStack(spacing: 0) {
+                edgeFade(fadesTop, from: .top)
+                Rectangle()
+                edgeFade(fadesBottom, from: .bottom)
+            }
+        }
+    }
+
+    /// One point of slack so a list that sits exactly at an end, give or take
+    /// rounding, keeps its sharp edge.
+    private var fadesTop: Bool { contentFrame.minY < -1 }
+    private var fadesBottom: Bool { contentFrame.maxY > viewportHeight + 1 }
+
+    private func edgeFade(_ fades: Bool, from edge: VerticalEdge) -> some View {
+        LinearGradient(
+            colors: [.black.opacity(fades ? 0 : 1), .black],
+            startPoint: edge == .top ? .top : .bottom,
+            endPoint: edge == .top ? .bottom : .top
+        )
+        .frame(height: Self.fadeHeight)
+        .animation(.easeOut(duration: 0.15), value: fades)
+    }
+}
