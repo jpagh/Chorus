@@ -20,6 +20,20 @@ struct WebViewContainer: NSViewRepresentable {
 final class WebViewHostView: NSView {
     private weak var currentWebView: WKWebView?
 
+    /// The size the page area last had, for the pool to make new web views at.
+    /// A web view made at zero size loads its page against a 0 by 0 window, and
+    /// some pages keep what they measured then: Gmail can leave its top bar
+    /// above the visible area until the window moves. The default stands in
+    /// before the first layout, when the launch preload makes its views.
+    static private(set) var lastSize = CGSize(width: 1024, height: 700)
+
+    override func layout() {
+        super.layout()
+        if bounds.width > 0, bounds.height > 0 {
+            Self.lastSize = bounds.size
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true

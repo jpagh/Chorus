@@ -87,6 +87,7 @@ struct WebContentView: View {
             // loaded page and to free the bitmap. Delayed past the fade, and
             // re-checked in case another load started in the meantime.
             guard !loading else { return }
+            if let currentWebView { Self.nudgeLayout(of: currentWebView) }
             let delay = reduceMotion ? 0 : 0.25
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 if !webViewState.isLoading { transitionSnapshot = nil }
@@ -151,6 +152,21 @@ struct WebContentView: View {
         isLoading ? captured : nil
     }
 
+    /// Once the view is shown its frame settles a render tick later. Some SPAs
+    /// (Gmail) cache a viewport-height layout and, if it was measured against a
+    /// stale/transitional frame, leave their fixed header stranded above the
+    /// visible area with no way to scroll to it. Fire a synthetic resize so the
+    /// page re-measures against the real frame; it's a no-op for other sites.
+    /// It runs on selection and again when a load finishes: at launch the
+    /// selection one lands on a page that has not started loading, so it alone
+    /// never reached Gmail.
+    private static func nudgeLayout(of webView: WKWebView) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            _ = try? await webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'))")
+        }
+    }
+
     private func loadWebViewForSelectedService() {
         // Stop the outgoing service's active poll — but only if the pool still
         // regards it as the active service. On a deep-link switch AppState has
@@ -204,15 +220,7 @@ struct WebContentView: View {
             showPasskeyNotice = false
         }
 
-        // Once the view is shown its frame settles a render tick later. Some SPAs
-        // (Gmail) cache a viewport-height layout and, if it was measured against a
-        // stale/transitional frame, leave their fixed header stranded above the
-        // visible area with no way to scroll to it. Fire a synthetic resize so the
-        // page re-measures against the real frame; it's a no-op for other sites.
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(250))
-            _ = try? await webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'))")
-        }
+        Self.nudgeLayout(of: webView)
 
         // Start active-mode badge/title polling for the displayed service.
         // Pass closures (rather than the captured bool) so the next poll tick

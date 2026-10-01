@@ -216,7 +216,7 @@ final class WebViewPool {
         }
 
         let config = makeConfiguration(for: instance)
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = WKWebView(frame: CGRect(origin: .zero, size: WebViewHostView.lastSize), configuration: config)
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = instance.userAgent ?? UserAgentProvider.safariDefault
         #if DEBUG
@@ -262,7 +262,7 @@ final class WebViewPool {
         guard instance.modelContext != nil else { return }
 
         let config = makeConfiguration(for: instance)
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = WKWebView(frame: CGRect(origin: .zero, size: WebViewHostView.lastSize), configuration: config)
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = instance.userAgent ?? UserAgentProvider.safariDefault
         #if DEBUG
