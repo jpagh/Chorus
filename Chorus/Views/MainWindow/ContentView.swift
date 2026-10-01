@@ -61,6 +61,7 @@ struct ContentView: View {
             appState.notificationManager.requestAuthorization()
             #if DEBUG
             appState.applyDebugMockBadges()
+            appState.startDemoControl()
             #endif
         }
         .onChange(of: appState.selectedSpaceID) { _, newSpaceID in

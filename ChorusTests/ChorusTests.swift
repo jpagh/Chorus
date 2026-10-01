@@ -6626,4 +6626,22 @@ final class ChorusTests: XCTestCase {
         )
     }
 
+    #if DEBUG
+    /// The demo-recording remote reads a verb and its argument, keeps the
+    /// spaces inside a service label, and ignores anything it does not know,
+    /// so a typo in a script does nothing rather than something wrong.
+    func testDemoControlParsesItsCommands() {
+        XCTAssertEqual(DemoControl.parse("bumpBadge Slack"), .bumpBadge(label: "Slack"))
+        XCTAssertEqual(DemoControl.parse("  bumpBadge Google Chat \n"), .bumpBadge(label: "Google Chat"))
+        for layout in RailLayout.allCases {
+            XCTAssertEqual(DemoControl.parse("setRailLayout \(layout.rawValue)"), .setRailLayout(layout))
+        }
+        XCTAssertNil(DemoControl.parse("setRailLayout sideways"))
+        XCTAssertNil(DemoControl.parse("bumpBadge"))
+        XCTAssertNil(DemoControl.parse("bumpBadge   "))
+        XCTAssertNil(DemoControl.parse("deleteEverything now"))
+        XCTAssertNil(DemoControl.parse(""))
+    }
+    #endif
+
 }

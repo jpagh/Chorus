@@ -3342,8 +3342,12 @@ extension AppState {
                 try? await Task.sleep(for: .seconds(6))
                 // The services as they are now, so a deleted one never
                 // gets a made-up count back.
-                guard let self, UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey),
-                      let id = ((try? self.modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+                guard let self, UserDefaults.standard.bool(forKey: Self.debugMockBadgesKey) else { return }
+                // A demo recording turns the ticker off so only its own
+                // `DemoControl` bumps move a count. Read each time, so it can
+                // be flipped while the app runs.
+                if UserDefaults.standard.bool(forKey: DemoControl.tickerOffKey) { continue }
+                guard let id = ((try? self.modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
                         .map(\.id).randomElement()
                 else { return }
                 self.badgeManager.bumpMockCount(for: id)
