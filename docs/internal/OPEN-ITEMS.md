@@ -1,5 +1,13 @@
 # Open items
 
+## Open: the quick switcher's first row shows the wrong service
+
+Found while recording demo clips on 2026-09-30. Type a filter into the ⌘K switcher and the first row keeps showing the service it held before, Slack in that run, while the rows under it update. Enter still opens the right service, so only the label is wrong. The likely cause is `.id(index)` in `QuickSwitcherView.resultsList`: the row keeps its identity when its service changes, so SwiftUI does not redraw it. Not fixed yet.
+
+## Merged: a Debug-only remote for demo recordings (`b4f8c1e`)
+
+A Debug build now listens for two commands from a script: `bumpBadge <label>` raises a made-up count, and `setRailLayout <layout>` switches the layout. A `debugMockTickerOff` default stops the random six-second ticker. Release builds compile none of it. The recording scripts and the clips live outside this repo, in `~/dev/chorus-demo`.
+
 ## Shipped in 1.5.24: Figma's Google sign-in and the catalog logos
 
 **Shipped on 2026-09-30 as `v1.5.24`, build 37, tag on `ab4274a`. The DMG is 10,251,402 bytes, and both feeds and the cask serve it.**
