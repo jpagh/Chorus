@@ -13,6 +13,14 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// reload it once the sign-in popup closes (see reloadOpenerAfterPopup).
     private weak var openerWebView: WKWebView?
 
+    /// The reload that waits after a sign-in popup closes. See
+    /// `reloadOpenerAfterPopup` for why it waits.
+    private var pendingOpenerReload: Task<Void, Never>?
+
+    /// How long the service gets to finish a sign-in by itself before it is
+    /// reloaded.
+    nonisolated static let openerReloadDelay: Duration = .seconds(3)
+
     /// Fallback URL to load if the WebContent process crashes before any
     /// navigation has committed (so `webView.reload()` has nothing to retry).
     var fallbackURL: URL?
@@ -570,6 +578,10 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         // needs to reload to leave its signed-out page.
         if openerIndex == nil {
             openerWebView = webView
+            // A reload still waiting from the last popup would land in the
+            // middle of this one.
+            pendingOpenerReload?.cancel()
+            pendingOpenerReload = nil
         }
 
         // CRITICAL: Use the configuration passed in — it inherits the parent's data store
@@ -687,17 +699,46 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         selfClosed || openedAtAuthHost
     }
 
-    /// Reloads the service that opened the popup, when the rule above says to.
+    /// Whether the reload that waited after a popup closed should still run.
+    ///
+    /// Many services finish a sign-in themselves once the popup closes. Figma's
+    /// sign-in page opens `/start_google_sso`, checks every 250 ms for a cookie
+    /// the popup writes, posts the token it holds, and then moves on to the
+    /// files page. Reloading the moment the popup closes killed that script
+    /// before it read the cookie, and the page stayed on the sign-in form. So
+    /// the reload waits, and it is dropped if the page has moved or is still
+    /// loading by then: the service has handled the sign-in on its own.
+    nonisolated static func shouldRunDeferredOpenerReload(
+        urlAtClose: URL?,
+        urlNow: URL?,
+        isLoading: Bool
+    ) -> Bool {
+        !isLoading && urlNow == urlAtClose
+    }
+
+    /// Reloads the service that opened the popup, when the rules above say to.
     private func reloadOpenerAfterPopup(selfClosed: Bool, openedAtAuthHost: Bool) {
         guard Self.shouldReloadOpener(
             selfClosed: selfClosed,
             openedAtAuthHost: openedAtAuthHost
         ) else { return }
         guard let opener = openerWebView else { return }
-        if opener.url != nil {
-            opener.reload()
-        } else if let fallback = fallbackURL {
-            opener.load(URLRequest(url: fallback))
+        let urlAtClose = opener.url
+        pendingOpenerReload?.cancel()
+        pendingOpenerReload = Task { @MainActor [weak self, weak opener] in
+            try? await Task.sleep(for: Self.openerReloadDelay)
+            guard !Task.isCancelled, let self, let opener else { return }
+            self.pendingOpenerReload = nil
+            guard Self.shouldRunDeferredOpenerReload(
+                urlAtClose: urlAtClose,
+                urlNow: opener.url,
+                isLoading: opener.isLoading
+            ) else { return }
+            if opener.url != nil {
+                opener.reload()
+            } else if let fallback = self.fallbackURL {
+                opener.load(URLRequest(url: fallback))
+            }
         }
     }
 

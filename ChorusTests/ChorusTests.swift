@@ -2289,6 +2289,31 @@ final class ChorusTests: XCTestCase {
             selfClosed: false, openedAtAuthHost: false))
     }
 
+    func testDeferredReloadIsDroppedWhenTheServiceMovedOnItsOwn() {
+        // Figma's sign-in page finishes Google sign-in itself after the popup
+        // closes: it reads a cookie the popup wrote, posts the token, and goes
+        // to the files page. A reload in the middle of that left it on the
+        // sign-in form, so a page that has moved is left alone.
+        let login = URL(string: "https://www.figma.com/login")!
+        let files = URL(string: "https://www.figma.com/files/recents-and-sharing")!
+        XCTAssertFalse(WebViewCoordinator.shouldRunDeferredOpenerReload(
+            urlAtClose: login, urlNow: files, isLoading: false))
+        // Still on its way somewhere: not ours to interrupt either.
+        XCTAssertFalse(WebViewCoordinator.shouldRunDeferredOpenerReload(
+            urlAtClose: login, urlNow: login, isLoading: true))
+    }
+
+    func testDeferredReloadRunsWhenTheServiceStayedPut() {
+        // A service that only notices the new session on a fresh load still
+        // gets its reload, a few seconds later.
+        let login = URL(string: "https://www.figma.com/login")!
+        XCTAssertTrue(WebViewCoordinator.shouldRunDeferredOpenerReload(
+            urlAtClose: login, urlNow: login, isLoading: false))
+        // An opener that never committed a page falls back to the service URL.
+        XCTAssertTrue(WebViewCoordinator.shouldRunDeferredOpenerReload(
+            urlAtClose: nil, urlNow: nil, isLoading: false))
+    }
+
     func testKnownAuthGatewaysAreRecognisedIncludingSubdomains() {
         XCTAssertTrue(WebViewCoordinator.isAuthHost("login.microsoftonline.com"))
         XCTAssertTrue(WebViewCoordinator.isAuthHost("accounts.google.com"))
