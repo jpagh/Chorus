@@ -1,5 +1,13 @@
 # Open items
 
+## Open: Instagram drawn in a thin strip at the top of the page
+
+The user saw this on 1.5.25 on 2026-10-01, in Instagram's messages. The whole app (the left icons, the chat list and the message box) sat in a strip about 155 px tall at the top of the page area, and the rest of the page was empty. The page scrollbar ran the full height, and the user could scroll up without end. The user could not make it happen again, and nobody checked whether resizing the window or reloading would have fixed it. Release builds are not inspectable, so nothing was measured.
+
+The suspect is `077a9d4`, the Gmail fix in 1.5.25. It made two changes, and either could hand a page the wrong height. First, the pool now makes web views at `WebViewHostView.lastSize`, which every layout of the page area writes to, including the passing sizes of a resize or an animation. Second, `nudgeLayout(of:)` now sends a synthetic `resize` when a load finishes, so a page may measure again while its frame is still moving. Instagram's own code could also be at fault.
+
+If it comes back: first ask whether a window resize or a reload clears it. If a resize clears it, the page kept a stale size, so look at those two changes. If neither does, sign in to Instagram in a Debug build and inspect it in Safari's Web Inspector: compare `innerHeight` with the web view's bounds, and find which element sets the page's height.
+
 ## Open: the quick switcher's first row shows the wrong service
 
 Found while recording demo clips on 2026-09-30. Type a filter into the ⌘K switcher and the first row keeps showing the service it held before, Slack in that run, while the rows under it update. Enter still opens the right service, so only the label is wrong. The likely cause is `.id(index)` in `QuickSwitcherView.resultsList`: the row keeps its identity when its service changes, so SwiftUI does not redraw it. Not fixed yet.
