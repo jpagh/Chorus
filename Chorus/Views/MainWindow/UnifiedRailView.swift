@@ -123,6 +123,12 @@ struct UnifiedRailView: View {
         .sheet(item: $editingService) { service in
             EditServiceSheet(service: service)
         }
+        .onChange(of: appState.pendingEditServiceID) { _, id in
+            // A tip asked for this service's settings.
+            guard let id else { return }
+            appState.pendingEditServiceID = nil
+            editingService = filteredLinks.compactMap(\.liveService).first { $0.id == id }
+        }
         .sheet(item: $movingToNewSpace) { link in
             SpaceEditorSheet(
                 editingSpace: nil,
@@ -416,6 +422,7 @@ struct UnifiedRailView: View {
             ) {
                 showingAddService = true
             }
+            .featureTip(.addMacApp, arrowEdge: .trailing, isEnabled: selectedSpaceID != nil, appState: appState)
             allServicesAddButton(
                 title: "Add space",
                 systemImage: "folder.badge.plus",
@@ -752,6 +759,9 @@ struct UnifiedRailView: View {
         let health = hibernated ? ServiceHealth.live : appState.webViewPool.health(for: service.id)
 
         cell(for: link, service: service, isSelected: isSel, badge: badge, hibernated: hibernated, muted: muted, media: media, health: health, focused: focusedServiceID == service.id && focusVisibility.isVisible)
+            // Only the selected service points at its settings.
+            .featureTip(.editSelectedService, arrowEdge: axis == .vertical ? .trailing : .bottom,
+                        isEnabled: isSel, appState: appState)
             // Live reorder along the rail or the bar. See `LiveReorder`.
             .onDrag {
                 draggingLinkID = link.id
@@ -902,6 +912,8 @@ struct UnifiedRailView: View {
         // Without a space there is nothing to add a service to, and
         // AddServiceSheet needs one.
         .disabled(selectedSpaceID == nil)
+        .featureTip(.addMacApp, arrowEdge: axis == .vertical ? .trailing : .bottom,
+                    isEnabled: selectedSpaceID != nil, appState: appState)
     }
 
     @ViewBuilder

@@ -46,6 +46,13 @@ final class AppState {
     }
     var showAddService = false
     var showQuickSwitcher = false
+    /// The tab Add Service opens on next, set by a tip's "Show Me". The sheet
+    /// reads it once and clears it.
+    var pendingAddServiceTab: AddServiceSheet.AddServiceTab?
+    /// A service whose Edit sheet the rail should open, set by a tip.
+    var pendingEditServiceID: UUID?
+    /// The version whose What's New sheet is up, or nil.
+    var whatsNewVersion: String?
 
     /// True once launch-time preference loading has finished. Gates the DND
     /// `didSet`s below so they don't push the effective DND (which touches the
@@ -520,12 +527,19 @@ final class AppState {
             UserDefaults.standard.removeObject(forKey: OutsideLinkDefault.pinsClearedKey)
         }
         restoreWindowState()
+        whatsNewVersion = Self.whatsNewVersionForThisLaunch()
         let didUpdate = Self.recordLaunchVersionAndCheckUpdate()
         fetchMissingAndStaleFavicons(force: didUpdate)
         fetchCatalogIcons(force: didUpdate)
         preloadActiveSpaceServices()
         startTransientBadgeFetcher()
         startNativeAppBadgeReader()
+        FeatureTips.configure()
+        FeatureTips.retireKnown(
+            railLayout: railLayout,
+            hasMacApps: ((try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+                .contains { $0.nativeAppBundleID != nil }
+        )
         reclaimUnreferencedDataStores()
         cleanUpOrphanedDataStores()
 
@@ -2705,6 +2719,48 @@ final class AppState {
         }
 
         transientBadgeFetcher.start()
+    }
+
+    /// The version whose What's New sheet this launch should show, read before
+    /// `recordLaunchVersionAndCheckUpdate` overwrites the last-run version.
+    private static func whatsNewVersionForThisLaunch() -> String? {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: WhatsNew.debugShowKey) { return WhatsNew.newestVersion }
+        #endif
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let show = WhatsNew.shouldShow(
+            previousVersion: UserDefaults.standard.string(forKey: lastRunVersionKey),
+            currentVersion: current,
+            shownVersion: UserDefaults.standard.string(forKey: WhatsNew.shownVersionKey)
+        )
+        return show ? current : nil
+    }
+
+    /// Records that the What's New sheet for a version has been seen.
+    func dismissWhatsNew() {
+        if let whatsNewVersion {
+            UserDefaults.standard.set(whatsNewVersion, forKey: WhatsNew.shownVersionKey)
+        }
+        whatsNewVersion = nil
+    }
+
+    /// Takes the user to a feature from a tip or the What's New sheet, and
+    /// retires the tip for it.
+    func perform(_ action: FeatureAction) {
+        FeatureTips.markUsed(action)
+        switch action {
+        case .showLayouts:
+            // The layout picker is the first thing in Settings › General.
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        case .addMacApp:
+            guard selectedSpaceID != nil else { return }
+            pendingAddServiceTab = .macApp
+            showAddService = true
+        case .openQuickSwitcher:
+            showQuickSwitcher = true
+        case .editSelectedService:
+            pendingEditServiceID = selectedServiceID
+        }
     }
 
     /// Reads the Dock badge of every Mac-app service. See `NativeAppBadgeReader`.

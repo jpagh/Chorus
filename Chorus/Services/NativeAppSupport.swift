@@ -58,20 +58,60 @@ enum NativeApp {
         return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 
-    /// The app's icon as PNG, for the service's `customIconData`.
+    /// The app's icon as PNG, for the service's `customIconData`, trimmed to
+    /// its visible shape. A macOS icon draws its rounded square on about 80%
+    /// of the canvas and leaves the rest clear for the shadow, so untrimmed it
+    /// looked a fifth smaller than the favicons beside it in the rail. The
+    /// trim follows the solid pixels, so an older icon that fills its canvas
+    /// loses nothing.
     static func iconPNG(of appURL: URL, size: CGFloat = 128) -> Data? {
         let icon = NSWorkspace.shared.icon(forFile: appURL.path)
-        let rect = NSRect(x: 0, y: 0, width: size, height: size)
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size),
+        let sourceSize = 512
+        guard let source = bitmap(pixels: sourceSize) else { return nil }
+        draw(icon, into: source, rect: NSRect(x: 0, y: 0, width: sourceSize, height: sourceSize))
+        let crop = solidBounds(of: source) ?? NSRect(x: 0, y: 0, width: sourceSize, height: sourceSize)
+        guard let cropped = source.cgImage?.cropping(to: crop),
+              let output = bitmap(pixels: Int(size))
+        else { return nil }
+        draw(NSImage(cgImage: cropped, size: crop.size), into: output, rect: NSRect(x: 0, y: 0, width: size, height: size))
+        return output.representation(using: .png, properties: [:])
+    }
+
+    private static func bitmap(pixels: Int) -> NSBitmapImageRep? {
+        NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ) else { return nil }
+        )
+    }
+
+    private static func draw(_ image: NSImage, into rep: NSBitmapImageRep, rect: NSRect) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        icon.draw(in: rect, from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: rect, from: .zero, operation: .copy, fraction: 1)
         NSGraphicsContext.restoreGraphicsState()
-        return rep.representation(using: .png, properties: [:])
+    }
+
+    /// The smallest square, in image coordinates (origin top left), holding
+    /// every pixel at least half opaque. The soft shadow stays outside it.
+    /// Nil for an image with no such pixel.
+    static func solidBounds(of rep: NSBitmapImageRep) -> NSRect? {
+        let width = rep.pixelsWide, height = rep.pixelsHigh
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) >= 0.5 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        // Square it on its centre, so a shape that isn't square keeps its proportions.
+        let side = max(maxX - minX + 1, maxY - minY + 1)
+        let midX = (minX + maxX + 1) / 2, midY = (minY + maxY + 1) / 2
+        let originX = max(0, min(width - side, midX - side / 2))
+        let originY = max(0, min(height - side, midY - side / 2))
+        return NSRect(x: originX, y: originY, width: side, height: side)
     }
 
     /// Reads a Dock badge string as a count: digits are the count, any other

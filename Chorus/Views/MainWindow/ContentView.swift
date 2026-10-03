@@ -97,6 +97,16 @@ struct ContentView: View {
                 .frame(minWidth: 320)
             }
         }
+        .sheet(isPresented: Binding(
+            // Never over the store recovery sheet, which has to come first.
+            get: { appState.whatsNewVersion != nil && !appState.isShowingStoreRecovery },
+            set: { if !$0 { appState.dismissWhatsNew() } }
+        )) {
+            if let version = appState.whatsNewVersion {
+                WhatsNewSheet(version: version)
+                    .environment(appState)
+            }
+        }
         .sheet(isPresented: $state.showQuickSwitcher) {
             QuickSwitcherView()
                 .environment(appState)
@@ -235,6 +245,8 @@ struct ContentView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Space and services")
+        // The rail itself is what the other layouts rearrange.
+        .featureTip(.showLayouts, arrowEdge: axis == .vertical ? .trailing : .bottom, appState: appState)
     }
 
     /// The web view on its inset card. The gutter runs round three sides; the

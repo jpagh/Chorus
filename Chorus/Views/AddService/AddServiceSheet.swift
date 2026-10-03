@@ -54,6 +54,12 @@ struct AddServiceSheet: View {
             }
         }
         .frame(width: 520, height: 480)
+        .onAppear {
+            if let tab = appState.pendingAddServiceTab {
+                selectedTab = tab
+                appState.pendingAddServiceTab = nil
+            }
+        }
     }
 
     /// Calm, non-blocking heads-up that passkey sign-in won't work in-app yet.
@@ -178,6 +184,7 @@ struct AddServiceSheet: View {
             return
         }
         addMacApp(at: appURL, bundleID: bundleID)
+        FeatureTips.markUsed(.addMacApp)
         NativeAppBadgeReader.requestTrust()
     }
 

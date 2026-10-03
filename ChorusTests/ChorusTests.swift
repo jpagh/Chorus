@@ -8,6 +8,16 @@ import CryptoKit
 
 @MainActor
 final class ChorusTests: XCTestCase {
+    func testWhatsNewShowsOnceAfterAnUpdateWithEntries() {
+        let version = "1.5.26"
+        XCTAssertFalse(WhatsNew.items(for: version).isEmpty)
+        XCTAssertTrue(WhatsNew.shouldShow(previousVersion: "1.5.25", currentVersion: version, shownVersion: nil))
+        XCTAssertFalse(WhatsNew.shouldShow(previousVersion: nil, currentVersion: version, shownVersion: nil), "a fresh install")
+        XCTAssertFalse(WhatsNew.shouldShow(previousVersion: version, currentVersion: version, shownVersion: nil), "no update")
+        XCTAssertFalse(WhatsNew.shouldShow(previousVersion: "1.5.25", currentVersion: version, shownVersion: version), "already seen")
+        XCTAssertFalse(WhatsNew.shouldShow(previousVersion: "1.5.24", currentVersion: "1.5.25", shownVersion: nil), "nothing listed")
+    }
+
     func testNativeAppServiceURLRoundTrips() {
         let url = NativeApp.serviceURL(forBundleID: "jp.naver.line.mac")
         XCTAssertEqual(NativeApp.bundleID(fromServiceURL: url), "jp.naver.line.mac")
@@ -23,6 +33,17 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "•"), 1)
         XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "1.2K"), 1)
         XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "٣"), 1)
+    }
+
+    /// A macOS icon's clear margin is trimmed, so its shape fills the square
+    /// the rail draws it in, as a favicon does.
+    func testNativeAppIconIsTrimmedToItsShape() throws {
+        let calculator = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: calculator.path))
+        let data = try XCTUnwrap(NativeApp.iconPNG(of: calculator))
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: data))
+        let bounds = try XCTUnwrap(NativeApp.solidBounds(of: rep))
+        XCTAssertGreaterThan(bounds.width / CGFloat(rep.pixelsWide), 0.95, "the shape fills the icon")
     }
 
     func testNativeAppRefusesChorusItself() {

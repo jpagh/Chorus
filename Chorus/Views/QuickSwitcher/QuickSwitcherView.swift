@@ -33,6 +33,7 @@ struct QuickSwitcherView: View {
         }
         .onAppear {
             recomputeResults()
+            FeatureTips.markUsed(.openQuickSwitcher)
         }
     }
 

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		03162EF33AE4EEB6E524E5B1 /* CatalogGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F17BFF4DCC563429E130A13 /* CatalogGridView.swift */; };
+		0413EB0C08636424F9362A1C /* FeatureTips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F8BC3392C6945D38F1AEA7 /* FeatureTips.swift */; };
 		0551F23E1A9E226486C1A0BB /* AddServiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCC4A3133903E40BFB42AA6 /* AddServiceSheet.swift */; };
 		0630E42353C95F80FCA4AD3E /* DownloadsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63600DD5EE558B052FFC8073 /* DownloadsButton.swift */; };
 		06696BB66C7BAA761E8291C9 /* HibernatedBadgePoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24EE83C0600AFD4A12914883 /* HibernatedBadgePoller.swift */; };
@@ -17,6 +18,7 @@
 		1C5CD1937EFECD06DA479F86 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC9767949C165F7DCD9A281 /* Space.swift */; };
 		1CC3A629AEC1BBF9ACDC5FB0 /* SpaceHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D93229EEC510DC0850005E /* SpaceHeaderView.swift */; };
 		230144499E6BE9FD41C03338 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7458024AA17BF508D4807018 /* ContentView.swift */; };
+		27E1865FA1BB65766DBDB808 /* WhatsNew.swift in Sources */ = {isa = PBXBuildFile; fileRef = 464C332182D96B75A17F363C /* WhatsNew.swift */; };
 		2D9A102388157D9B3C660F70 /* ServiceCatalogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3506A7D95472D8F3E822A39 /* ServiceCatalogEntry.swift */; };
 		30CDFCABEDA4328515317A91 /* CookieConsentManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BC620E896A6DD5CB16AF6D /* CookieConsentManager.swift */; };
 		31CD3293B2083A9698EFFF4F /* Deadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CB29411D3B889CE0623121 /* Deadline.swift */; };
@@ -107,6 +109,7 @@
 		06F91EDD3C2858890FA0B343 /* NativeAppSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAppSupport.swift; sourceTree = "<group>"; };
 		0856C776E775A4CB34F964C5 /* DownloadCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadCenter.swift; sourceTree = "<group>"; };
 		09D9F34755F65BE5A3C76C88 /* WebViewContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewContainer.swift; sourceTree = "<group>"; };
+		09F8BC3392C6945D38F1AEA7 /* FeatureTips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureTips.swift; sourceTree = "<group>"; };
 		0D9CBE47687FB4FF2EF6BED5 /* fanboy-annoyance.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "fanboy-annoyance.json"; sourceTree = "<group>"; };
 		0DC16234E82B88C1DB338A49 /* StoreRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRepair.swift; sourceTree = "<group>"; };
 		0F2F565F064A603E639DC26E /* ServiceCatalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ServiceCatalog.json; sourceTree = "<group>"; };
@@ -127,6 +130,7 @@
 		3BEC6FCF1B60E1B9CD89A3A2 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		42C2BEF1C847F26AD98EABF0 /* DemoControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoControl.swift; sourceTree = "<group>"; };
 		438D78C9503E732B7792FA10 /* WebViewCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewCoordinator.swift; sourceTree = "<group>"; };
+		464C332182D96B75A17F363C /* WhatsNew.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNew.swift; sourceTree = "<group>"; };
 		4666C49AA129F26D936B0715 /* ServiceInstance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceInstance.swift; sourceTree = "<group>"; };
 		4D2B28970B7AEF9B0EB53AFD /* UnifiedRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedRailView.swift; sourceTree = "<group>"; };
 		50260A359445D2B4C556E1E6 /* ChorusStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChorusStyle.swift; sourceTree = "<group>"; };
@@ -316,6 +320,7 @@
 				45BE1C03656FDE0EBF90DD78 /* QuickSwitcher */,
 				7E4310DD7A9D95A50DC0F075 /* Settings */,
 				216138496901373232936657 /* SpaceEditor */,
+				B81F5747B969F54A4C330A17 /* Tips */,
 				1E8D1445F53AC2640039824D /* WebView */,
 			);
 			path = Views;
@@ -359,6 +364,15 @@
 				B5AEA5DCBB5AB96E2C962A90 /* WindowBackdrop.swift */,
 			);
 			path = MainWindow;
+			sourceTree = "<group>";
+		};
+		B81F5747B969F54A4C330A17 /* Tips */ = {
+			isa = PBXGroup;
+			children = (
+				09F8BC3392C6945D38F1AEA7 /* FeatureTips.swift */,
+				464C332182D96B75A17F363C /* WhatsNew.swift */,
+			);
+			path = Tips;
 			sourceTree = "<group>";
 		};
 		E6B956F378DA41D1697BAD7C = {
@@ -559,6 +573,7 @@
 				4B199EBC47BA21CE22ECC893 /* EmojiData.swift in Sources */,
 				92BF212550953DD2E21A12E7 /* EmojiPickerView.swift in Sources */,
 				AD626D3375822E9E5BC358BE /* FaviconFetcher.swift in Sources */,
+				0413EB0C08636424F9362A1C /* FeatureTips.swift in Sources */,
 				3DEA98A98656EE981A29A71D /* FindInPageBar.swift in Sources */,
 				06696BB66C7BAA761E8291C9 /* HibernatedBadgePoller.swift in Sources */,
 				A98FA6B9454EC0BCEDEED093 /* InAppBrowserWindow.swift in Sources */,
@@ -601,6 +616,7 @@
 				DF712EA56B5AE10C7BF77176 /* WebViewCoordinator.swift in Sources */,
 				BAA5421430BDF6F9B918B7B5 /* WebViewPool.swift in Sources */,
 				783EF6C467034D74DE8D5F52 /* WebViewState.swift in Sources */,
+				27E1865FA1BB65766DBDB808 /* WhatsNew.swift in Sources */,
 				6335C06C8BEA4BAFCC16F334 /* WindowBackdrop.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

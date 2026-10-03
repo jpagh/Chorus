@@ -146,6 +146,7 @@ struct GeneralSettingsView: View {
                     set: { layout in
                         ensurePrefs().railLayoutRaw = layout.rawValue
                         appState.railLayout = layout
+                        FeatureTips.markUsed(.showLayouts)
                         save("rail layout")
                     }
                 )) {

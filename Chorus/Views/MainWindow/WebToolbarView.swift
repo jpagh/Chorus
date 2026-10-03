@@ -10,8 +10,14 @@ struct WebNavButtons: View {
     var homeURL: URL?
 
     @State private var didCopy = false
+    @Environment(AppState.self) private var appState
 
     var body: some View {
+        buttons
+            .featureTip(.openQuickSwitcher, arrowEdge: .bottom, appState: appState)
+    }
+
+    private var buttons: some View {
         HStack(spacing: ChorusNav.spacing) {
             navButton("chevron.left", label: "Back", enabled: webViewState.canGoBack) {
                 webViewState.webView?.goBack()

@@ -93,7 +93,10 @@ struct EditServiceSheet: View {
             .padding(20)
         }
         .frame(width: 420)
-        .onAppear(perform: loadFields)
+        .onAppear {
+            loadFields()
+            FeatureTips.markUsed(.editSelectedService)
+        }
         .confirmationDialog(
             "Log out of \(service.label)?",
             isPresented: $confirmingClearSession,
