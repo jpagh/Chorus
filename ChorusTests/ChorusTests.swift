@@ -8,6 +8,26 @@ import CryptoKit
 
 @MainActor
 final class ChorusTests: XCTestCase {
+    func testNativeAppServiceURLRoundTrips() {
+        let url = NativeApp.serviceURL(forBundleID: "jp.naver.line.mac")
+        XCTAssertEqual(NativeApp.bundleID(fromServiceURL: url), "jp.naver.line.mac")
+        XCTAssertEqual(ServiceInstance(label: "LINE", url: url).nativeAppBundleID, "jp.naver.line.mac")
+        XCTAssertNil(ServiceInstance(label: "Gmail", url: "https://mail.google.com").nativeAppBundleID)
+        XCTAssertNil(NativeApp.bundleID(fromServiceURL: "chorus-app://"))
+    }
+
+    func testNativeAppBadgeCountFromDockLabel() {
+        XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: nil), 0)
+        XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: ""), 0)
+        XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "12"), 12)
+        XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "•"), 1)
+    }
+
+    func testBadgeSweepSkipsNativeApps() {
+        let line = ServiceInstance(label: "LINE", url: NativeApp.serviceURL(forBundleID: "jp.naver.line.mac"))
+        XCTAssertFalse(AppState.badgeSweepIncludes(line, hasLiveWebView: false))
+    }
+
     func testServiceInstanceCreation() {
         let service = ServiceInstance(
             label: "Test Gmail",

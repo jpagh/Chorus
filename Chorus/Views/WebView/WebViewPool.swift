@@ -260,6 +260,8 @@ final class WebViewPool {
     func preload(_ instance: ServiceInstance) {
         guard webViews[instance.id] == nil else { return }
         guard instance.modelContext != nil else { return }
+        // A Mac-app service has no page to load.
+        guard instance.nativeAppBundleID == nil else { return }
 
         let config = makeConfiguration(for: instance)
         let webView = WKWebView(frame: CGRect(origin: .zero, size: WebViewHostView.lastSize), configuration: config)

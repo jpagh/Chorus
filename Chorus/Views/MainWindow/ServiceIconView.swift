@@ -51,6 +51,14 @@ struct ServiceIconSquare: View {
         content
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            // A Mac app that has been deleted or moved off this Mac shows grey.
+            .saturation(isMissingApp ? 0 : 1)
+            .opacity(isMissingApp ? 0.45 : 1)
+    }
+
+    private var isMissingApp: Bool {
+        guard let bundleID = instance.nativeAppBundleID else { return false }
+        return NativeApp.appURL(bundleID: bundleID) == nil
     }
 
     /// Decodes icon bytes, resolving to the largest representation available.

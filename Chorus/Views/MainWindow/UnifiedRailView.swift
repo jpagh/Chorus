@@ -372,6 +372,7 @@ struct UnifiedRailView: View {
             showsName: showServiceNames,
             spaceName: space.name,
             selectionAction: {
+                NativeAppDocker.reselect(service, wasSelected: isSelected)
                 selectedSpaceID = space.id
                 selectedServiceID = service.id
                 focusedAllServicesLinkID = link.id
@@ -824,6 +825,7 @@ struct UnifiedRailView: View {
     /// focused on its own.
     private func selectService(_ link: SpaceServiceLink) {
         guard let service = link.liveService else { return }
+        NativeAppDocker.reselect(service, wasSelected: selectedServiceID == service.id)
         selectedServiceID = service.id
         focusedServiceID = service.id
     }
@@ -1152,6 +1154,12 @@ struct UnifiedRailView: View {
     }
 
     private func resetIcon(for service: ServiceInstance) {
+        // A Mac app's own icon is its default; there is no favicon to fetch.
+        if let bundleID = service.nativeAppBundleID {
+            service.customIconData = NativeApp.appURL(bundleID: bundleID).flatMap { NativeApp.iconPNG(of: $0) }
+            save("reset icon")
+            return
+        }
         service.customIconData = nil
         save("reset icon")
         if service.fetchedIconData == nil {

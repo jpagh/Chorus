@@ -18,7 +18,8 @@ actor FaviconFetcher {
     func fetchFavicon(for urlString: String) async -> Data? {
         guard let baseURL = URL(string: urlString),
               let host = baseURL.host,
-              let scheme = baseURL.scheme
+              let scheme = baseURL.scheme,
+              ["http", "https"].contains(scheme.lowercased())
         else { return nil }
 
         // Try high-res sources first, then fall back to lower-res

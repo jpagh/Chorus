@@ -75,7 +75,9 @@ struct WebContentView: View {
             loadWebViewForSelectedService()
         }
         .onChange(of: selectedServiceID) {
-            loadWebViewForSelectedService()
+            // Only a change of selection opens a Mac app, never the launch
+            // restore or a web view rebuild.
+            loadWebViewForSelectedService(opensNativeApp: true)
         }
         .onChange(of: appState.webViewRebuildToken) {
             // A service's web view was rebuilt (e.g. custom CSS edit). Re-fetch
@@ -99,7 +101,9 @@ struct WebContentView: View {
     /// placeholder while a web view is made, or the empty state.
     @ViewBuilder
     private var cardContent: some View {
-        if selectedService != nil, let webView = currentWebView {
+        if let service = selectedService, let bundleID = service.nativeAppBundleID {
+            NativeAppPanel(label: service.label, bundleID: bundleID)
+        } else if selectedService != nil, let webView = currentWebView {
             ZStack(alignment: .topTrailing) {
                 WebViewContainer(webView: webView)
 
@@ -167,7 +171,7 @@ struct WebContentView: View {
         }
     }
 
-    private func loadWebViewForSelectedService() {
+    private func loadWebViewForSelectedService(opensNativeApp: Bool = false) {
         // Stop the outgoing service's active poll — but only if the pool still
         // regards it as the active service. On a deep-link switch AppState has
         // already made the incoming service active and moved the outgoing one
@@ -183,12 +187,26 @@ struct WebContentView: View {
         }
 
         guard let service = selectedService else {
+            NativeAppDocker.shared.undock()
             webViewState.detach()
             currentWebView = nil
             transitionSnapshot = nil
             previousServiceID = nil
             return
         }
+
+        // A Mac app has no web view. Leave the outgoing service's view loaded,
+        // since you will most likely come straight back to it.
+        if let bundleID = service.nativeAppBundleID {
+            webViewState.detach()
+            currentWebView = nil
+            transitionSnapshot = nil
+            previousServiceID = service.id
+            showPasskeyNotice = false
+            if opensNativeApp { NativeAppDocker.shared.dock(bundleID: bundleID) }
+            return
+        }
+        NativeAppDocker.shared.undock()
 
         // Grab the snapshot before loading — if the service was soft-hibernated,
         // this gives us an instant preview to show while the web view wakes up.
@@ -330,5 +348,115 @@ struct WebContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// What the card shows for a Mac-app service: the app runs in its own window,
+/// so this offers to bring it forward.
+private struct NativeAppPanel: View {
+    let label: String
+    let bundleID: String
+
+    @State private var isTrusted = NativeAppBadgeReader.isTrusted
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if let appURL = NativeApp.appURL(bundleID: bundleID) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+                    .resizable()
+                    .frame(width: 96, height: 96)
+                    .accessibilityHidden(true)
+                Text("\(label) opens in its own window.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Button("Open \(label)") { NativeAppDocker.shared.dock(bundleID: bundleID) }
+                    .buttonStyle(.borderedProminent)
+                if !isTrusted {
+                    Text("To show \(label)'s unread count in Chorus, turn on Chorus in System Settings, under Privacy & Security, then Accessibility.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                    Button("Open Accessibility Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.link)
+                }
+            } else {
+                Image(systemName: "questionmark.app.dashed")
+                    .font(.system(size: 48, weight: .light))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+                Text("Chorus can't find \(label) on this Mac.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ScreenFrameReporter { NativeAppDocker.shared.updateTarget($0) })
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            isTrusted = NativeAppBadgeReader.isTrusted
+        }
+    }
+}
+
+/// Reports its own frame in screen coordinates whenever the view is laid out
+/// again or its window moves, so a docked Mac app can follow the service area
+/// through window drags, resizes and rail layout changes.
+private struct ScreenFrameReporter: NSViewRepresentable {
+    let onChange: (CGRect) -> Void
+
+    func makeNSView(context: Context) -> ReportingView {
+        let view = ReportingView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ nsView: ReportingView, context: Context) {
+        nsView.onChange = onChange
+        nsView.report()
+    }
+
+    final class ReportingView: NSView {
+        var onChange: (CGRect) -> Void = { _ in }
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { return }
+            let center = NotificationCenter.default
+            for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report() }
+                })
+            }
+            // A docked app goes out of sight with the window and comes back with it.
+            for name in [NSWindow.willMiniaturizeNotification, NSWindow.willCloseNotification] {
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { _ in
+                    MainActor.assumeIsolated { NativeAppDocker.shared.suspend() }
+                })
+            }
+            observers.append(center.addObserver(
+                forName: NSWindow.didDeminiaturizeNotification, object: window, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated { NativeAppDocker.shared.resume() }
+            })
+            report()
+        }
+
+        override func layout() {
+            super.layout()
+            report()
+        }
+
+        func report() {
+            guard let window else { return }
+            onChange(window.convertToScreen(convert(bounds, to: nil)))
+        }
     }
 }

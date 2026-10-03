@@ -5,6 +5,10 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- Add a Mac app to the rail, for chat apps with no web version such as LINE. Choose it under Add Service, in the Mac App tab. Click it and Chorus opens the app and lays its window over the space a web service would take, following the Chorus window as you move or resize it. Switch to another service and the app hides. The app's unread count shows on its rail icon once you allow Chorus under Privacy & Security, then Accessibility. macOS doesn't let one app's window sit inside another's, so it is still the app's own window, with its own menu bar, and it can't follow Chorus into full screen.
+
 ## [1.5.25] - 2026-10-01
 
 ### Fixed

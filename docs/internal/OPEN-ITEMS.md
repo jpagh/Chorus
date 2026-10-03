@@ -1,5 +1,20 @@
 # Open items
 
+## Built, not released: Mac apps in the rail (`feat/mac-app-services`)
+
+Asked for on 2026-10-02 so LINE, which has no web version, can live in the rail. macOS has no way to put another process's window inside ours, so a Mac-app service is a launcher that docks the app's own window over the card. The app is stored as `url = chorus-app://<bundle id>` (`NativeApp` in `Services/NativeAppSupport.swift`), which needs no schema version. Pieces: `NativeAppDocker` moves and sizes the window through the Accessibility API, following `ScreenFrameReporter` in `WebContentView`; it hides the app on switch-away, minimize, close and ⌘H, and brings it back when Chorus returns unless the click landed on Chorus's own controls. `NativeAppBadgeReader` reads the Dock's `AXStatusLabel` every 3 s. The pool, the transient badge sweep and the favicon fetcher all skip these services. The Edit sheet shows only name, mute and badge for one.
+
+The user tried docking with LINE in a Debug build on 2026-10-02 and it worked well. The second pass (re-click, return to Chorus, hide with the window, edit sheet, icon reset, grey icon for a missing app) has not been tried live yet.
+
+### Still open
+
+- ⌘-Tab to Chorus with a Mac app selected brings the app forward, so getting to Chorus's own menus takes a click on the rail.
+- Closing the Chorus window hides the app, and it stays hidden until it is clicked again, quitting Chorus included.
+- The app trails a frame or two behind a window drag. It can't join Chorus in full screen, and an app with a minimum size larger than the card hangs over the edge.
+- Setup export and import carry the `chorus-app://` address as is; not tried on a Mac without the app.
+- Debug builds can lose Accessibility trust on rebuild; toggle the entry in System Settings.
+- In Debug, `debugMockBadges` puts made-up counts on Mac apps too. The first "wrong count" report was this.
+
 ## Open: Instagram drawn in a thin strip at the top of the page
 
 The user saw this on 1.5.25 on 2026-10-01, in Instagram's messages. The whole app (the left icons, the chat list and the message box) sat in a strip about 155 px tall at the top of the page area, and the rest of the page was empty. The page scrollbar ran the full height, and the user could scroll up without end. The user could not make it happen again, and nobody checked whether resizing the window or reloading would have fixed it. Release builds are not inspectable, so nothing was measured.

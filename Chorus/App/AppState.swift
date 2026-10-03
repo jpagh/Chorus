@@ -35,6 +35,8 @@ final class AppState {
     let webViewState = WebViewState()
     let notificationManager: NotificationManager
     let transientBadgeFetcher: TransientBadgeFetcher
+    /// Copies Mac-app services' Dock badges onto the rail.
+    let nativeAppBadgeReader = NativeAppBadgeReader()
     let networkMonitor: NetworkMonitor
 
     var selectedSpaceID: UUID?
@@ -523,6 +525,7 @@ final class AppState {
         fetchCatalogIcons(force: didUpdate)
         preloadActiveSpaceServices()
         startTransientBadgeFetcher()
+        startNativeAppBadgeReader()
         reclaimUnreferencedDataStores()
         cleanUpOrphanedDataStores()
 
@@ -2643,6 +2646,7 @@ final class AppState {
     /// cheaper failure.
     static func badgeSweepIncludes(_ service: ServiceInstance, hasLiveWebView: Bool) -> Bool {
         !hasLiveWebView
+            && service.nativeAppBundleID == nil
             && !service.isNotificationCritical
             && !service.isEffectivelyMuted
             && service.showBadge
@@ -2698,6 +2702,28 @@ final class AppState {
         }
 
         transientBadgeFetcher.start()
+    }
+
+    /// Reads the Dock badge of every Mac-app service. See `NativeAppBadgeReader`.
+    private func startNativeAppBadgeReader() {
+        nativeAppBadgeReader.targetsProvider = { [weak self] in
+            guard let self,
+                  let services = try? self.modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())
+            else { return [] }
+            return services.compactMap { service in
+                service.nativeAppBundleID.map { NativeAppBadgeReader.Target(id: service.id, bundleID: $0) }
+            }
+        }
+        nativeAppBadgeReader.onCount = { [weak self] id, count in
+            guard let self, let service = self.currentServiceInstance(id: id) else { return }
+            self.badgeManager.updateBadge(
+                for: id,
+                count: count,
+                isMuted: self.isServiceEffectivelyMuted(id),
+                showBadge: service.showBadge
+            )
+        }
+        nativeAppBadgeReader.start()
     }
 
     /// Preloads services when the user switches to a different space.

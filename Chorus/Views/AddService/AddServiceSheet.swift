@@ -16,6 +16,7 @@ struct AddServiceSheet: View {
     enum AddServiceTab: String, CaseIterable {
         case catalog = "Browse"
         case custom = "Custom URL"
+        case macApp = "Mac App"
     }
 
     enum CustomServiceInputValidation: Equatable {
@@ -47,6 +48,8 @@ struct AddServiceSheet: View {
                 catalogContent
             case .custom:
                 customURLContent
+            case .macApp:
+                macAppContent
             }
         }
         .frame(width: 520, height: 480)
@@ -138,6 +141,60 @@ struct AddServiceSheet: View {
         }
         .padding(20)
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var macAppContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add an app that has no web version. Chorus can't show its window inside a tab, so clicking it opens the app, and its unread count appears in the sidebar.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Choose App…") { chooseMacApp() }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func chooseMacApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add"
+        guard panel.runModal() == .OK, let appURL = panel.url,
+              let bundleID = Bundle(url: appURL)?.bundleIdentifier
+        else { return }
+        addMacApp(at: appURL, bundleID: bundleID)
+    }
+
+    private func addMacApp(at appURL: URL, bundleID: String) {
+        guard let space = fetchSpace(id: spaceID) else { return }
+        let service = ServiceInstance(
+            label: NativeApp.displayName(of: appURL),
+            url: NativeApp.serviceURL(forBundleID: bundleID),
+            customIconData: NativeApp.iconPNG(of: appURL),
+            // A launcher has no page, so there is no passkey sign-in to warn about.
+            hasSeenPasskeyNotice: true
+        )
+        modelContext.insert(service)
+        let link = SpaceServiceLink(
+            sortOrder: space.serviceLinks.count,
+            space: space,
+            service: service
+        )
+        // Wiring the inverses already registers the row on macOS 14; a second
+        // insert there is fatal.
+        if link.modelContext == nil { modelContext.insert(link) }
+        do {
+            try modelContext.save()
+        } catch {
+            AppLogger.dataStore.error("Failed to save Mac app service: \(error.localizedDescription)")
+        }
+        appState.selectedSpaceID = spaceID
+        appState.selectedServiceID = service.id
+        dismiss()
     }
 
     private func addCustomService() {

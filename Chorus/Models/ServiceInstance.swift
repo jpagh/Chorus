@@ -231,6 +231,10 @@ final class ServiceInstance {
     var createdAt: Date
     var lastAccessedAt: Date
 
+    /// The bundle id of the Mac app this service opens, or nil for a web
+    /// service. See `NativeApp`.
+    var nativeAppBundleID: String? { NativeApp.bundleID(fromServiceURL: url) }
+
     /// Materialises the storage-optional zoom into a Double (nil → 1.0).
     var zoomLevelEffective: Double { pageZoom ?? 1.0 }
 

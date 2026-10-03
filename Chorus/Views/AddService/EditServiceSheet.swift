@@ -36,6 +36,10 @@ struct EditServiceSheet: View {
     @State private var errorMessage: String?
     @State private var confirmingClearSession = false
 
+    /// A Mac-app service has no page, so it gets only the settings that apply
+    /// to a launcher: name, mute and badge.
+    private var nativeBundleID: String? { service.nativeAppBundleID }
+
     private var defaultCSS: String {
         ServiceCSSDefaults.css(forCatalogID: service.catalogEntryID) ?? ""
     }
@@ -64,95 +68,13 @@ struct EditServiceSheet: View {
                         .accessibilityLabel("Service name")
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Address")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    TextField("https://example.com", text: $url)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Service address")
+                if let nativeBundleID {
+                    nativeAppRow(bundleID: nativeBundleID)
+                    Divider()
+                    notificationsSection
+                } else {
+                    webSettings
                 }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Picker("Hibernate", selection: $hibernationPolicy) {
-                        Text("Follow global setting").tag(HibernationPolicy.followGlobal)
-                        Text("When I switch to another service").tag(HibernationPolicy.immediate)
-                        Text("After a set idle time").tag(HibernationPolicy.after)
-                        Text("Never (keep loaded)").tag(HibernationPolicy.never)
-                    }
-                    .help("Chorus frees a service's memory and CPU while it runs in the background. The one you're viewing always stays loaded. \"Never\" also keeps calls and notifications working in the background, at the cost of more memory.")
-                    .disabled(service.isNotificationCritical)
-
-                    if hibernationPolicy == .after && !service.isNotificationCritical {
-                        Stepper(value: $hibernateAfterMinutes, in: 1...120) {
-                            Text("Idle for \(hibernateAfterMinutes) minute\(hibernateAfterMinutes == 1 ? "" : "s")")
-                        }
-                        .accessibilityLabel("Hibernate after \(hibernateAfterMinutes) minutes idle")
-                    }
-
-                    if service.isNotificationCritical {
-                        Text("Chat apps stay loaded so their messages reach you the instant they arrive. This setting won't hibernate this one.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if service.catalogEntryID == nil && hibernationPolicy != .never {
-                        // A service added by typing its address has no catalog
-                        // category, so `isNotificationCritical` is false for it
-                        // whatever it actually is — a self-hosted Mattermost or
-                        // a second Slack hibernates like any other page and goes
-                        // quiet. Nothing said so before this.
-                        Text("Chorus does not know what this service is, so it cannot keep it loaded the way it does a chat app from its list. While this one sleeps its notifications do not arrive, only its unread count. Pick Never if you need to hear from it.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Toggle("Mobile view", isOn: $mobileView)
-                    .help("Loads this service as if on an iPhone, so it serves its mobile web layout. Applied on save.")
-
-                Picker("Open outside links in", selection: $openLinksInApp) {
-                    Text(linksOpenInChorusByDefault ? "Follow global setting (Chorus window)" : "Follow global setting (browser)").tag(Bool?.none)
-                    Text("Chorus window").tag(Bool?.some(true))
-                    Text("Browser").tag(Bool?.some(false))
-                }
-                .help("Where a link opens when it points somewhere no Chorus service covers. A link that another service covers still switches to that service.")
-
-                Toggle("Always appear active", isOn: $stayActive)
-                    .help("Keeps this service from showing you as away or idle while Chorus is in the background, so your status stays active even when you work in other apps. Useful for Microsoft Teams. May hold back some of this service's notifications, since it now thinks you're looking at it.")
-
-                Picker("Dark theme for this service", selection: $darkMode) {
-                    Text("On").tag(ServiceDarkMode.on)
-                    Text("Off").tag(ServiceDarkMode.off)
-                }
-                .pickerStyle(.segmented)
-                .help("On applies a dark theme to this service while the app is dark. Off never does.")
-
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .accessibilityLabel("Error: \(errorMessage)")
-                }
-
-                Divider()
-
-                notificationsSection
-
-                Divider()
-
-                cameraMicrophoneSection
-
-                Divider()
-
-                customCSSSection
-
-                Divider()
-
-                Button(role: .destructive) {
-                    confirmingClearSession = true
-                } label: {
-                    Label("Clear session (log out)", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .help("Signs you out by clearing this service's cookies and storage. Its place in your spaces is kept.")
             }
             .padding(20)
 
@@ -171,32 +93,7 @@ struct EditServiceSheet: View {
             .padding(20)
         }
         .frame(width: 420)
-        .onAppear {
-            label = service.label
-            url = service.url
-            hibernationPolicy = service.hibernationPolicyEffective
-            hibernateAfterMinutes = service.hibernateAfterMinutesEffective
-            mobileView = service.userAgent == UserAgentProvider.mobileSafari
-            initialUserAgent = service.userAgent
-            openLinksInApp = service.openExternalLinksInApp
-            stayActive = service.staysActiveInBackgroundEffective
-            darkMode = service.darkMode
-            notify = !service.isMuted
-            osNotify = service.notifiesOSEffective
-            badge = service.showBadge
-            // Prefill with the instance's own CSS, or the baked-in default so
-            // the user can see and tweak what's already applied.
-            customCSS = service.customCSS ?? defaultCSS
-            // Start the pickers at the EFFECTIVE policy (the service's own value,
-            // else the global default), so what's shown is what applies. Saving
-            // pins it on the service (consistent with the dark-theme picker).
-            cameraPolicy = MediaPermissionResolver.effectivePolicy(
-                serviceRaw: service.cameraPolicyRaw, globalRaw: appState.defaultCameraPolicy.rawValue)
-            microphonePolicy = MediaPermissionResolver.effectivePolicy(
-                serviceRaw: service.microphonePolicyRaw, globalRaw: appState.defaultMicrophonePolicy.rawValue)
-            initialCameraPolicy = cameraPolicy
-            initialMicrophonePolicy = microphonePolicy
-        }
+        .onAppear(perform: loadFields)
         .confirmationDialog(
             "Log out of \(service.label)?",
             isPresented: $confirmingClearSession,
@@ -211,6 +108,150 @@ struct EditServiceSheet: View {
         }
     }
 
+    /// Which app the service opens, read-only.
+    private func nativeAppRow(bundleID: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("App")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            if let appURL = NativeApp.appURL(bundleID: bundleID) {
+                HStack(spacing: 8) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                        .accessibilityHidden(true)
+                    Text(appURL.path)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                }
+            } else {
+                Text("Chorus can't find this app on this Mac (\(bundleID)).")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var webSettings: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Address")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            TextField("https://example.com", text: $url)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Service address")
+        }
+
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Hibernate", selection: $hibernationPolicy) {
+                Text("Follow global setting").tag(HibernationPolicy.followGlobal)
+                Text("When I switch to another service").tag(HibernationPolicy.immediate)
+                Text("After a set idle time").tag(HibernationPolicy.after)
+                Text("Never (keep loaded)").tag(HibernationPolicy.never)
+            }
+            .help("Chorus frees a service's memory and CPU while it runs in the background. The one you're viewing always stays loaded. \"Never\" also keeps calls and notifications working in the background, at the cost of more memory.")
+            .disabled(service.isNotificationCritical)
+
+            if hibernationPolicy == .after && !service.isNotificationCritical {
+                Stepper(value: $hibernateAfterMinutes, in: 1...120) {
+                    Text("Idle for \(hibernateAfterMinutes) minute\(hibernateAfterMinutes == 1 ? "" : "s")")
+                }
+                .accessibilityLabel("Hibernate after \(hibernateAfterMinutes) minutes idle")
+            }
+
+            if service.isNotificationCritical {
+                Text("Chat apps stay loaded so their messages reach you the instant they arrive. This setting won't hibernate this one.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if service.catalogEntryID == nil && hibernationPolicy != .never {
+                // A service added by typing its address has no catalog
+                // category, so `isNotificationCritical` is false for it
+                // whatever it actually is — a self-hosted Mattermost or
+                // a second Slack hibernates like any other page and goes
+                // quiet. Nothing said so before this.
+                Text("Chorus does not know what this service is, so it cannot keep it loaded the way it does a chat app from its list. While this one sleeps its notifications do not arrive, only its unread count. Pick Never if you need to hear from it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        Toggle("Mobile view", isOn: $mobileView)
+            .help("Loads this service as if on an iPhone, so it serves its mobile web layout. Applied on save.")
+
+        Picker("Open outside links in", selection: $openLinksInApp) {
+            Text(linksOpenInChorusByDefault ? "Follow global setting (Chorus window)" : "Follow global setting (browser)").tag(Bool?.none)
+            Text("Chorus window").tag(Bool?.some(true))
+            Text("Browser").tag(Bool?.some(false))
+        }
+        .help("Where a link opens when it points somewhere no Chorus service covers. A link that another service covers still switches to that service.")
+
+        Toggle("Always appear active", isOn: $stayActive)
+            .help("Keeps this service from showing you as away or idle while Chorus is in the background, so your status stays active even when you work in other apps. Useful for Microsoft Teams. May hold back some of this service's notifications, since it now thinks you're looking at it.")
+
+        Picker("Dark theme for this service", selection: $darkMode) {
+            Text("On").tag(ServiceDarkMode.on)
+            Text("Off").tag(ServiceDarkMode.off)
+        }
+        .pickerStyle(.segmented)
+        .help("On applies a dark theme to this service while the app is dark. Off never does.")
+
+        if let errorMessage {
+            Text(errorMessage)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .accessibilityLabel("Error: \(errorMessage)")
+        }
+
+        Divider()
+
+        notificationsSection
+
+        Divider()
+
+        cameraMicrophoneSection
+
+        Divider()
+
+        customCSSSection
+
+        Divider()
+
+        Button(role: .destructive) {
+            confirmingClearSession = true
+        } label: {
+            Label("Clear session (log out)", systemImage: "rectangle.portrait.and.arrow.right")
+        }
+        .help("Signs you out by clearing this service's cookies and storage. Its place in your spaces is kept.")
+    }
+
+    private func loadFields() {
+        label = service.label
+        url = service.url
+        hibernationPolicy = service.hibernationPolicyEffective
+        hibernateAfterMinutes = service.hibernateAfterMinutesEffective
+        mobileView = service.userAgent == UserAgentProvider.mobileSafari
+        initialUserAgent = service.userAgent
+        openLinksInApp = service.openExternalLinksInApp
+        stayActive = service.staysActiveInBackgroundEffective
+        darkMode = service.darkMode
+        notify = !service.isMuted
+        osNotify = service.notifiesOSEffective
+        badge = service.showBadge
+        // Prefill with the instance's own CSS, or the baked-in default so
+        // the user can see and tweak what's already applied.
+        customCSS = service.customCSS ?? defaultCSS
+        // Start the pickers at the EFFECTIVE policy (the service's own value,
+        // else the global default), so what's shown is what applies. Saving
+        // pins it on the service (consistent with the dark-theme picker).
+        cameraPolicy = MediaPermissionResolver.effectivePolicy(
+            serviceRaw: service.cameraPolicyRaw, globalRaw: appState.defaultCameraPolicy.rawValue)
+        microphonePolicy = MediaPermissionResolver.effectivePolicy(
+            serviceRaw: service.microphonePolicyRaw, globalRaw: appState.defaultMicrophonePolicy.rawValue)
+        initialCameraPolicy = cameraPolicy
+        initialMicrophonePolicy = microphonePolicy
+    }
+
     @ViewBuilder
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -221,10 +262,13 @@ struct EditServiceSheet: View {
             Toggle("Allow notifications", isOn: $notify)
                 .help("The master switch for this service. Off silences its banners and badge.")
 
-            Toggle("macOS notification banners", isOn: $osNotify)
-                .disabled(!notify)
-                .padding(.leading, 16)
-                .help("Forward this service's alerts to macOS Notification Center.")
+            // A Mac app posts its own banners; Chorus has none to forward.
+            if nativeBundleID == nil {
+                Toggle("macOS notification banners", isOn: $osNotify)
+                    .disabled(!notify)
+                    .padding(.leading, 16)
+                    .help("Forward this service's alerts to macOS Notification Center.")
+            }
 
             Toggle("Badge count", isOn: $badge)
                 .disabled(!notify)
@@ -294,6 +338,10 @@ struct EditServiceSheet: View {
     }
 
     private func saveEdits() {
+        if nativeBundleID != nil {
+            saveNativeAppEdits()
+            return
+        }
         switch AddServiceSheet.validatedCustomServiceInput(label: label, url: url) {
         case .invalid(let message):
             errorMessage = message
@@ -370,5 +418,25 @@ struct EditServiceSheet: View {
             }
             dismiss()
         }
+    }
+
+    /// A Mac-app service keeps its `chorus-app://` address, which the web URL
+    /// check would reject, so it saves only the fields its sheet shows.
+    private func saveNativeAppEdits() {
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else {
+            errorMessage = "Label can't be empty"
+            return
+        }
+        service.label = trimmedLabel
+        service.isMuted = !notify
+        service.showBadge = badge
+        do {
+            try modelContext.save()
+        } catch {
+            AppLogger.dataStore.error("Failed to save Mac app service: \(error.localizedDescription)")
+        }
+        appState.refreshBadgeState(for: service.id)
+        dismiss()
     }
 }
