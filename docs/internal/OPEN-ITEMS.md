@@ -4,14 +4,14 @@
 
 Asked for on 2026-10-02 so LINE, which has no web version, can live in the rail. macOS has no way to put another process's window inside ours, so a Mac-app service is a launcher that docks the app's own window over the card. The app is stored as `url = chorus-app://<bundle id>` (`NativeApp` in `Services/NativeAppSupport.swift`), which needs no schema version. Pieces: `NativeAppDocker` moves and sizes the window through the Accessibility API, following `ScreenFrameReporter` in `WebContentView`; it hides the app on switch-away, minimize, close and ⌘H, and brings it back when Chorus returns unless the click landed on Chorus's own controls. `NativeAppBadgeReader` reads the Dock's `AXStatusLabel` every 3 s. The pool, the transient badge sweep and the favicon fetcher all skip these services. The Edit sheet shows only name, mute and badge for one.
 
-The user tried docking with LINE in a Debug build on 2026-10-02 and it worked well. The second pass (re-click, return to Chorus, hide with the window, edit sheet, icon reset, grey icon for a missing app) has not been tried live yet.
+The user tried docking with LINE in a Debug build on 2026-10-02 and it worked well, the second pass too. A code review the same evening found and fixed: the outgoing web service stayed "active" in the pool while a Mac app was selected (no badge poll, media kept playing, ⌘R and camera went to it); one Mac app to another left the first window behind; the Accessibility prompt fired at every launch (now only when a Mac app is added); export dropped Mac apps; Chorus could be added as its own Mac app; badge writes every 3 s redrew the rail. Not yet tried live after those fixes.
 
 ### Still open
 
-- ⌘-Tab to Chorus with a Mac app selected brings the app forward, so getting to Chorus's own menus takes a click on the rail.
+- ⌘-Tab to Chorus with a Mac app selected now shows the panel and leaves the app behind, so ⌘Q quits Chorus. A click on the panel, or a click on the card from another app, brings the app back.
 - Closing the Chorus window hides the app, and it stays hidden until it is clicked again, quitting Chorus included.
 - The app trails a frame or two behind a window drag. It can't join Chorus in full screen, and an app with a minimum size larger than the card hangs over the edge.
-- Setup export and import carry the `chorus-app://` address as is; not tried on a Mac without the app.
+- Setup export and import carry Mac apps (fixed after review; before, export dropped them). Not tried on a Mac without the app, where it shows grey.
 - Debug builds can lose Accessibility trust on rebuild; toggle the entry in System Settings.
 - In Debug, `debugMockBadges` puts made-up counts on Mac apps too. The first "wrong count" report was this.
 

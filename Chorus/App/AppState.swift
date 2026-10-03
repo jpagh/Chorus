@@ -927,7 +927,8 @@ final class AppState {
     private func serviceOwning(host: String, excluding excluded: UUID?) -> ServiceInstance? {
         let services = (try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? []
         return services.first { service in
-            guard service.id != excluded, let serviceHost = URL(string: service.url)?.host else { return false }
+            guard service.id != excluded, service.nativeAppBundleID == nil,
+                  let serviceHost = URL(string: service.url)?.host else { return false }
             return WebViewCoordinator.belongsToService(host, serviceHost: serviceHost)
         }
     }
@@ -938,7 +939,9 @@ final class AppState {
         guard let services = try? context.fetch(descriptor) else { return nil }
 
         let matches = services.filter { service in
-            guard let serviceHost = URL(string: service.url)?.host else { return false }
+            // A Mac app's address holds a bundle id, not a host.
+            guard service.nativeAppBundleID == nil,
+                  let serviceHost = URL(string: service.url)?.host else { return false }
             return WebViewCoordinator.belongsToService(host, serviceHost: serviceHost)
         }
         if matches.isEmpty { return nil }

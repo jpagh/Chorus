@@ -133,6 +133,8 @@ struct SetupArchive: Codable, Equatable {
     var hosts: [String] {
         var seen = Set<String>()
         return listedServiceIndices
+            // A Mac app's address names an app on this Mac, not a site.
+            .filter { NativeApp.bundleID(fromServiceURL: services[$0].url) == nil }
             .compactMap { URL(string: services[$0].url)?.host }
             .filter { seen.insert($0).inserted }
     }
@@ -175,7 +177,7 @@ struct SetupArchive: Codable, Equatable {
         guard spaces.count <= Limit.spaces else { throw ReadError.invalid("too many spaces") }
         guard services.count <= Limit.services else { throw ReadError.invalid("too many services") }
         for service in services {
-            guard Self.isWebURL(service.url) else { throw ReadError.invalid("a service has an address that isn't a web page") }
+            guard Self.isWebURL(service.url) || NativeApp.bundleID(fromServiceURL: service.url) != nil else { throw ReadError.invalid("a service has an address that isn't a web page") }
             guard service.label.count <= Limit.textLength, service.url.count <= Limit.textLength,
                   (service.userAgent?.count ?? 0) <= Limit.textLength
             else { throw ReadError.invalid("a service has a name or address longer than Chorus allows") }
@@ -358,7 +360,9 @@ private extension SetupArchive.ServiceRecord {
         guard var components = URLComponents(string: service.url) else { return nil }
         components.user = nil
         components.password = nil
-        guard let url = components.string, SetupArchive.isWebURL(url) else { return nil }
+        guard let url = components.string,
+              SetupArchive.isWebURL(url) || NativeApp.bundleID(fromServiceURL: url) != nil
+        else { return nil }
         self.init(
             label: service.label,
             url: url,

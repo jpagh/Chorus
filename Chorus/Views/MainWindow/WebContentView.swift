@@ -195,9 +195,10 @@ struct WebContentView: View {
             return
         }
 
-        // A Mac app has no web view. Leave the outgoing service's view loaded,
-        // since you will most likely come straight back to it.
+        // A Mac app has no web view. The outgoing page stays loaded in the
+        // background, like any service you switch away from.
         if let bundleID = service.nativeAppBundleID {
+            appState.webViewPool.deactivateActiveService()
             webViewState.detach()
             currentWebView = nil
             transitionSnapshot = nil
@@ -397,6 +398,9 @@ private struct NativeAppPanel: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ScreenFrameReporter { NativeAppDocker.shared.updateTarget($0) })
+        // The app went behind Chorus; a click on its place brings it back.
+        .contentShape(Rectangle())
+        .onTapGesture { NativeAppDocker.shared.dock(bundleID: bundleID) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             isTrusted = NativeAppBadgeReader.isTrusted
         }

@@ -23,6 +23,13 @@ enum NativeApp {
         return host
     }
 
+    /// Chorus in any build: release, Debug, or another copy.
+    static func isChorus(bundleID: String) -> Bool {
+        let lowered = bundleID.lowercased()
+        let own = (Bundle.main.bundleIdentifier ?? "").lowercased()
+        return lowered == own || lowered.hasPrefix("com.nicojan.chorus")
+    }
+
     static func appURL(bundleID: String) -> URL? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
     }
@@ -73,8 +80,10 @@ enum NativeApp {
         guard let label = label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty else {
             return 0
         }
-        let digits = label.filter(\.isNumber)
-        return Int(digits) ?? 1
+        // ASCII digits only: `isNumber` also takes other scripts' numerals,
+        // which `Int` then can't read.
+        guard label.unicodeScalars.allSatisfy({ ("0"..."9").contains($0) }) else { return 1 }
+        return Int(label) ?? 1
     }
 }
 
@@ -95,7 +104,9 @@ final class NativeAppBadgeReader {
     var onCount: (UUID, Int) -> Void = { _, _ in }
 
     private var timer: Timer?
-    private var promptedForTrust = false
+    /// The last count handed on per service, so an unchanged reading doesn't
+    /// rewrite the badge, and redraw the rail, every tick.
+    private var lastCounts: [UUID: Int] = [:]
 
     func start(interval: TimeInterval = 3) {
         timer?.invalidate()
@@ -107,24 +118,24 @@ final class NativeAppBadgeReader {
 
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    /// Shows the system's Accessibility prompt, once per launch.
-    func requestTrustIfNeeded() {
-        guard !promptedForTrust, !Self.isTrusted else { return }
-        promptedForTrust = true
+    /// Shows the system's Accessibility prompt. Called when a Mac app is
+    /// added, never on its own at launch: someone who declined would get the
+    /// prompt every time Chorus started. The panel has a button for later.
+    static func requestTrust() {
+        guard !isTrusted else { return }
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
     func tick() {
         let targets = targetsProvider()
-        guard !targets.isEmpty else { return }
-        guard Self.isTrusted else {
-            requestTrustIfNeeded()
-            return
-        }
+        guard !targets.isEmpty, Self.isTrusted else { return }
         let labels = Self.dockBadgeLabels()
         for target in targets {
-            onCount(target.id, NativeApp.badgeCount(fromDockLabel: labels[target.bundleID.lowercased()]))
+            let count = NativeApp.badgeCount(fromDockLabel: labels[target.bundleID.lowercased()])
+            guard lastCounts[target.id] != count else { continue }
+            lastCounts[target.id] = count
+            onCount(target.id, count)
         }
     }
 
@@ -200,14 +211,18 @@ final class NativeAppDocker {
         shared.dock(bundleID: bundleID)
     }
 
-    /// When you come back to Chorus with a Mac app selected, put the app back
-    /// in front, as a tab would be. A click on Chorus's own controls (the rail,
-    /// the toolbar) is left alone, or you could never pick another service.
+    /// When a click brings Chorus forward and lands on the docked app's place,
+    /// put the app back in front. Anything else is left alone: a click on the
+    /// rail or toolbar (or you could never pick another service), a click on
+    /// another Chorus window over the card, and ⌘-Tab, after which ⌘Q has to
+    /// quit Chorus and not the docked app.
     private func chorusBecameActive() {
-        guard let bundleID = dockedBundleID, !isSuspended else { return }
-        if NSEvent.pressedMouseButtons != 0 {
-            guard let targetRect, targetRect.contains(NSEvent.mouseLocation) else { return }
-        }
+        guard let bundleID = dockedBundleID, !isSuspended,
+              NSEvent.pressedMouseButtons != 0,
+              let targetRect, targetRect.contains(NSEvent.mouseLocation),
+              let mainWindow = NSApp.windows.first(where: { $0.frame.contains(targetRect) && $0.isVisible }),
+              NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == mainWindow.windowNumber
+        else { return }
         dock(bundleID: bundleID)
     }
 
@@ -233,6 +248,11 @@ final class NativeAppDocker {
     /// Opens the app and, once it has a window, lays it over the service area.
     /// A cold launch takes a moment to make its window, so this waits for one.
     func dock(bundleID: String) {
+        // Going straight from one Mac app to another: put the first away, or
+        // its window stays where the card was and stops following it.
+        if let previous = dockedBundleID, previous != bundleID {
+            NSRunningApplication.runningApplications(withBundleIdentifier: previous).first?.hide()
+        }
         dockedBundleID = bundleID
         isSuspended = false
         NativeApp.open(bundleID: bundleID)

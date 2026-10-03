@@ -21,6 +21,14 @@ final class ChorusTests: XCTestCase {
         XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: ""), 0)
         XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "12"), 12)
         XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "•"), 1)
+        XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "1.2K"), 1)
+        XCTAssertEqual(NativeApp.badgeCount(fromDockLabel: "٣"), 1)
+    }
+
+    func testNativeAppRefusesChorusItself() {
+        XCTAssertTrue(NativeApp.isChorus(bundleID: "com.nicojan.Chorus"))
+        XCTAssertTrue(NativeApp.isChorus(bundleID: "com.nicojan.Chorus.debug"))
+        XCTAssertFalse(NativeApp.isChorus(bundleID: "jp.naver.line.mac"))
     }
 
     func testBadgeSweepSkipsNativeApps() {
@@ -2714,6 +2722,31 @@ final class ChorusTests: XCTestCase {
         XCTAssertNil(imported.cameraPolicyRaw, "an imported service asks for the camera again")
         XCTAssertEqual(imported.pageZoom, 3.0, "zoom is held to what Chorus offers")
         XCTAssertEqual(try target.mainContext.fetch(FetchDescriptor<SpaceServiceLink>()).count, 1, "one link, not two")
+    }
+
+    /// A Mac app in a space survives export and import, and is not listed as
+    /// a site in the import confirmation.
+    @MainActor
+    func testSetupArchiveCarriesMacApps() throws {
+        let source = try makeGroupingContainer()
+        let src = source.mainContext
+        let space = Space(name: "Chat", emoji: "💬", sortOrder: 0)
+        let line = ServiceInstance(label: "LINE", url: NativeApp.serviceURL(forBundleID: "jp.naver.line.mac"))
+        src.insert(space)
+        src.insert(line)
+        try src.save()
+        link(line, to: space, sortOrder: 0, in: src)
+        try src.save()
+
+        let archive = try SetupArchive.decode(SetupArchive.capture(from: src, appVersion: nil).encoded())
+        XCTAssertEqual(archive.services.map(\.url), ["chorus-app://jp.naver.line.mac"])
+        XCTAssertEqual(archive.hosts, [])
+
+        let target = try makeGroupingContainer()
+        let summary = try archive.apply(to: target.mainContext)
+        XCTAssertEqual(summary.servicesAdded, 1)
+        let imported = try XCTUnwrap(try target.mainContext.fetch(FetchDescriptor<ServiceInstance>()).first)
+        XCTAssertEqual(imported.nativeAppBundleID, "jp.naver.line.mac")
     }
 
     // MARK: - Download list

@@ -932,10 +932,13 @@ struct UnifiedRailView: View {
             }
         }
 
-        Divider()
+        // A Mac app has no page to open in a browser.
+        if service.nativeAppBundleID == nil {
+            Divider()
 
-        Button("Open in Safari") {
-            openInDefaultBrowser(service)
+            Button("Open in Safari") {
+                openInDefaultBrowser(service)
+            }
         }
 
         Divider()

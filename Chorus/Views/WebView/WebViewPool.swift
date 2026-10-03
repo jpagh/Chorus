@@ -464,6 +464,17 @@ final class WebViewPool {
         teardownWebView(instanceID)
     }
 
+    /// Steps the visible service down when the selection moves to something
+    /// with no web view (a Mac app), as `webView(for:)` does on a switch
+    /// between pages. Without it the hidden page kept counting as the one on
+    /// screen: its poll stopped, its media played on, and ⌘R and camera
+    /// requests went to it.
+    func deactivateActiveService() {
+        guard let id = activeServiceID else { return }
+        activeServiceID = nil
+        softHibernateService(id)
+    }
+
     // MARK: - Soft Hibernate (resource offloading without destroying the web view)
 
     /// Suspends media playback and captures a snapshot.

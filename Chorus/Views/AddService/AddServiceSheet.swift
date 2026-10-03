@@ -12,6 +12,7 @@ struct AddServiceSheet: View {
     @State private var customURL = ""
     @State private var customLabel = ""
     @State private var urlError: String?
+    @State private var macAppError: String?
 
     enum AddServiceTab: String, CaseIterable {
         case catalog = "Browse"
@@ -151,6 +152,11 @@ struct AddServiceSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Choose App…") { chooseMacApp() }
                 .buttonStyle(.borderedProminent)
+            if let macAppError {
+                Text(macAppError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -166,7 +172,13 @@ struct AddServiceSheet: View {
         guard panel.runModal() == .OK, let appURL = panel.url,
               let bundleID = Bundle(url: appURL)?.bundleIdentifier
         else { return }
+        // Docking Chorus would move and hide its own window. Any build counts.
+        guard !NativeApp.isChorus(bundleID: bundleID) else {
+            macAppError = "Chorus can't hold itself in a tab."
+            return
+        }
         addMacApp(at: appURL, bundleID: bundleID)
+        NativeAppBadgeReader.requestTrust()
     }
 
     private func addMacApp(at appURL: URL, bundleID: String) {
