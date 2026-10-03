@@ -373,7 +373,7 @@ private struct NativeAppPanel: View {
                 Button("Open \(label)") { NativeAppDocker.shared.dock(bundleID: bundleID) }
                     .buttonStyle(.borderedProminent)
                 if !isTrusted {
-                    Text("To show \(label)'s unread count in Chorus, turn on Chorus in System Settings, under Privacy & Security, then Accessibility.")
+                    Text("To show \(label)'s unread count and hold its window in place, turn on Chorus in System Settings, under Privacy & Security, then Accessibility.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

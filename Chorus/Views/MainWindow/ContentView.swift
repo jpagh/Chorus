@@ -107,6 +107,19 @@ struct ContentView: View {
                     .environment(appState)
             }
         }
+        .alert(
+            "Let Chorus use Accessibility for \(appState.accessibilityExplanationAppName ?? "")?",
+            isPresented: Binding(
+                get: { appState.accessibilityExplanationAppName != nil },
+                set: { if !$0 { appState.accessibilityExplanationAppName = nil } }
+            ),
+            presenting: appState.accessibilityExplanationAppName
+        ) { _ in
+            Button("Continue") { NativeAppBadgeReader.requestTrust() }
+            Button("Not Now", role: .cancel) {}
+        } message: { name in
+            Text("Chorus needs it for two things: to read \(name)'s unread count from the Dock, and to move \(name)'s window over the space its tab would take. It never reads what's inside \(name) or any other app. macOS asks next. You can turn it off any time in System Settings, under Privacy & Security, then Accessibility.")
+        }
         .sheet(isPresented: $state.showQuickSwitcher) {
             QuickSwitcherView()
                 .environment(appState)

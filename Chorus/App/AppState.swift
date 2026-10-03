@@ -53,6 +53,21 @@ final class AppState {
     var pendingEditServiceID: UUID?
     /// The version whose What's New sheet is up, or nil.
     var whatsNewVersion: String?
+    /// The Mac app whose name the Accessibility explanation is about, or nil
+    /// when it isn't showing. See `explainAccessibility(for:)`.
+    var accessibilityExplanationAppName: String?
+
+    /// Says why Chorus wants Accessibility before macOS asks, after a Mac app
+    /// is added. A bare system prompt to "control this computer" is easy to
+    /// refuse. Waits for the Add Service sheet to go, since an alert can't come
+    /// up while it closes.
+    func explainAccessibility(for appName: String) {
+        guard !NativeAppBadgeReader.isTrusted else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            accessibilityExplanationAppName = appName
+        }
+    }
 
     /// True once launch-time preference loading has finished. Gates the DND
     /// `didSet`s below so they don't push the effective DND (which touches the

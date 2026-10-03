@@ -185,7 +185,7 @@ struct AddServiceSheet: View {
         }
         addMacApp(at: appURL, bundleID: bundleID)
         FeatureTips.markUsed(.addMacApp)
-        NativeAppBadgeReader.requestTrust()
+        appState.explainAccessibility(for: NativeApp.displayName(of: appURL))
     }
 
     private func addMacApp(at appURL: URL, bundleID: String) {

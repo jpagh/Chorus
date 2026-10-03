@@ -158,9 +158,10 @@ final class NativeAppBadgeReader {
 
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    /// Shows the system's Accessibility prompt. Called when a Mac app is
-    /// added, never on its own at launch: someone who declined would get the
-    /// prompt every time Chorus started. The panel has a button for later.
+    /// Shows the system's Accessibility prompt. Called only from the alert
+    /// that explains why (`AppState.explainAccessibility`), after a Mac app is
+    /// added; never on its own at launch, or someone who declined would get it
+    /// at every start. The panel has a button for later.
     static func requestTrust() {
         guard !isTrusted else { return }
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
