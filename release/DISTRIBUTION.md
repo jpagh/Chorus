@@ -75,6 +75,8 @@ Run from the repo root. Replace `X.Y.Z` with the new version.
 
    Edit in Xcode (target build settings) or via `agvtool`.
 
+   If the release should show its What's New sheet, add the version's entries to `WhatsNew.releases` in `Chorus/Views/Tips/WhatsNew.swift` first, under the exact `MARKETING_VERSION`. A version with no entry shows no sheet. The sheet shows once, after an update, never on a fresh install.
+
 Build each release into a folder of its own, `build/r1.5.23` and so on, and use it in place of `build/` in the commands below. The guard hook blocks `rm -rf` inside the repo, so clearing an old `build/Chorus.xcarchive` is not an option, and a fresh folder needs no delete.
 
 2. **Archive:**
