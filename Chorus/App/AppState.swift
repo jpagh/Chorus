@@ -3346,7 +3346,10 @@ extension AppState {
             badgeManager.mockCounts = [:]
             return
         }
+        // A Mac app's count comes from the Dock, not a page, so it keeps its
+        // real count: that reading is what needs checking by eye.
         let services = ((try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+            .filter { $0.nativeAppBundleID == nil }
             .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending || ($0.label == $1.label && $0.id.uuidString < $1.id.uuidString) }
         var mock: [UUID: Int] = [:]
         for (index, service) in services.enumerated() {
@@ -3374,6 +3377,7 @@ extension AppState {
                 // be flipped while the app runs.
                 if UserDefaults.standard.bool(forKey: DemoControl.tickerOffKey) { continue }
                 guard let id = ((try? self.modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? [])
+                        .filter({ $0.nativeAppBundleID == nil })
                         .map(\.id).randomElement()
                 else { return }
                 self.badgeManager.bumpMockCount(for: id)
