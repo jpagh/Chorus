@@ -1,10 +1,12 @@
 # Open items
 
-## Built, not released: Mac apps in the rail (`feat/mac-app-services`)
+## Shipped in 1.5.26: Mac apps in the rail, feature tips, What's New, and the ⌘K fixes
 
 Asked for on 2026-10-02 so LINE, which has no web version, can live in the rail. macOS has no way to put another process's window inside ours, so a Mac-app service is a launcher that docks the app's own window over the card. The app is stored as `url = chorus-app://<bundle id>` (`NativeApp` in `Services/NativeAppSupport.swift`), which needs no schema version. Pieces: `NativeAppDocker` moves and sizes the window through the Accessibility API, following `ScreenFrameReporter` in `WebContentView`; it hides the app on switch-away, minimize, close and ⌘H, and brings it back when Chorus returns unless the click landed on Chorus's own controls. `NativeAppBadgeReader` reads the Dock's `AXStatusLabel` every 3 s. The pool, the transient badge sweep and the favicon fetcher all skip these services. The Edit sheet shows only name, mute and badge for one.
 
 The user tried docking with LINE in a Debug build on 2026-10-02 and it worked well, the second pass too. A code review the same evening found and fixed: the outgoing web service stayed "active" in the pool while a Mac app was selected (no badge poll, media kept playing, ⌘R and camera went to it); one Mac app to another left the first window behind; the Accessibility prompt fired at every launch (now only when a Mac app is added); export dropped Mac apps; Chorus could be added as its own Mac app; badge writes every 3 s redrew the rail. The user checked the switch-away and ⌘-Tab/⌘Q fixes live the same evening; CI green on `70b0dc7`.
+
+Released 2026-10-03 as 1.5.26 (build 39, tag `680e83c`, DMG 9,653,131 bytes, sha256 `cbb21013…3bc5`). The same release adds TipKit tips (`Views/Tips/FeatureTips.swift`) and a What's New sheet keyed by version in `WhatsNew.releases`; add an entry there for any later release that should show one. Not yet seen on a real install: the sheet after an actual update from 1.5.25, tips on macOS 14 and 15, and Accessibility trust on the signed release build.
 
 ### Still open
 
@@ -23,7 +25,7 @@ The suspect is `077a9d4`, the Gmail fix in 1.5.25. It made two changes, and eith
 
 If it comes back: first ask whether a window resize or a reload clears it. If a resize clears it, the page kept a stale size, so look at those two changes. If neither does, sign in to Instagram in a Debug build and inspect it in Safari's Web Inspector: compare `innerHeight` with the web view's bounds, and find which element sets the page's height.
 
-## Fixed on `feat/mac-app-services`: the quick switcher's first row, and its jumping field
+## Shipped in 1.5.26: the quick switcher's first row, and its jumping field
 
 Found while recording demo clips on 2026-09-30: type a filter into ⌘K and the first row kept the service it showed before. The cause was `.id(index)` in `QuickSwitcherView.resultsList`; rows now take `.id(result.id)`, and "gm" was checked live to show Gmail first. On 2026-10-02 the user also reported the field moving as results changed: the switcher was a sheet, which macOS keeps centred. It is now an overlay in `ContentView.quickSwitcherLayer`, with the field about a fifth of the way down and only the list changing height. Focus is set again 50 ms after appearing, because the first request is dropped while the overlay joins the window.
 
