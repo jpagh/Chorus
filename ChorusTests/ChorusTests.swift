@@ -8,6 +8,20 @@ import CryptoKit
 
 @MainActor
 final class ChorusTests: XCTestCase {
+    /// The switcher's field stays put: only the list's height follows the
+    /// results, one row for "no matches", capped to what the window has room for.
+    func testQuickSwitcherListFollowsItsResults() {
+        let row = QuickSwitcherView.rowHeight
+        XCTAssertEqual(QuickSwitcherView.listHeight(forResultCount: 0), QuickSwitcherView.listHeight(forResultCount: 1))
+        XCTAssertEqual(QuickSwitcherView.listHeight(forResultCount: 3) - QuickSwitcherView.listHeight(forResultCount: 1), 2 * row)
+        XCTAssertEqual(QuickSwitcherView.listHeight(forResultCount: 50), QuickSwitcherView.listHeight(forResultCount: QuickSwitcherView.maxVisibleRows))
+        XCTAssertEqual(QuickSwitcherView.maxRows(windowHeight: 2000), QuickSwitcherView.maxVisibleRows)
+        // The shortest window Chorus allows still fits the panel it draws.
+        let height: CGFloat = 500
+        let rows = QuickSwitcherView.maxRows(windowHeight: height)
+        XCTAssertLessThanOrEqual(QuickSwitcherView.topInset(windowHeight: height) + 60 + QuickSwitcherView.listHeight(forResultCount: 99, maxRows: rows), height)
+    }
+
     func testWhatsNewShowsOnceAfterAnUpdateWithEntries() {
         let version = "1.5.26"
         XCTAssertFalse(WhatsNew.items(for: version).isEmpty)

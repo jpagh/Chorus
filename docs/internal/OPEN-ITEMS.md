@@ -23,9 +23,9 @@ The suspect is `077a9d4`, the Gmail fix in 1.5.25. It made two changes, and eith
 
 If it comes back: first ask whether a window resize or a reload clears it. If a resize clears it, the page kept a stale size, so look at those two changes. If neither does, sign in to Instagram in a Debug build and inspect it in Safari's Web Inspector: compare `innerHeight` with the web view's bounds, and find which element sets the page's height.
 
-## Open: the quick switcher's first row shows the wrong service
+## Fixed on `feat/mac-app-services`: the quick switcher's first row, and its jumping field
 
-Found while recording demo clips on 2026-09-30. Type a filter into the ⌘K switcher and the first row keeps showing the service it held before, Slack in that run, while the rows under it update. Enter still opens the right service, so only the label is wrong. The likely cause is `.id(index)` in `QuickSwitcherView.resultsList`: the row keeps its identity when its service changes, so SwiftUI does not redraw it. Not fixed yet.
+Found while recording demo clips on 2026-09-30: type a filter into ⌘K and the first row kept the service it showed before. The cause was `.id(index)` in `QuickSwitcherView.resultsList`; rows now take `.id(result.id)`, and "gm" was checked live to show Gmail first. On 2026-10-02 the user also reported the field moving as results changed: the switcher was a sheet, which macOS keeps centred. It is now an overlay in `ContentView.quickSwitcherLayer`, with the field about a fifth of the way down and only the list changing height. Focus is set again 50 ms after appearing, because the first request is dropped while the overlay joins the window.
 
 ## Shipped in 1.5.25: Gmail's top bar at launch, and a fade on the rail
 

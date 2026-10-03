@@ -1,8 +1,11 @@
 import SwiftUI
 import SwiftData
 
+/// The ⌘K switcher. It sits at a fixed spot near the top of the window, as
+/// Spotlight does, and only the list below the field changes height. It used
+/// to be a sheet, which macOS keeps centred, so every keystroke that changed
+/// the number of results moved the field.
 struct QuickSwitcherView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
     @Query private var allLinks: [SpaceServiceLink]
     @Query(sort: \Space.sortOrder) private var spaces: [Space]
@@ -10,14 +13,45 @@ struct QuickSwitcherView: View {
     @State private var searchText = ""
     @State private var selectedIndex = 0
     @State private var results: [QuickSwitcherResult] = []
+    @FocusState private var fieldFocused: Bool
+    /// The most rows the window has room for below the field, so a short
+    /// window scrolls the list instead of cutting the panel off.
+    var maxRows: Int = QuickSwitcherView.maxVisibleRows
+
+    static let width: CGFloat = 420
+    /// Every row is this tall, so the list's height follows from its count.
+    static let rowHeight: CGFloat = 46
+    /// The list scrolls past this many rows.
+    static let maxVisibleRows = 8
+    private static let listPadding: CGFloat = 8
+
+    /// The list's height for a number of results: one row for "no matches",
+    /// otherwise every row up to the cap.
+    static func listHeight(forResultCount count: Int, maxRows: Int = maxVisibleRows) -> CGFloat {
+        CGFloat(min(max(count, 1), maxRows)) * rowHeight + listPadding
+    }
+
+    /// How far below the window's top edge the field sits: about a fifth of
+    /// the way down, as Spotlight sits on the screen.
+    static func topInset(windowHeight: CGFloat) -> CGFloat {
+        max(48, windowHeight * 0.18)
+    }
+
+    /// Rows that fit between the field and the bottom of the window.
+    static func maxRows(windowHeight: CGFloat) -> Int {
+        let fieldAndMargins: CGFloat = 90
+        let room = windowHeight - topInset(windowHeight: windowHeight) - fieldAndMargins
+        return min(maxVisibleRows, max(3, Int(room / rowHeight)))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             searchField
             Divider()
             resultsList
+                .frame(height: Self.listHeight(forResultCount: results.count, maxRows: maxRows))
         }
-        .frame(minWidth: 420, maxWidth: 420, minHeight: 280, maxHeight: 480)
+        .frame(width: Self.width)
         .background(.ultraThickMaterial)
         .clipShape(RoundedRectangle(cornerRadius: ChorusRadius.surface))
         .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
@@ -33,8 +67,21 @@ struct QuickSwitcherView: View {
         }
         .onAppear {
             recomputeResults()
+            // Focus set during onAppear is dropped while the overlay is still
+            // joining the window (the rail kept the keys), so ask again a beat
+            // later. A sheet used to do this by itself.
+            fieldFocused = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(50))
+                fieldFocused = true
+            }
             FeatureTips.markUsed(.openQuickSwitcher)
         }
+        .accessibilityAddTraits(.isModal)
+    }
+
+    private func dismiss() {
+        appState.showQuickSwitcher = false
     }
 
     /// A stable string signature of the links' displayed content, so onChange
@@ -90,6 +137,7 @@ struct QuickSwitcherView: View {
             TextField("Jump to service...", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.title3)
+                .focused($fieldFocused)
                 .onSubmit {
                     selectCurrent()
                 }
@@ -130,7 +178,7 @@ struct QuickSwitcherView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
+                            .frame(height: Self.rowHeight)
                     } else {
                         ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
                             Button {
@@ -142,7 +190,10 @@ struct QuickSwitcherView: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .id(index)
+                            // The result's own id, which ForEach already uses.
+                            // `.id(index)` here overrode it, so the first row
+                            // kept the service it showed before a filter.
+                            .id(result.id)
                             .onHover { hovering in
                                 if hovering { selectedIndex = index }
                             }
@@ -154,7 +205,8 @@ struct QuickSwitcherView: View {
                 .padding(.vertical, 4)
             }
             .onChange(of: selectedIndex) { _, newValue in
-                proxy.scrollTo(newValue, anchor: .center)
+                guard results.indices.contains(newValue) else { return }
+                proxy.scrollTo(results[newValue].id, anchor: .center)
             }
         }
     }
@@ -229,7 +281,7 @@ private struct QuickSwitcherRow: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .frame(height: QuickSwitcherView.rowHeight)
         .background(
             RoundedRectangle(cornerRadius: ChorusRadius.control)
                 .fill(isHighlighted ? AnyShapeStyle(.tint.opacity(0.12)) : AnyShapeStyle(Color.clear))

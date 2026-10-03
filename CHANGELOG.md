@@ -11,6 +11,11 @@ All notable changes to Chorus are documented here. Format loosely follows
 - Tips for features people miss: the four layouts, Mac apps, the ⌘K switcher, and each service's own settings. A tip points at the control it describes and has a button that takes you straight there. One a day, at most. Close a tip, or use the feature, and it's gone.
 - After an update, a short sheet lists what's new, with a button to try each item.
 
+### Fixed
+
+- The ⌘K switcher no longer moves as you type. The search field stays in one place near the top of the window, and the list below it grows or shrinks with the matches.
+- The switcher's first row could show the wrong service after you typed a filter. Enter still opened the right one, but the name was wrong.
+
 ## [1.5.25] - 2026-10-01
 
 ### Fixed

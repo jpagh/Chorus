@@ -45,6 +45,7 @@ struct ContentView: View {
         // the very top of the window; the traffic-light insets keep the
         // top-left clear.
         .ignoresSafeArea(.container, edges: .top)
+        .overlay { quickSwitcherLayer }
         // The top-bar and hybrid layouts put draggable tabs in the title-bar
         // drag band, so turn the OS window drag off there (a click-drag on a tab
         // would otherwise move the window instead of reordering) and let the
@@ -119,11 +120,6 @@ struct ContentView: View {
             Button("Not Now", role: .cancel) {}
         } message: { name in
             Text("Chorus needs it for two things: to read \(name)'s unread count from the Dock, and to move \(name)'s window over the space its tab would take. It never reads what's inside \(name) or any other app. macOS asks next. You can turn it off any time in System Settings, under Privacy & Security, then Accessibility.")
-        }
-        .sheet(isPresented: $state.showQuickSwitcher) {
-            QuickSwitcherView()
-                .environment(appState)
-                .modelContainer(appState.modelContainer)
         }
         .sheet(isPresented: $state.isShowingStoreRecovery, onDismiss: {
             // Only quits when the user actually picked a backup. It has to
@@ -237,6 +233,26 @@ struct ContentView: View {
                         .overlay(alignment: .leading) { RailWidthHandle(showsNames: $showSpaceNames) }
                 }
             }
+        }
+    }
+
+    /// The ⌘K switcher over the whole window: a faint scrim that closes it on
+    /// a click, and the panel pinned near the top. See `QuickSwitcherView`.
+    @ViewBuilder
+    private var quickSwitcherLayer: some View {
+        if appState.showQuickSwitcher {
+            GeometryReader { proxy in
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.12)
+                        .contentShape(Rectangle())
+                        .onTapGesture { appState.showQuickSwitcher = false }
+                        .accessibilityHidden(true)
+                    QuickSwitcherView(maxRows: QuickSwitcherView.maxRows(windowHeight: proxy.size.height))
+                        .padding(.top, QuickSwitcherView.topInset(windowHeight: proxy.size.height))
+                }
+            }
+            .ignoresSafeArea()
+            .transition(.opacity)
         }
     }
 
