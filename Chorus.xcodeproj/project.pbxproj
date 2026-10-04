@@ -57,6 +57,7 @@
 		8F6E2C62BD277E5577FBE480 /* WebContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4617D503719C1701307F28 /* WebContentView.swift */; };
 		92BF212550953DD2E21A12E7 /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EC3720B49A4D8B953CDA90 /* EmojiPickerView.swift */; };
 		9722D48056956FA71E911D98 /* ServicePopup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200FB7DAF9279B0E2764474D /* ServicePopup.swift */; };
+		97D0EDAE4F2712616A66B8C2 /* WebViewPoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E589AEBC286712A2556141FC /* WebViewPoolTests.swift */; };
 		9912BDFEE290E93DC57ED3C7 /* DemoControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42C2BEF1C847F26AD98EABF0 /* DemoControl.swift */; };
 		9EDF307D989D199DE994D432 /* EditServiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DD5F8F7C2450C88FA1A3886 /* EditServiceSheet.swift */; };
 		9F0C82A9D1AFDF927EC1A59C /* DarkReaderSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6935142E75345640B2C4D7F0 /* DarkReaderSupport.swift */; };
@@ -191,6 +192,7 @@
 		E143D686890F381C5B42761F /* ChorusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChorusApp.swift; sourceTree = "<group>"; };
 		E1E431CF7CE145D536081A23 /* UserAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAgentProvider.swift; sourceTree = "<group>"; };
 		E30F23AFD0B5D81AF103BF37 /* ServiceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceCatalog.swift; sourceTree = "<group>"; };
+		E589AEBC286712A2556141FC /* WebViewPoolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewPoolTests.swift; sourceTree = "<group>"; };
 		E84C935C8A82FD6B6B969E6B /* ServiceIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceIconView.swift; sourceTree = "<group>"; };
 		E88CC47CBB66B4749ACDC068 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		EA17C93CEDF437318D536482 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -458,6 +460,7 @@
 			children = (
 				FBA2B8A19B41207F66E51CC3 /* ChorusTests.swift */,
 				8F3C6319147E80D9FCD5260E /* WebViewDepartureTests.swift */,
+				E589AEBC286712A2556141FC /* WebViewPoolTests.swift */,
 			);
 			path = ChorusTests;
 			sourceTree = "<group>";
@@ -646,6 +649,7 @@
 			files = (
 				C4ADA7C24E806E00FF4709D1 /* ChorusTests.swift in Sources */,
 				BEB67E84D36E90ADBC75AEF6 /* WebViewDepartureTests.swift in Sources */,
+				97D0EDAE4F2712616A66B8C2 /* WebViewPoolTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

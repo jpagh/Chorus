@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 struct WebViewContainer: NSViewRepresentable {
-    let webView: WKWebView
+    let webView: WKWebView?
 
     func makeNSView(context: Context) -> WebViewHostView {
         let host = WebViewHostView()
@@ -48,12 +48,19 @@ final class WebViewHostView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func setWebView(_ webView: WKWebView) {
-        guard webView !== currentWebView || webView.superview !== self else { return }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let currentWebView, let hit = super.hitTest(point),
+              hit === currentWebView || hit.isDescendant(of: currentWebView)
+        else { return nil }
+        return hit
+    }
+
+    func setWebView(_ webView: WKWebView?) {
+        guard webView !== currentWebView || (webView != nil && webView?.superview !== self) else { return }
 
         // A quick return (even through a different host) cancels the old
         // removal. Its pending task must not detach the now-active view.
-        if let previousHost = webView.superview as? WebViewHostView {
+        if let webView, let previousHost = webView.superview as? WebViewHostView {
             previousHost.cancelDetachment(of: webView)
         }
         let outgoing = currentWebView
@@ -61,28 +68,31 @@ final class WebViewHostView: NSView {
         let transfersFocus = outgoing.map { focused === $0 || focused?.isDescendant(of: $0) == true } ?? false
         currentWebView = webView
 
-        let alreadyAttached = webView.superview === self
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        webView.setAccessibilityHidden(false)
-        addSubview(webView)
-        if !alreadyAttached {
-            NSLayoutConstraint.activate([
-                webView.topAnchor.constraint(equalTo: topAnchor),
-                webView.bottomAnchor.constraint(equalTo: bottomAnchor),
-                webView.leadingAnchor.constraint(equalTo: leadingAnchor),
-                webView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            ])
+        if let webView {
+            let alreadyAttached = webView.superview === self
+            webView.translatesAutoresizingMaskIntoConstraints = false
+            webView.setAccessibilityHidden(false)
+            addSubview(webView)
+            if !alreadyAttached {
+                NSLayoutConstraint.activate([
+                    webView.topAnchor.constraint(equalTo: topAnchor),
+                    webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    webView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    webView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+            }
         }
 
         // Retaining the old view must not leave keyboard input routed to it.
         // Do not steal focus when the user is navigating the rail instead.
+        // A native panel or empty selection has no incoming page to focus.
         if transfersFocus { window?.makeFirstResponder(webView) }
 
         if let outgoing, outgoing !== webView {
             outgoing.setAccessibilityHidden(true)
             let id = ObjectIdentifier(outgoing)
-            // Show the new page at once. Keep the old one attached underneath
-            // until its native exit and any resulting page work can run.
+            // Show the new page or native panel at once. Keep the old page
+            // attached underneath until its native exit and page work can run.
             pendingDetachments[id] = Task { @MainActor [weak self] in
                 await WebViewDeparture.prepareForDestruction(in: [outgoing])
                 guard !Task.isCancelled, let self else { return }
