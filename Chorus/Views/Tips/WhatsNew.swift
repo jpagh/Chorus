@@ -14,6 +14,16 @@ enum WhatsNew {
     }
 
     static let releases: [String: [Item]] = [
+        "1.5.27": [
+            Item(
+                id: "service-tabs",
+                systemImage: "square.on.square",
+                title: "Pages open as tabs",
+                detail: "When a service opens one of its own pages in a new window, such as a design in Canva, the page now opens as a tab inside the service. Press ⌘W to close it.",
+                action: nil,
+                actionTitle: ""
+            ),
+        ],
         "1.5.26": [
             Item(
                 id: "mac-apps",
