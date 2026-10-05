@@ -1,5 +1,60 @@
 # Open items
 
+## Shipped in 1.5.27: tabs for pages a service opens for itself
+
+A user reported on 2026-10-04 that opening a design in Canva opened a separate window. A Debug probe of `createWebViewWith` showed why. Canva opens a design with an unsized `window.open` to `canva.com/design/editor/shell?designId=…`, and its Google sign-in with a `window.open` to `canva.com/oauth/authorize/GOOGLE` asking for 580 by 700. A script-opened window to the same service always fell through to a popup window, because returning nil from `window.open` reads as "popup blocked" to a sign-in flow.
+
+`WebViewCoordinator.opensAsTab` now turns an unsized, same-service `window.open` from the service page (not from a popup) into a tab, unless the URL looks like a sign-in. The check runs `looksLikeSignIn`, then a looser `pathMentionsSignIn` substring test that catches Figma's `/start_google_sso`. The coordinator still returns a real web view, so `window.opener` keeps working, and shows it in `ServiceTabStrip` above the page. The model is `ServiceTabs` and `ServiceTab` (`Views/WebView/ServiceTabs.swift`), in memory only, with no schema change.
+
+How tabs behave:
+
+- They report no health or badge. They share the service's camera, mic and sound state, Mute All and Pause Audio, through `WebViewPool.allWebViews(for:)` and the tab watchers.
+- They get the quit save handoff, plus half a second to save when closed by hand. They reload with crash backoff.
+- They close on `window.close()` (which also schedules the deferred reload of the service page), and once a download starts in a tab that opened only to fetch a file.
+- They keep the service out of the idle and memory hibernation sweeps, and close on a manual hibernation or rebuild.
+- A popup a tab opens never reloads anything when it closes (`ServicePopup.reloadsOpener`).
+
+The menu and buttons:
+
+- ⌘W replaces File > Close (`CommandGroup(replacing: .saveItem)`). It closes the tab only when the key window holds that tab, and otherwise closes the front window.
+- ⌘⇧[ and ⌘⇧] cycle through the page and its tabs. Home goes back to the service page. Reload and Find act on the tab on screen; zoom applies to all of the service's pages.
+- Identical notifications within 3 s now post once (`NotificationMessageHandler.isDuplicate`), because a chat open in a tab fires each one twice.
+
+A qa-reviewer pass found one High and six Medium issues, all fixed before merge. CI passed on 14 and 15. Checked live in Debug with Canva:
+
+- a design opens as a tab and Chorus keeps one window;
+- switching tabs by click and by ⌘⇧], and leaving the service and coming back, keep the tab;
+- ⌘W and the × close the tab and leave the window;
+- Home returns to the page;
+- Canva's Google sign-in still opens as its own window, closes itself and signs in.
+
+Released 2026-10-05 as 1.5.27: build 40, tag `4ab767f`, DMG 10,520,614 bytes, sha256 `05de6b7f…0bcf`. Appcast `84c6cad`, cask `ea2e820` here and `51d3dcc` in the tap. It has a What's New entry, "Pages open as tabs".
+
+### Still open
+
+- The stock "Close All" (⌥⌘W) is gone, because `.saveItem` was replaced.
+- A Dark Reader toggle reaches an open tab only on its next load (`applyDarkState` and `refreshDarkMode` touch the page only).
+- A tab whose first load fails shows a blank page, with no error page or Try Again. Reload in a tab with no URL falls back to the service home URL.
+- The ⌘W item reads "Close Tab" even while Settings or a popup is in front. It still closes the right window.
+- A window opened at `about:blank` and pointed somewhere later stays a window. Canva doesn't do this; others may.
+- Not tried: Figma, Notion, Miro and Drive opening files; the tab strip on macOS 14 and 15 (CI compiles and tests only); ⌘⇧[ and ⌘⇧] on a non-US keyboard.
+- Tabs add no automated test for the branch order in `createWebViewWith`, for `closeTabOrWindow`, or for the tab and popup opener interplay.
+
+## Open: sign-in groups (services sharing cookies), explored, not built
+
+Asked on 2026-10-05 and parked for its own session. No code exists yet. The exploration found:
+
+- **No schema change is needed.** A service points at its store through `ServiceInstance.dataStoreIdentifier`, and `DataStoreManager` keeps one `WKWebsiteDataStore` per identifier. Two services with the same identifier share cookies and storage, and keep their own user agent, scripts and zoom.
+- **Deleting one member is already safe.** `cleanUpOrphanedDataStores` drops a tombstone that a live service still claims.
+- **`clearSession` is the one unsafe path.** It wipes the shared store but reloads only one service, so it needs a warning that names the other members, and it should reload them all.
+- **Export and import skip the identifier** (`SetupArchive`), so imported services come in unshared.
+- **Recommended model: groups chosen per service, not per space.** A service can sit in several spaces, and two accounts of one service, such as work and personal Gmail, is a core use. Google also keeps all signed-in accounts in one jar, so two Gmail services sharing a store would both open the default account.
+- **The proposed UI:**
+  - "Share sign-in with…" in Edit Service. Joining adopts the other service's session and tombstones this one's old store; leaving gives it a fresh identifier.
+  - "Use your sign-in from Gmail" in Add Service, for a matching site.
+  - Optionally, a per-space shortcut that only fills a group.
+- **Before shipping,** check two live web views on one store on macOS 14, 15 and 26.
+
 ## Shipped in 1.5.26: Mac apps in the rail, feature tips, What's New, and the ⌘K fixes
 
 Asked for on 2026-10-02 so LINE, which has no web version, can live in the rail. macOS has no way to put another process's window inside ours, so a Mac-app service is a launcher that docks the app's own window over the card. The app is stored as `url = chorus-app://<bundle id>` (`NativeApp` in `Services/NativeAppSupport.swift`), which needs no schema version. Pieces: `NativeAppDocker` moves and sizes the window through the Accessibility API, following `ScreenFrameReporter` in `WebContentView`; it hides the app on switch-away, minimize, close and ⌘H, and brings it back when Chorus returns unless the click landed on Chorus's own controls. `NativeAppBadgeReader` reads the Dock's `AXStatusLabel` every 3 s. The pool, the transient badge sweep and the favicon fetcher all skip these services. The Edit sheet shows only name, mute and badge for one.
