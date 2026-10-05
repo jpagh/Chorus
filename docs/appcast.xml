@@ -3,6 +3,20 @@
     <channel>
         <title>Chorus</title>
         <item>
+            <title>1.5.27</title>
+            <pubDate>Mon, 05 Oct 2026 00:12:42 -0700</pubDate>
+            <sparkle:version>40</sparkle:version>
+            <sparkle:shortVersionString>1.5.27</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>When a service opens one of its own pages in a new window, such as a design in Canva, the page now opens as a tab at the top of the service's card. The service's own page stays in the first tab. Click a tab to switch, use ⌘⇧[ and ⌘⇧] to move between them, and press ⌘W or click the × to close one. Sign-in windows still open as windows. Tabs close when the service hibernates, and Chorus won't hibernate a service on its own while it has a tab open. Chorus doesn't keep tabs after you quit.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/nicojan/Chorus/releases/download/v1.5.27/Chorus-1.5.27.dmg" length="10520614" type="application/octet-stream" sparkle:edSignature="As5V/dHOCsNThgZ8V15Vl7C0acEXGnN8XxF/QVtbZQJdeCoAZXKe2VcUV4kRu4Q1jYA8p5cP9YrhQa5f8TteAw=="/>
+        </item>
+        <item>
             <title>1.5.26</title>
             <pubDate>Sat, 03 Oct 2026 00:28:59 -0700</pubDate>
             <sparkle:version>39</sparkle:version>
