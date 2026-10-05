@@ -15,6 +15,7 @@
 		074FE22389F3BF8A951A80CA /* SetupArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2C3D766E33A238E3561B34 /* SetupArchive.swift */; };
 		08325D59D0DA278497FDA446 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 33B60E7DE1B2CCE732C55AF9 /* LICENSE */; };
 		091825995DF2FD9C4A7BC86F /* KeyboardShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AC7E996360A4BC660FD194 /* KeyboardShortcutManager.swift */; };
+		17274B7DA79560457403E050 /* ServiceTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E0761BBE5A85E34BC73573 /* ServiceTabs.swift */; };
 		1C5CD1937EFECD06DA479F86 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEC9767949C165F7DCD9A281 /* Space.swift */; };
 		1CC3A629AEC1BBF9ACDC5FB0 /* SpaceHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D93229EEC510DC0850005E /* SpaceHeaderView.swift */; };
 		230144499E6BE9FD41C03338 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7458024AA17BF508D4807018 /* ContentView.swift */; };
@@ -51,6 +52,7 @@
 		8325C3DEC3242E7E2C19EB07 /* SpacePaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E9D5B98CFDDD0B2E7FD42C /* SpacePaletteView.swift */; };
 		863BAA64BC341E5286D8915E /* UnifiedRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D2B28970B7AEF9B0EB53AFD /* UnifiedRailView.swift */; };
 		8AEFF9F928EBEA5194112A21 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DD7FF3D960F0FCA3A2F310B1 /* Assets.xcassets */; };
+		8DEAA301843C94622A4061F4 /* ServiceTabStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2B240CAC6C5AD94A056FA8 /* ServiceTabStrip.swift */; };
 		8E4B7701A7A18F51C6109E10 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A3640458AF427BC8D3C8F2A /* NetworkMonitor.swift */; };
 		8F6E2C62BD277E5577FBE480 /* WebContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4617D503719C1701307F28 /* WebContentView.swift */; };
 		92BF212550953DD2E21A12E7 /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EC3720B49A4D8B953CDA90 /* EmojiPickerView.swift */; };
@@ -160,12 +162,14 @@
 		9DD5F8F7C2450C88FA1A3886 /* EditServiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditServiceSheet.swift; sourceTree = "<group>"; };
 		9EDCAF66B6DD05BA3A244E9E /* EmojiData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiData.swift; sourceTree = "<group>"; };
 		A81455BBBD65D1115E9A8DA3 /* OutsideLinkDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutsideLinkDefault.swift; sourceTree = "<group>"; };
+		AD2B240CAC6C5AD94A056FA8 /* ServiceTabStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceTabStrip.swift; sourceTree = "<group>"; };
 		AD49B64B44CC548574DA2348 /* DataStoreManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStoreManager.swift; sourceTree = "<group>"; };
 		B2E3F3C66C05EA91501A73EF /* ChorusAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChorusAppDelegate.swift; sourceTree = "<group>"; };
 		B3506A7D95472D8F3E822A39 /* ServiceCatalogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceCatalogEntry.swift; sourceTree = "<group>"; };
 		B44B9AB3EC52D565BFB46183 /* ServiceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceRowView.swift; sourceTree = "<group>"; };
 		B5AEA5DCBB5AB96E2C962A90 /* WindowBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowBackdrop.swift; sourceTree = "<group>"; };
 		B71CC3F7D7BD76E4100BC126 /* StoreRelocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRelocation.swift; sourceTree = "<group>"; };
+		B8E0761BBE5A85E34BC73573 /* ServiceTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceTabs.swift; sourceTree = "<group>"; };
 		BFD9BB4DBF6536D1AD0CA298 /* ServiceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceHealth.swift; sourceTree = "<group>"; };
 		CA55A0E026084DC20071FBCE /* QuickSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSwitcherView.swift; sourceTree = "<group>"; };
 		CA77C4C73BEB532F6AC1C339 /* AppRelauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRelauncher.swift; sourceTree = "<group>"; };
@@ -208,6 +212,7 @@
 			children = (
 				690DB6DBF74EAD8B040C1460 /* InAppBrowserWindow.swift */,
 				200FB7DAF9279B0E2764474D /* ServicePopup.swift */,
+				B8E0761BBE5A85E34BC73573 /* ServiceTabs.swift */,
 				09D9F34755F65BE5A3C76C88 /* WebViewContainer.swift */,
 				438D78C9503E732B7792FA10 /* WebViewCoordinator.swift */,
 				608B27F538D778C6FC4B1697 /* WebViewPool.swift */,
@@ -353,6 +358,7 @@
 				BFD9BB4DBF6536D1AD0CA298 /* ServiceHealth.swift */,
 				E84C935C8A82FD6B6B969E6B /* ServiceIconView.swift */,
 				B44B9AB3EC52D565BFB46183 /* ServiceRowView.swift */,
+				AD2B240CAC6C5AD94A056FA8 /* ServiceTabStrip.swift */,
 				52D93229EEC510DC0850005E /* SpaceHeaderView.swift */,
 				03E9D5B98CFDDD0B2E7FD42C /* SpacePaletteView.swift */,
 				537DF7ABA3D6DED64273776A /* SpaceStripView.swift */,
@@ -593,6 +599,8 @@
 				3291B385E6F0AED73FAE2B61 /* ServiceInstance.swift in Sources */,
 				9722D48056956FA71E911D98 /* ServicePopup.swift in Sources */,
 				C9091F7A466E9836DF4EA9A9 /* ServiceRowView.swift in Sources */,
+				8DEAA301843C94622A4061F4 /* ServiceTabStrip.swift in Sources */,
+				17274B7DA79560457403E050 /* ServiceTabs.swift in Sources */,
 				69FF2932CDD4A1208CA5DA71 /* SettingsView.swift in Sources */,
 				074FE22389F3BF8A951A80CA /* SetupArchive.swift in Sources */,
 				C4F49AC21F05DCC84FE0D96F /* SetupTransferSection.swift in Sources */,

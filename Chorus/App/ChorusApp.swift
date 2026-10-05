@@ -95,6 +95,16 @@ struct ChorusApp: App {
                 .keyboardShortcut("m", modifiers: [.command, .shift])
             }
 
+            // ⌘W closes the tab on screen, the way it does in a browser, and the
+            // window when there is none. Replacing the group takes out the stock
+            // Close item, which would otherwise claim ⌘W first.
+            CommandGroup(replacing: .saveItem) {
+                Button(appState.activeServiceShowsTab ? "Close Tab" : "Close") {
+                    appState.closeTabOrWindow()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+            }
+
             KeyboardShortcutCommands(
                 selectedServiceID: Binding(
                     get: { appState.selectedServiceID },
@@ -145,6 +155,20 @@ struct ChorusApp: App {
                     appState.findInPageVisible = true
                 }
                 .keyboardShortcut("f", modifiers: .command)
+
+                Divider()
+
+                Button("Show Previous Tab") {
+                    appState.selectActiveServiceTab(offset: -1)
+                }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(!appState.activeServiceHasTabs)
+
+                Button("Show Next Tab") {
+                    appState.selectActiveServiceTab(offset: 1)
+                }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(!appState.activeServiceHasTabs)
             }
         }
 

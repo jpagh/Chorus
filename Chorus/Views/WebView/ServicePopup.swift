@@ -11,15 +11,19 @@ final class ServicePopup {
     /// the URL that opened it — see `WebViewCoordinator.shouldReloadOpener` for
     /// why the rest of the navigation chain is deliberately not consulted.
     let openedAtAuthHost: Bool
+    /// False for a popup a tab opened: closing it never reloads anything. See
+    /// `WebViewCoordinator.createWebViewWith`.
+    let reloadsOpener: Bool
     var titleObservation: NSKeyValueObservation?
     /// Recent WebContent terminations, so a popup that crashes on every load
     /// gets the same backoff the main view has instead of reloading forever.
     var crashTimestamps: [Date] = []
 
-    init(webView: WKWebView, window: NSWindow, openedAtAuthHost: Bool) {
+    init(webView: WKWebView, window: NSWindow, openedAtAuthHost: Bool, reloadsOpener: Bool = true) {
         self.webView = webView
         self.window = window
         self.openedAtAuthHost = openedAtAuthHost
+        self.reloadsOpener = reloadsOpener
     }
 }
 

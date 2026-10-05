@@ -9,6 +9,19 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// one; a sign-in popup that opens its own adds a second. See `PopupChain`.
     private var popups: [ServicePopup] = []
 
+    /// Pages this service opened with `window.open` that show as tabs in its
+    /// card. See `opensAsTab`.
+    let tabs = ServiceTabs()
+
+    /// Told when a tab's web view opens and closes, so the pool can watch its
+    /// camera, microphone and sound. Set by `WebViewPool`.
+    var onTabOpened: ((WKWebView) -> Void)?
+    var onTabClosed: ((WKWebView) -> Void)?
+
+    /// Tabs the user closed, held for a moment while their pages save. See
+    /// `closeTab(_:)`.
+    private var closingTabs: [ServiceTab] = []
+
     /// The service's main web view that opened the current popup. Kept so we can
     /// reload it once the sign-in popup closes (see reloadOpenerAfterPopup).
     private weak var openerWebView: WKWebView?
@@ -246,7 +259,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // Only the service's main web view carries a badge — ignore OAuth
         // popups (the coordinator is their navigation delegate too).
-        guard !isPopup(webView), let instanceID else { return }
+        guard !isAuxiliary(webView), let instanceID else { return }
         if errorPageLoadInFlight {
             errorPageLoadInFlight = false
         } else {
@@ -280,6 +293,23 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             ) else {
                 AppLogger.webView.error("OAuth popup WebContent terminated repeatedly — closing popup")
                 closePopups(PopupChain.closedWhenClosing(at: index, count: popups.count))
+                return
+            }
+            if webView.url != nil { webView.reload() }
+            return
+        }
+
+        if let tab = tabs.tab(for: webView) {
+            let now = Date()
+            tab.crashTimestamps = tab.crashTimestamps.filter { now.timeIntervalSince($0) <= Self.crashWindow } + [now]
+            guard Self.shouldAutoReload(
+                crashTimestamps: tab.crashTimestamps,
+                now: now,
+                maxCrashes: Self.maxCrashesInWindow,
+                window: Self.crashWindow
+            ) else {
+                AppLogger.webView.error("Tab WebContent terminated repeatedly — closing tab")
+                closeTab(tab.id)
                 return
             }
             if webView.url != nil { webView.reload() }
@@ -334,7 +364,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         // can't render, a captive-portal blip) would break the OAuth flow.
         // Let the popup's own site handle it. (didFinish already skips the
         // popup; this keeps the failure path symmetric.)
-        if isPopup(webView) { return }
+        if isAuxiliary(webView) { return }
 
         let nsError = error as NSError
         guard !Self.keepsCurrentPage(afterProvisionalFailure: nsError, hasCommittedPage: webView.url != nil) else {
@@ -371,7 +401,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// spinning. Stop is a stop; anything else, a connection lost mid-load, is a
     /// failure the rail should show.
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        if isPopup(webView) { return }
+        if isAuxiliary(webView) { return }
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
             reportStoppedLoading(webView)
@@ -570,13 +600,30 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
             return nil
         }
 
+        // A page the service opens for itself — a Canva design, a Figma file —
+        // shows as a tab in the service's card, not in a loose window.
+        if let url = navigationAction.request.url,
+           Self.opensAsTab(
+               navigationType: navigationAction.navigationType,
+               openerIsPopup: openerIndex != nil,
+               requestedSize: windowFeatures.width != nil || windowFeatures.height != nil,
+               targetURL: url,
+               openerHost: webView.url?.host
+           ) {
+            return openTab(configuration: configuration, openedBy: webView)
+        }
+
         closePopups(PopupChain.closedWhenOpening(fromPopupAt: openerIndex, count: popups.count))
 
         // Remember the service's main web view so we can reload it after the
         // popup closes. The popup shares this data store, so once sign-in
         // finishes the session cookies are already here — the main view just
         // needs to reload to leave its signed-out page.
-        if openerIndex == nil {
+        // A tab is a signed-in working page; reloading it after a picker or a
+        // connect window closes would throw away an edit in progress. Only the
+        // service's own page is an opener to reload.
+        let openedByTab = tabs.tab(for: webView) != nil
+        if openerIndex == nil, !openedByTab {
             openerWebView = webView
             // A reload still waiting from the last popup would land in the
             // middle of this one.
@@ -626,7 +673,8 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         let entry = ServicePopup(
             webView: popup,
             window: window,
-            openedAtAuthHost: navigationAction.request.url?.host.map(Self.isAuthHost) ?? false
+            openedAtAuthHost: navigationAction.request.url?.host.map(Self.isAuthHost) ?? false,
+            reloadsOpener: !openedByTab
         )
         popups.append(entry)
 
@@ -753,11 +801,90 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         popupIndex(of: webView) != nil
     }
 
+    /// A popup or a tab: a web view of this service's that is not its own
+    /// page, so it reports no health and carries no badge.
+    private func isAuxiliary(_ webView: WKWebView) -> Bool {
+        isPopup(webView) || tabs.tab(for: webView) != nil
+    }
+
+    // MARK: - Tabs
+
+    /// The service's page, from a tab's point of view: the opener of the
+    /// sign-in flow when one ran, else whatever page this coordinator drives
+    /// that is neither a popup nor a tab.
+    var servicePage: (() -> WKWebView?)?
+
+    private func reloadServicePageAfterTabClosedItself() {
+        guard let page = servicePage?() else { return }
+        openerWebView = page
+        reloadOpenerAfterPopup(selfClosed: true, openedAtAuthHost: false)
+    }
+
+    /// Makes the web view a `window.open` call gets back and shows it as a tab.
+    /// It is built from the configuration WebKit passes in, so it shares the
+    /// service's data store and keeps `window.opener`.
+    private func openTab(configuration: WKWebViewConfiguration, openedBy opener: WKWebView) -> WKWebView {
+        let webView = WKWebView(
+            frame: CGRect(origin: .zero, size: WebViewHostView.lastSize),
+            configuration: configuration
+        )
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        // Neither is part of the configuration, so neither carries over.
+        webView.customUserAgent = opener.customUserAgent
+        webView.pageZoom = opener.pageZoom
+        #if DEBUG
+        webView.isInspectable = true
+        #endif
+        tabs.add(ServiceTab(webView: webView))
+        onTabOpened?(webView)
+        return webView
+    }
+
+    /// How long a tab the user closed gets to save before its page goes.
+    nonisolated static let tabSaveWindow: Duration = .milliseconds(500)
+
+    /// Closes one tab. When the user closes it, the page first gets the same
+    /// "you are being hidden" signal it gets at quit, and a moment to save an
+    /// edit still in flight, before its web view goes. Popups the tab opened
+    /// stay; they belong to a flow that may still finish.
+    func closeTab(_ id: UUID, savingFirst: Bool = true) {
+        guard let tab = tabs.remove(id) else { return }
+        onTabClosed?(tab.webView)
+        guard savingFirst else {
+            Self.tearDown(tab.webView)
+            return
+        }
+        tab.webView.removeFromSuperview()
+        closingTabs = closingTabs + [tab]
+        Task { @MainActor [weak self] in
+            _ = try? await tab.webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+            try? await Task.sleep(for: Self.tabSaveWindow)
+            Self.tearDown(tab.webView)
+            self?.closingTabs.removeAll { $0 === tab }
+        }
+    }
+
+    /// Closes every tab, for a hibernation or a rebuild of the service.
+    func closeAllTabs() {
+        for tab in tabs.removeAll() {
+            onTabClosed?(tab.webView)
+            Self.tearDown(tab.webView)
+        }
+    }
+
+    private static func tearDown(_ webView: WKWebView) {
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.removeFromSuperview()
+    }
+
     /// Closes the popup at `index` and every popup it opened. Only the first
     /// popup's close can reload the service: a child closing hands control
     /// back to its parent popup, and the flow is not over yet.
     private func closePopup(at index: Int, selfClosed: Bool) {
-        if index == 0 {
+        if index == 0, popups[0].reloadsOpener {
             reloadOpenerAfterPopup(selfClosed: selfClosed, openedAtAuthHost: popups[0].openedAtAuthHost)
         }
         closePopups(PopupChain.closedWhenClosing(at: index, count: popups.count))
@@ -784,6 +911,15 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     }
 
     func webViewDidClose(_ webView: WKWebView) {
+        if let tab = tabs.tab(for: webView) {
+            // A page that closes itself may have been a sign-in on the
+            // service's own host that `opensAsTab` couldn't tell apart; the
+            // service page gets the same deferred reload a sign-in popup gives
+            // it, which it skips if the page has moved on.
+            closeTab(tab.id, savingFirst: false)
+            reloadServicePageAfterTabClosedItself()
+            return
+        }
         if let index = popupIndex(of: webView) {
             // The page called window.close() on itself — the shape an OAuth
             // popup takes when it finishes.
@@ -992,6 +1128,12 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     ) {
         download.delegate = self
         trackDownload(download)
+        // A tab opened only to fetch a file would sit empty once the download
+        // starts, and its open tab would keep the service from hibernating.
+        // The download carries on without the web view.
+        if let tab = tabs.tab(for: webView), webView.backForwardList.currentItem == nil {
+            closeTab(tab.id, savingFirst: false)
+        }
     }
 
     /// Maps each in-flight download to the destination we chose for it, so the
@@ -1280,6 +1422,53 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         return belongsToService(targetHost, serviceHost: openerHost)
             || isAuthHost(targetHost)
     }
+
+    /// Whether a page's `window.open` should open as a tab in the service's card.
+    ///
+    /// Canva opens a design with an unsized `window.open` to its own editor
+    /// (`canva.com/design/editor/shell?designId=…`), and signs in with a
+    /// `window.open` to its own `oauth/authorize` path asking for 580 by 700.
+    /// Both start on canva.com, so the host alone can't tell them apart; the
+    /// size and the shape of the URL can, and either one keeps a sign-in in a
+    /// window, where the opener reload in `reloadOpenerAfterPopup` expects it.
+    ///
+    /// Clicked links never get here (they load in place, see
+    /// `shouldLoadNewWindowInPlace`), and neither do a popup's own children,
+    /// which are steps of a sign-in. A window opened at `about:blank` and
+    /// pointed somewhere later has no host to judge, so it keeps its window.
+    nonisolated static func opensAsTab(
+        navigationType: WKNavigationType,
+        openerIsPopup: Bool,
+        requestedSize: Bool,
+        targetURL: URL,
+        openerHost: String?
+    ) -> Bool {
+        guard navigationType != .linkActivated,
+              !openerIsPopup,
+              !requestedSize,
+              let scheme = targetURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let targetHost = targetURL.host,
+              let openerHost
+        else { return false }
+        return belongsToService(targetHost, serviceHost: openerHost)
+            && !isAuthHost(targetHost)
+            && !looksLikeSignIn(targetURL)
+            && !pathMentionsSignIn(targetURL)
+    }
+
+    /// A looser sign-in test than `looksLikeSignIn`, for the tab decision only:
+    /// any path that so much as contains a sign-in word. Figma's
+    /// `/start_google_sso` passes the segment test, and a sign-in wrongly made a
+    /// tab costs more than a page wrongly left in a window.
+    nonisolated static func pathMentionsSignIn(_ url: URL) -> Bool {
+        let path = url.path.lowercased()
+        return tabSignInWords.contains { path.contains($0) }
+    }
+
+    nonisolated private static let tabSignInWords = [
+        "oauth", "sso", "login", "signin", "sign-in", "sign_in", "auth", "saml", "openid", "consent",
+    ]
 
     /// Whether a page's `window.open` should switch to another Chorus service
     /// instead of opening a window. Clicked links never get here — they were

@@ -2888,6 +2888,126 @@ final class ChorusTests: XCTestCase {
         }
     }
 
+    // MARK: - Service tabs
+
+    private func opensTab(
+        _ url: String,
+        type: WKNavigationType = .other,
+        fromPopup: Bool = false,
+        sized: Bool = false,
+        opener: String? = "www.canva.com"
+    ) -> Bool {
+        WebViewCoordinator.opensAsTab(
+            navigationType: type,
+            openerIsPopup: fromPopup,
+            requestedSize: sized,
+            targetURL: URL(string: url)!,
+            openerHost: opener
+        )
+    }
+
+    /// The two `window.open` calls Canva made in a live trace on 2026-10-04:
+    /// opening a design (unsized) and signing in with Google (580 by 700).
+    /// Both start on canva.com; only the design becomes a tab.
+    func testCanvaDesignOpensAsTabAndItsSignInKeepsAWindow() {
+        XCTAssertTrue(opensTab(
+            "https://www.canva.com/design/editor/shell?designId=DAHHbLpPRGI&extension=0buBFQHrn4p3rWlly9FEpQ&mode=edit&ui=eyJEIjp7IlAiOnsiQiI6ZmFsc2V9fX0"
+        ))
+        let signIn = "https://www.canva.com/oauth/authorize/GOOGLE?origin=CFE&permissions=GET_BASIC_PROFILE&flowMode=WINDOWED"
+        XCTAssertFalse(opensTab(signIn, sized: true))
+        XCTAssertFalse(opensTab(signIn), "the URL alone marks it a sign-in, size or not")
+    }
+
+    func testWindowsThatDoNotBecomeTabs() {
+        XCTAssertFalse(opensTab("https://www.canva.com/design/x", sized: true), "a sized window is how sign-in popups ask")
+        XCTAssertFalse(opensTab("https://www.canva.com/design/x", fromPopup: true), "a popup's child is a sign-in step")
+        XCTAssertFalse(opensTab("https://www.canva.com/design/x", type: .linkActivated), "clicks load in place")
+        XCTAssertFalse(opensTab("https://linear.app/x"), "another site")
+        XCTAssertFalse(opensTab("https://docs.google.com/d/1", opener: "drive.google.com"), "an umbrella domain matches on the exact host")
+        XCTAssertFalse(opensTab("https://accounts.google.com/x", opener: "accounts.google.com"), "a sign-in gateway")
+        XCTAssertFalse(opensTab("about:blank"), "nothing to judge yet")
+        XCTAssertFalse(opensTab("https://www.canva.com/design/x", opener: nil), "no opener page")
+    }
+
+    func testSameSiteSubdomainOpensAsTab() {
+        XCTAssertTrue(opensTab("https://www.figma.com/design/abc/File", opener: "www.figma.com"))
+        XCTAssertTrue(opensTab("https://canva.com/design/x", opener: "www.canva.com"))
+    }
+
+    /// Figma's own-host sign-in, which the segment test in `looksLikeSignIn`
+    /// misses, still keeps a window.
+    func testOwnHostSignInPathsKeepAWindow() {
+        XCTAssertFalse(opensTab("https://www.figma.com/start_google_sso?fuid=1", opener: "www.figma.com"))
+        XCTAssertFalse(opensTab("https://www.canva.com/integrations/oauth_callback"))
+        XCTAssertFalse(opensTab("https://www.canva.com/connect/google_login"))
+    }
+
+    /// A call in a tab counts for the whole service: the rail's mic dot reads
+    /// live while any view has it live, and muted only when none does.
+    func testMediaCaptureStateCombinesPageAndTabs() {
+        let none = WebViewPool.MediaCaptureState.combined(camera: [.none, .none], microphone: [.none, .none])
+        XCTAssertFalse(none.isCapturing)
+
+        let tabCall = WebViewPool.MediaCaptureState.combined(camera: [.none, .active], microphone: [.none, .active])
+        XCTAssertTrue(tabCall.cameraActive)
+        XCTAssertTrue(tabCall.micActive)
+        XCTAssertFalse(tabCall.micMuted)
+
+        let mixed = WebViewPool.MediaCaptureState.combined(camera: [.muted], microphone: [.muted, .active])
+        XCTAssertFalse(mixed.cameraActive, "a paused camera shows no dot")
+        XCTAssertTrue(mixed.micActive)
+        XCTAssertFalse(mixed.micMuted, "one live mic outranks a muted one")
+
+        let muted = WebViewPool.MediaCaptureState.combined(camera: [], microphone: [.none, .muted])
+        XCTAssertTrue(muted.micMuted)
+    }
+
+    /// A chat open in both its page and a tab fires each notification twice.
+    func testDuplicateNotificationIsDroppedWithinTheWindow() {
+        let now = Date()
+        let window = NotificationMessageHandler.duplicateWindow
+        XCTAssertFalse(NotificationMessageHandler.isDuplicate(key: "a", last: nil, now: now))
+        XCTAssertTrue(NotificationMessageHandler.isDuplicate(key: "a", last: ("a", now.addingTimeInterval(-1)), now: now))
+        XCTAssertFalse(NotificationMessageHandler.isDuplicate(key: "b", last: ("a", now), now: now))
+        XCTAssertFalse(NotificationMessageHandler.isDuplicate(key: "a", last: ("a", now.addingTimeInterval(-window)), now: now))
+    }
+
+    func testTabSelectionAfterClosing() {
+        // Closing the tab on screen shows its left neighbour, or the page.
+        XCTAssertEqual(TabSelection.afterClosing(index: 2, selectedIndex: 2, tabCount: 3), 1)
+        XCTAssertNil(TabSelection.afterClosing(index: 0, selectedIndex: 0, tabCount: 3))
+        // Closing another tab keeps the one on screen.
+        XCTAssertEqual(TabSelection.afterClosing(index: 0, selectedIndex: 2, tabCount: 3), 1)
+        XCTAssertEqual(TabSelection.afterClosing(index: 2, selectedIndex: 0, tabCount: 3), 0)
+        XCTAssertNil(TabSelection.afterClosing(index: 1, selectedIndex: nil, tabCount: 3), "the page stays on screen")
+    }
+
+    func testTabSelectionCyclesThroughPageAndTabs() {
+        XCTAssertEqual(TabSelection.moving(from: nil, by: 1, tabCount: 2), 0)
+        XCTAssertEqual(TabSelection.moving(from: 1, by: 1, tabCount: 2), nil, "wraps back to the page")
+        XCTAssertEqual(TabSelection.moving(from: nil, by: -1, tabCount: 2), 1, "wraps to the last tab")
+        XCTAssertNil(TabSelection.moving(from: nil, by: 1, tabCount: 0))
+    }
+
+    func testServiceTabsAddSelectAndRemove() {
+        let tabs = ServiceTabs()
+        let first = ServiceTab(webView: WKWebView())
+        let second = ServiceTab(webView: WKWebView())
+        tabs.add(first)
+        tabs.add(second)
+        XCTAssertEqual(tabs.selectedID, second.id, "a new tab comes to the front")
+        XCTAssertTrue(tabs.tab(for: first.webView) === first)
+
+        tabs.select(UUID())
+        XCTAssertEqual(tabs.selectedID, second.id, "an id that is not open is ignored")
+
+        tabs.remove(second.id)
+        XCTAssertEqual(tabs.selectedID, first.id)
+        tabs.remove(first.id)
+        XCTAssertNil(tabs.selectedID)
+        XCTAssertTrue(tabs.isEmpty)
+    }
+
     // MARK: - Scripted new windows and the popup chain
 
     private func handOff(

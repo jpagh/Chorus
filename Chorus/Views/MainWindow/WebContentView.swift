@@ -34,6 +34,17 @@ struct WebContentView: View {
         return services.first { $0.id == id }
     }
 
+    /// The tabs the selected service has open. See `ServiceTabs`.
+    private var selectedTabs: ServiceTabs? {
+        guard let id = selectedServiceID else { return nil }
+        return appState.webViewPool.tabs(for: id)
+    }
+
+    /// The page on screen: the selected tab, or the service's own page.
+    private var displayedWebView: WKWebView? {
+        selectedTabs?.selectedTab?.webView ?? currentWebView
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if let service = selectedService, currentWebView != nil {
@@ -84,12 +95,15 @@ struct WebContentView: View {
             // so the active service picks up the freshly created view.
             loadWebViewForSelectedService()
         }
+        .onChange(of: selectedTabs?.selectedID) {
+            showDisplayedWebView()
+        }
         .onChange(of: webViewState.isLoading) { _, loading in
             // Drop the snapshot once the page finishes so it can't linger over a
             // loaded page and to free the bitmap. Delayed past the fade, and
             // re-checked in case another load started in the meantime.
             guard !loading else { return }
-            if let currentWebView { Self.nudgeLayout(of: currentWebView) }
+            if let displayedWebView { Self.nudgeLayout(of: displayedWebView) }
             let delay = reduceMotion ? 0 : 0.25
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 if !webViewState.isLoading { transitionSnapshot = nil }
@@ -103,50 +117,76 @@ struct WebContentView: View {
     private var cardContent: some View {
         if let service = selectedService, let bundleID = service.nativeAppBundleID {
             NativeAppPanel(label: service.label, bundleID: bundleID)
-        } else if selectedService != nil, let webView = currentWebView {
-            ZStack(alignment: .topTrailing) {
-                WebViewContainer(webView: webView)
-
-                // Show cached snapshot as instant visual feedback while page loads.
-                // Fades out once the web view finishes loading. It fills the
-                // web view's frame (rather than aspect-fill, which cropped or
-                // stretched it); since the snapshot was taken at this frame it
-                // lines up without distortion.
-                if let snapshot = transitionSnapshot, webViewState.isLoading {
-                    Image(nsImage: snapshot)
-                        .resizable()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                        .transition(.opacity)
-                        // The snapshot is a picture, never a shield. Without
-                        // this it sits over the live web view and eats every
-                        // click for as long as a navigation runs — a page
-                        // that looks exactly like the one underneath but
-                        // answers nothing (reported on TD EasyWeb: click
-                        // Login and the app appears to freeze).
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-
-                if appState.findInPageVisible {
-                    FindInPageBar(
-                        isVisible: Binding(
-                            get: { appState.findInPageVisible },
-                            set: { appState.findInPageVisible = $0 }
-                        ),
-                        webView: webView
+        } else if let service = selectedService, let webView = displayedWebView {
+            VStack(spacing: 0) {
+                if let tabs = selectedTabs, !tabs.isEmpty {
+                    ServiceTabStrip(
+                        serviceLabel: service.label,
+                        tabs: tabs,
+                        onClose: { id in
+                            appState.webViewPool.closeTab(id, for: service.id)
+                        }
                     )
-                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                pageContent(webView)
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: webViewState.isLoading)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: appState.findInPageVisible)
         } else if selectedService != nil {
             ProgressView("Loading service…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             emptyState
         }
+    }
+
+    /// The live page with its load snapshot and find bar.
+    private func pageContent(_ webView: WKWebView) -> some View {
+        ZStack(alignment: .topTrailing) {
+            WebViewContainer(webView: webView)
+
+            // Show cached snapshot as instant visual feedback while page loads.
+            // Fades out once the web view finishes loading. It fills the
+            // web view's frame (rather than aspect-fill, which cropped or
+            // stretched it); since the snapshot was taken at this frame it
+            // lines up without distortion.
+            if let snapshot = transitionSnapshot, webViewState.isLoading {
+                Image(nsImage: snapshot)
+                    .resizable()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .transition(.opacity)
+                    // The snapshot is a picture, never a shield. Without
+                    // this it sits over the live web view and eats every
+                    // click for as long as a navigation runs — a page
+                    // that looks exactly like the one underneath but
+                    // answers nothing (reported on TD EasyWeb: click
+                    // Login and the app appears to freeze).
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
+            if appState.findInPageVisible {
+                FindInPageBar(
+                    isVisible: Binding(
+                        get: { appState.findInPageVisible },
+                        set: { appState.findInPageVisible = $0 }
+                    ),
+                    webView: webView
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: webViewState.isLoading)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: appState.findInPageVisible)
+    }
+
+    /// Points the nav buttons at whichever page is now on screen, after a tab
+    /// opens, closes or is picked. The snapshot belongs to the service's page,
+    /// so it never covers a tab.
+    private func showDisplayedWebView() {
+        guard let displayedWebView else { return }
+        webViewState.attach(to: displayedWebView)
+        if displayedWebView !== currentWebView { transitionSnapshot = nil }
+        Self.nudgeLayout(of: displayedWebView)
     }
 
     /// The snapshot to keep after binding to a service's web view: one only
@@ -219,13 +259,18 @@ struct WebContentView: View {
         // a no-op when the value matches.
         webView.pageZoom = CGFloat(appState.effectiveZoom(for: service))
         currentWebView = webView
-        webViewState.attach(to: webView)
+        // Coming back to a service shows the tab that was on screen when it was
+        // left, if any.
+        let shown = appState.webViewPool.displayedWebView(for: service.id) ?? webView
+        webViewState.attach(to: shown)
         // Only hold the snapshot if there is a load for it to cover. Switching
         // to a service that is already loaded starts no navigation, so the
         // `isLoading` observer never fires and the old clear-on-finish path
         // never runs — the image would sit in state until the page's next
         // navigation put it back on screen.
-        transitionSnapshot = Self.retainedSnapshot(captured, isLoading: webView.isLoading)
+        transitionSnapshot = shown === webView
+            ? Self.retainedSnapshot(captured, isLoading: webView.isLoading)
+            : nil
         previousServiceID = service.id
 
         // Passive one-time notice: WKWebView can't use passkeys for sign-in, so

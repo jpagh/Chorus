@@ -474,6 +474,20 @@ final class NotificationMessageHandler: NSObject, WKScriptMessageHandler, @unche
     let notifyOSCheck: @Sendable (UUID) -> Bool
     let isDoNotDisturbCheck: @Sendable () -> Bool
 
+    /// The last notification posted and when. A service's tab runs the same
+    /// interception script as its page, so a chat open in both fires each
+    /// notification twice. Only touched from `didReceive`, on the main thread.
+    private var lastPosted: (key: String, at: Date)?
+
+    /// How close together two identical notifications must be to count as one.
+    static let duplicateWindow: TimeInterval = 3
+
+    /// Whether a notification repeats the last one posted, within the window.
+    static func isDuplicate(key: String, last: (key: String, at: Date)?, now: Date) -> Bool {
+        guard let last else { return false }
+        return last.key == key && now.timeIntervalSince(last.at) < duplicateWindow
+    }
+
     init(
         serviceID: UUID,
         isMutedCheck: @escaping @Sendable (UUID) -> Bool,
@@ -537,6 +551,11 @@ final class NotificationMessageHandler: NSObject, WKScriptMessageHandler, @unche
             notifyOS: notifyOSCheck(serviceID),
             doNotDisturb: isDoNotDisturbCheck()
         ) else { return }
+
+        let key = payload.title + "\u{0}" + payload.body
+        let now = Date()
+        guard !Self.isDuplicate(key: key, last: lastPosted, now: now) else { return }
+        lastPosted = (key, now)
 
         let content = UNMutableNotificationContent()
         content.title = payload.title

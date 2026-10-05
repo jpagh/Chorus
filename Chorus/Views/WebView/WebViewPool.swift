@@ -67,6 +67,17 @@ final class WebViewPool {
         var micActive = false      // microphone live
         var micMuted = false       // microphone engaged but muted
         var isCapturing: Bool { cameraActive || micActive || micMuted }
+
+        /// One service's state from all its web views, the page and its tabs.
+        /// Only .active counts as live, so a paused (.muted) camera shows no
+        /// dot. The mic reads muted only when no view has it live.
+        static func combined(camera: [WKMediaCaptureState], microphone: [WKMediaCaptureState]) -> MediaCaptureState {
+            var state = MediaCaptureState()
+            state.cameraActive = camera.contains(.active)
+            state.micActive = microphone.contains(.active)
+            state.micMuted = !state.micActive && microphone.contains(.muted)
+            return state
+        }
     }
     private(set) var mediaCaptureStates: [UUID: MediaCaptureState] = [:]
     private var mediaObservations: [UUID: [NSKeyValueObservation]] = [:]
@@ -78,6 +89,18 @@ final class WebViewPool {
     /// speaker mark and keeps the service playing when you switch away.
     private(set) var audibleServiceIDs: Set<UUID> = []
     private var audioObservers: [UUID: PlayingAudioObserver] = [:]
+    /// Which of a service's web views are making sound. The service counts as
+    /// audible while any of them is.
+    private var audibleViews: [UUID: Set<ObjectIdentifier>] = [:]
+
+    /// The watchers on each open tab, so a call or music in a tab shows in the
+    /// rail and answers Mute All. Keyed by the tab's web view.
+    private struct TabWatch {
+        let serviceID: UUID
+        let observations: [NSKeyValueObservation]
+        let audio: PlayingAudioObserver
+    }
+    private var tabWatches: [ObjectIdentifier: TabWatch] = [:]
 
     /// Per-service page health, so the rail can mark a service that is still
     /// coming up or that failed — including one you are not looking at, which is
@@ -160,6 +183,35 @@ final class WebViewPool {
     /// which has the side-effect of marking the service active.
     func liveWebView(for instanceID: UUID) -> WKWebView? {
         webViews[instanceID]
+    }
+
+    /// The tabs a live service has open. Nil when the service has no web view.
+    func tabs(for instanceID: UUID) -> ServiceTabs? {
+        coordinators[instanceID]?.tabs
+    }
+
+    /// The web view on screen for a service: the selected tab, or its own page.
+    /// What ⌘R, zoom and Find act on.
+    func displayedWebView(for instanceID: UUID) -> WKWebView? {
+        tabs(for: instanceID)?.selectedTab?.webView ?? webViews[instanceID]
+    }
+
+    /// Closes one of a service's tabs.
+    func closeTab(_ tabID: UUID, for instanceID: UUID) {
+        coordinators[instanceID]?.closeTab(tabID)
+    }
+
+    /// The service's own page and every tab it has open, for settings that
+    /// apply to the whole service, such as zoom.
+    func allWebViews(for instanceID: UUID) -> [WKWebView] {
+        let page = webViews[instanceID].map { [$0] } ?? []
+        return page + (tabs(for: instanceID)?.tabs.map(\.webView) ?? [])
+    }
+
+    /// Whether a service has tabs open. Such a service is never hibernated by
+    /// the idle or memory sweeps, which would close a design the user left open.
+    private func hasOpenTabs(_ instanceID: UUID) -> Bool {
+        !(coordinators[instanceID]?.tabs.isEmpty ?? true)
     }
 
     /// Snapshot of all service IDs whose WKWebViews are currently alive.
@@ -389,9 +441,9 @@ final class WebViewPool {
         }
     }
 
-    /// Every live service web view, for the quit handoff.
+    /// Every live service web view and open tab, for the quit handoff.
     var liveWebViews: [WKWebView] {
-        Array(webViews.values)
+        webViews.keys.flatMap { allWebViews(for: $0) }
     }
 
     /// Runs the call-detection JS for a service on the main actor, returning
@@ -443,9 +495,11 @@ final class WebViewPool {
     /// reload so the site re-renders for the new agent. No-op without a live
     /// view — the new agent applies when the view is next created.
     func setUserAgent(_ userAgent: String?, for id: UUID) {
-        guard let webView = webViews[id] else { return }
-        webView.customUserAgent = userAgent ?? UserAgentProvider.safariDefault
-        webView.reload()
+        guard webViews[id] != nil else { return }
+        for webView in allWebViews(for: id) {
+            webView.customUserAgent = userAgent ?? UserAgentProvider.safariDefault
+            webView.reload()
+        }
     }
 
     /// Rebuilds a service's web view so configuration-time settings — the
@@ -487,7 +541,7 @@ final class WebViewPool {
             isCapturing: mediaCaptureStates[id]?.isCapturing ?? false,
             isPlayingAudio: audibleServiceIDs.contains(id)
         ) {
-            webView.setAllMediaPlaybackSuspended(true)
+            allWebViews(for: id).forEach { $0.setAllMediaPlaybackSuspended(true) }
         }
         webView.takeSnapshot(with: nil) { [weak self] image, _ in
             guard let image else { return }
@@ -527,10 +581,10 @@ final class WebViewPool {
     /// quiet service does: a pause alone does not hold there, because a page
     /// can start playing again by itself, and YouTube does when an ad ends.
     func pauseAudio(for id: UUID) {
-        guard let webView = webViews[id] else { return }
-        webView.pauseAllMediaPlayback(completionHandler: nil)
-        if Self.suspendsMediaOnPause(isActive: id == activeServiceID) {
-            webView.setAllMediaPlaybackSuspended(true)
+        let suspends = Self.suspendsMediaOnPause(isActive: id == activeServiceID)
+        for webView in allWebViews(for: id) {
+            webView.pauseAllMediaPlayback(completionHandler: nil)
+            if suspends { webView.setAllMediaPlaybackSuspended(true) }
         }
     }
 
@@ -541,8 +595,8 @@ final class WebViewPool {
 
     /// Resumes media playback when a service becomes active again.
     private func wakeService(_ id: UUID) {
-        guard let webView = webViews[id] else { return }
-        webView.setAllMediaPlaybackSuspended(false)
+        guard webViews[id] != nil else { return }
+        allWebViews(for: id).forEach { $0.setAllMediaPlaybackSuspended(false) }
         // The snapshot exists to cover the wake, so it has done its job here.
         // WebContentView reads it before asking for the web view and holds its
         // own reference until the page finishes loading, so this cannot blank
@@ -603,14 +657,14 @@ final class WebViewPool {
                 DispatchQueue.main.async {
                     guard let self, let live = self.webViews[id],
                           ObjectIdentifier(live) == token else { return }
-                    self.refreshMediaCaptureState(id: id, webView: live)
+                    self.refreshMediaCaptureState(id: id)
                 }
             },
             webView.observe(\.microphoneCaptureState, options: [.new]) { [weak self] _, _ in
                 DispatchQueue.main.async {
                     guard let self, let live = self.webViews[id],
                           ObjectIdentifier(live) == token else { return }
-                    self.refreshMediaCaptureState(id: id, webView: live)
+                    self.refreshMediaCaptureState(id: id)
                 }
             },
             // Only the rising edge is reported. A load ending is left to the
@@ -631,24 +685,70 @@ final class WebViewPool {
         audioObservers[id] = PlayingAudioObserver(webView: webView) { [weak self] isPlaying in
             guard let self, let live = self.webViews[id],
                   ObjectIdentifier(live) == token else { return }
-            if isPlaying {
-                self.audibleServiceIDs.insert(id)
-            } else {
-                self.audibleServiceIDs.remove(id)
-            }
+            self.setAudible(isPlaying, view: token, service: id)
         }
     }
 
-    /// Recomputes and stores a service's capture state from its live web view,
+    /// Records whether one of a service's web views is making sound, and keeps
+    /// `audibleServiceIDs` true while any of them is.
+    private func setAudible(_ isPlaying: Bool, view: ObjectIdentifier, service id: UUID) {
+        let current = audibleViews[id] ?? []
+        let updated = isPlaying ? current.union([view]) : current.subtracting([view])
+        audibleViews[id] = updated.isEmpty ? nil : updated
+        if updated.isEmpty {
+            audibleServiceIDs.remove(id)
+        } else {
+            audibleServiceIDs.insert(id)
+        }
+    }
+
+    /// Starts watching a tab's camera, microphone and sound. Same discipline as
+    /// the page's watchers: the callbacks capture Sendable values only and
+    /// check the tab is still open before touching state.
+    private func watchTab(_ webView: WKWebView, service id: UUID) {
+        let token = ObjectIdentifier(webView)
+        tabWatches[token] = TabWatch(
+            serviceID: id,
+            observations: [
+                webView.observe(\.cameraCaptureState, options: [.new]) { [weak self] _, _ in
+                    DispatchQueue.main.async {
+                        guard let self, self.tabWatches[token] != nil else { return }
+                        self.refreshMediaCaptureState(id: id)
+                    }
+                },
+                webView.observe(\.microphoneCaptureState, options: [.new]) { [weak self] _, _ in
+                    DispatchQueue.main.async {
+                        guard let self, self.tabWatches[token] != nil else { return }
+                        self.refreshMediaCaptureState(id: id)
+                    }
+                },
+            ],
+            audio: PlayingAudioObserver(webView: webView) { [weak self] isPlaying in
+                guard let self, self.tabWatches[token] != nil else { return }
+                self.setAudible(isPlaying, view: token, service: id)
+            }
+        )
+    }
+
+    /// Stops watching a tab that closed, and drops whatever it was doing from
+    /// the service's state.
+    private func unwatchTab(_ webView: WKWebView, service id: UUID) {
+        let token = ObjectIdentifier(webView)
+        guard let watch = tabWatches.removeValue(forKey: token) else { return }
+        watch.observations.forEach { $0.invalidate() }
+        watch.audio.invalidate()
+        setAudible(false, view: token, service: id)
+        refreshMediaCaptureState(id: id)
+    }
+
+    /// Recomputes and stores a service's capture state from its page and tabs,
     /// dropping the entry entirely when nothing is live.
-    private func refreshMediaCaptureState(id: UUID, webView: WKWebView) {
-        var state = MediaCaptureState()
-        // Only .active counts as "live" — a .muted (paused) camera shouldn't show
-        // a green in-use dot. Mic tracks active vs. muted separately so the glyph
-        // can distinguish "live" from "muted".
-        state.cameraActive = (webView.cameraCaptureState == .active)
-        state.micActive = (webView.microphoneCaptureState == .active)
-        state.micMuted = (webView.microphoneCaptureState == .muted)
+    private func refreshMediaCaptureState(id: UUID) {
+        let views = allWebViews(for: id)
+        let state = MediaCaptureState.combined(
+            camera: views.map(\.cameraCaptureState),
+            microphone: views.map(\.microphoneCaptureState)
+        )
         if state.isCapturing {
             mediaCaptureStates[id] = state
         } else {
@@ -659,9 +759,9 @@ final class WebViewPool {
     /// Mutes or unmutes a service's live microphone (host-side, so the far end
     /// sees it). No-op without a live capturing web view.
     func setMicrophoneMuted(_ muted: Bool, for id: UUID) {
-        guard let webView = webViews[id],
-              webView.microphoneCaptureState != WKMediaCaptureState.none else { return }
-        webView.setMicrophoneCaptureState(muted ? .muted : .active, completionHandler: nil)
+        for webView in allWebViews(for: id) where webView.microphoneCaptureState != WKMediaCaptureState.none {
+            webView.setMicrophoneCaptureState(muted ? .muted : .active, completionHandler: nil)
+        }
     }
 
     /// Mutes every service whose microphone is currently live. Returns how many
@@ -669,7 +769,8 @@ final class WebViewPool {
     @discardableResult
     func muteAllMicrophones() -> Int {
         var count = 0
-        for (_, webView) in webViews where webView.microphoneCaptureState == .active {
+        let everyView = webViews.keys.flatMap { allWebViews(for: $0) }
+        for webView in everyView where webView.microphoneCaptureState == .active {
             webView.setMicrophoneCaptureState(.muted, completionHandler: nil)
             count += 1
         }
@@ -677,6 +778,7 @@ final class WebViewPool {
     }
 
     private func teardownWebView(_ instanceID: UUID) {
+        coordinators[instanceID]?.closeAllTabs()
         if let webView = webViews[instanceID] {
             webView.configuration.userContentController.removeAllScriptMessageHandlers()
             webView.stopLoading()
@@ -689,6 +791,7 @@ final class WebViewPool {
         audioObservers[instanceID]?.invalidate()
         audioObservers.removeValue(forKey: instanceID)
         audibleServiceIDs.remove(instanceID)
+        audibleViews.removeValue(forKey: instanceID)
         // A hibernated service has no page, so it has no health to report; the
         // rail draws the moon for it instead. Leaving a stale failed dot on a
         // service that was torn down would outlive the failure.
@@ -716,6 +819,16 @@ final class WebViewPool {
         }
         coordinator.onHealthEvent = { [weak self] id, event in
             self?.applyHealthEvent(event, to: id)
+        }
+        let id = instance.id
+        coordinator.onTabOpened = { [weak self] webView in
+            self?.watchTab(webView, service: id)
+        }
+        coordinator.onTabClosed = { [weak self] webView in
+            self?.unwatchTab(webView, service: id)
+        }
+        coordinator.servicePage = { [weak self] in
+            self?.webViews[id]
         }
         return coordinator
     }
@@ -853,6 +966,7 @@ final class WebViewPool {
                   !neverHibernateIDs.contains(id),
                   !notificationCriticalIDs.contains(id),
                   !pinnedIDs.contains(id),
+                  !hasOpenTabs(id),
                   webViews[id] != nil
             else { return nil }
             return (id, now.timeIntervalSince(accessed))
@@ -876,6 +990,7 @@ final class WebViewPool {
               !pinnedIDs.contains(id),
               !neverHibernateIDs.contains(id),
               !notificationCriticalIDs.contains(id),
+              !hasOpenTabs(id),
               !evictionInFlight.contains(id)
         else { return false }
 
@@ -888,7 +1003,8 @@ final class WebViewPool {
               id != activeServiceID,
               !pinnedIDs.contains(id),
               !neverHibernateIDs.contains(id),
-              !notificationCriticalIDs.contains(id)
+              !notificationCriticalIDs.contains(id),
+              !hasOpenTabs(id)
         else { return false }
 
         if hasCall {
@@ -915,7 +1031,8 @@ final class WebViewPool {
                    && !evictionInFlight.contains($0.key)
                    && !neverHibernateIDs.contains($0.key)
                    && !notificationCriticalIDs.contains($0.key)
-                   && !pinnedIDs.contains($0.key) }
+                   && !pinnedIDs.contains($0.key)
+                   && !hasOpenTabs($0.key) }
             .sorted { $0.value < $1.value }
 
         for (id, _) in sorted {

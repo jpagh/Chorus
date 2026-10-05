@@ -45,7 +45,7 @@ struct WebNavButtons: View {
 
             if let homeURL {
                 navButton("house", label: "Home", enabled: webViewState.webView != nil) {
-                    webViewState.webView?.load(URLRequest(url: homeURL))
+                    appState.goHome(homeURL)
                 }
             }
 

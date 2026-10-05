@@ -5,6 +5,10 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- When a service opens one of its own pages in a new window, such as a design in Canva, the page now opens as a tab at the top of the service's card. The service's own page stays in the first tab. Click a tab to switch, use ⌘⇧[ and ⌘⇧] to move between them, and press ⌘W or click the × to close one. Sign-in windows still open as windows. Tabs close when the service hibernates, and Chorus won't hibernate a service on its own while it has a tab open. Chorus doesn't keep tabs after you quit.
+
 ## [1.5.26] - 2026-10-03
 
 ### Added

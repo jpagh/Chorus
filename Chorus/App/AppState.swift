@@ -1005,6 +1005,8 @@ final class AppState {
         // marks the service active and handles soft-hibernation of whatever
         // was previously displayed.
         let webView = webViewPool.webView(for: service)
+        // The link lands on the service's own page, so show that, not a tab.
+        webViewPool.tabs(for: service.id)?.select(nil)
         webView.load(URLRequest(url: url))
     }
 
@@ -1196,8 +1198,53 @@ final class AppState {
     /// Reload the currently displayed service's web view. Triggered by Cmd-R.
     func reloadActiveService() {
         guard let id = webViewPool.activeServiceID,
-              let webView = webViewPool.liveWebView(for: id) else { return }
+              let webView = webViewPool.displayedWebView(for: id) else { return }
         WebViewCoordinator.reload(webView, fallbackURL: fetchService(id: id).flatMap { URL(string: $0.url) })
+    }
+
+    // MARK: - Service tabs
+
+    /// Whether the active service has any tab open. See `ServiceTabs`.
+    var activeServiceHasTabs: Bool {
+        guard let id = webViewPool.activeServiceID else { return false }
+        return !(webViewPool.tabs(for: id)?.isEmpty ?? true)
+    }
+
+    /// Whether the active service has one of its tabs on screen, rather than
+    /// its own page.
+    var activeServiceShowsTab: Bool {
+        guard let id = webViewPool.activeServiceID else { return false }
+        return webViewPool.tabs(for: id)?.selectedTab != nil
+    }
+
+    /// ⌘W. Closes the tab on screen when the window in front is the one
+    /// showing it; anything else closes the front window, as the stock item
+    /// did. A sign-in popup or the Settings window in front closes itself,
+    /// never a tab behind it.
+    func closeTabOrWindow() {
+        let keyWindow = NSApp.keyWindow
+        if let id = webViewPool.activeServiceID,
+           let tab = webViewPool.tabs(for: id)?.selectedTab,
+           let keyWindow,
+           tab.webView.window === keyWindow {
+            webViewPool.closeTab(tab.id, for: id)
+            return
+        }
+        keyWindow?.performClose(nil)
+    }
+
+    /// ⌘⇧[ and ⌘⇧]. Steps through the active service's page and its tabs.
+    func selectActiveServiceTab(offset: Int) {
+        guard let id = webViewPool.activeServiceID else { return }
+        webViewPool.tabs(for: id)?.selectOffset(offset)
+    }
+
+    /// Home. Goes back to the service's own page and loads its home URL there,
+    /// so Home never loads the service's start page into a tab.
+    func goHome(_ homeURL: URL) {
+        guard let id = webViewPool.activeServiceID else { return }
+        webViewPool.tabs(for: id)?.select(nil)
+        webViewPool.liveWebView(for: id)?.load(URLRequest(url: homeURL))
     }
 
     /// Applies user edits to a service: persists label/URL/keep-loaded, syncs
@@ -1305,7 +1352,9 @@ final class AppState {
         defaultZoom = clamped
         let services = (try? modelContainer.mainContext.fetch(FetchDescriptor<ServiceInstance>())) ?? []
         for service in services where service.pageZoom == nil {
-            webViewPool.liveWebView(for: service.id)?.pageZoom = CGFloat(clamped)
+            for webView in webViewPool.allWebViews(for: service.id) {
+                webView.pageZoom = CGFloat(clamped)
+            }
         }
     }
 
@@ -1544,6 +1593,10 @@ final class AppState {
 
     private func applyZoom(_ value: Double, to webView: WKWebView, service: ServiceInstance) {
         webView.pageZoom = CGFloat(value)
+        // Zoom belongs to the service, so its tabs follow the page.
+        for view in webViewPool.allWebViews(for: service.id) {
+            view.pageZoom = CGFloat(value)
+        }
         service.pageZoom = value
         do { try modelContainer.mainContext.save() } catch {
             AppLogger.dataStore.error("Failed to persist zoom: \(error.localizedDescription)")
