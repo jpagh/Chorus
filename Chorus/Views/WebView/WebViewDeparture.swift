@@ -5,15 +5,23 @@ import WebKit
 /// AppKit: dispatching a DOM mouseout does not clear WebKit's hit-test state.
 @MainActor
 enum WebViewDeparture {
-    /// Bounded window for saves an exit itself triggers (mouseout-driven
-    /// session writes). Short: the click's own settle window above already
-    /// elapsed, so anything still undispatched is not coming.
+    /// Bounded time for work started by a native hover exit. Neither this
+    /// grace period nor the input wait confirms a provider's server save.
     private static let exitWorkGrace: TimeInterval = 0.5
+    private static var hideTask: Task<Void, Never>?
+    private static var hideGeneration = UUID()
+    private static var unhideObserver: NSObjectProtocol?
+
+    private static func cancelPendingHide() {
+        hideGeneration = UUID()
+        hideTask?.cancel()
+        hideTask = nil
+    }
 
     /// All hide entry points share this policy, including popups. Hiding
     /// itself is never delayed: the app hides first, then a background task
-    /// waits out recent work under an App Nap assertion and only then clears
-    /// hover — so a click whose request is still queued is never disturbed.
+    /// gives recent input a bounded grace period before sending a native exit.
+    /// Returning cancels the pending exit.
     static func hideApplication() {
         var webViews: [WKWebView] = []
         @MainActor func visit(_ view: NSView) {
@@ -26,14 +34,25 @@ enum WebViewDeparture {
         for window in NSApp.windows where window.isVisible {
             if let content = window.contentView { visit(content) }
         }
+        if unhideObserver == nil {
+            unhideObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.willUnhideNotification, object: nil, queue: nil
+            ) { _ in
+                MainActor.assumeIsolated { cancelPendingHide() }
+            }
+        }
+        cancelPendingHide()
+        let generation = hideGeneration
         NSApp.hide(nil)
-        Task { @MainActor in
+        hideTask = Task { @MainActor in
             let activity = ProcessInfo.processInfo.beginActivity(
-                options: [.userInitiated],
+                options: [.userInitiatedAllowingIdleSystemSleep],
                 reason: "Let recently started page work finish after Hide"
             )
             defer { ProcessInfo.processInfo.endActivity(activity) }
-            await InputSettle.shared.waitForSettle()
+            await InputSettle.shared.waitForSettle(in: webViews)
+            guard !Task.isCancelled, generation == hideGeneration, NSApp.isHidden else { return }
+            hideTask = nil
             for webView in webViews
                 where webView.window != nil && !webView.isHiddenOrHasHiddenAncestor
             {
@@ -79,19 +98,18 @@ enum WebViewDeparture {
     /// exit-triggered saves a short bounded window. Sending the exit before
     /// the wait risks cancelling a click whose request the page has not
     /// dispatched yet; the trailing window preserves mouseout-driven saves.
-    /// Holds an App Nap assertion throughout so a hidden page keeps running.
+    /// Limits App Nap during the grace period; this does not force site dispatch.
     /// Switching shows the new page while this settles the outgoing view
     /// before it is detached.
     static func prepareForDestruction(in webViews: [WKWebView]) async {
         guard !Task.isCancelled else { return }
-        // Throttling must not pause the page mid-grace. Always held: the
-        // wait below is the whole point of this function.
+        // Limit App Nap while allowing idle system sleep.
         let activity = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated],
+            options: [.userInitiatedAllowingIdleSystemSleep],
             reason: "Let recently started page work finish before destruction"
         )
         defer { ProcessInfo.processInfo.endActivity(activity) }
-        await InputSettle.shared.waitForSettle()
+        await InputSettle.shared.waitForSettle(in: webViews)
         guard !Task.isCancelled else { return }
         let attached = webViews.filter { $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }
         let hadHover = await withDeadline(seconds: 0.2, fallback: true) {
@@ -137,6 +155,6 @@ enum WebViewDeparture {
             for subview in view.subviews { sendExit(in: subview) }
         }
         sendExit(in: webView)
-        if !notified.isEmpty { InputSettle.shared.recordDeparture() }
+        if !notified.isEmpty { InputSettle.shared.recordDeparture(in: webView) }
     }
 }

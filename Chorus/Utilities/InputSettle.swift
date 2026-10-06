@@ -1,66 +1,95 @@
 import AppKit
+import WebKit
 
-/// Records input so destroying or detaching a page can give recent work time
-/// to run. Hide waits in a background task after the app is already hidden;
-/// switching waits behind the newly displayed page.
+/// Gives recent input on a particular page a bounded chance to finish.
+/// App chrome and other pages never refresh that page's grace period.
 @MainActor
 final class InputSettle {
     static let shared = InputSettle()
-
-    /// Existing upper budget for recently started page work. This is a grace
-    /// period, not confirmation that a site's server has saved a change.
     static let settleWindow: TimeInterval = 2.2
 
-    private var lastInputAt = Date.distantPast
-    private var lastDepartureAt = Date.distantPast
+    private struct Entry {
+        weak var page: WKWebView?
+        var timestamp: TimeInterval
+    }
+
+    private var entries: [ObjectIdentifier: Entry] = [:]
     private var monitor: Any?
+    private let now: () -> TimeInterval
+    private let sleep: (TimeInterval) async throws -> Void
+    private let window: TimeInterval
 
-    private init() {}
+    init(
+        window: TimeInterval = 2.2,
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
+    ) {
+        self.window = window
+        self.now = now
+        self.sleep = sleep
+    }
 
-    /// Installs the monitor. Called at launch so a click is counted even when
-    /// the first leave comes before anything has asked for a shared instance.
     func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .keyDown]
         ) { [weak self] event in
-            MainActor.assumeIsolated {
-                // A shortcut such as Cmd-H or Cmd-R is the leave itself, not
-                // the work being left; counting it would make every reload and
-                // hide wait the full window.
-                let isShortcut = event.modifierFlags.contains(.command)
-                    || event.modifierFlags.contains(.control)
-                if !isShortcut {
-                    self?.lastInputAt = Date()
-                }
-            }
+            MainActor.assumeIsolated { self?.observe(event) }
             return event
         }
     }
 
-    /// Keep the cue's timestamp across transitions: quit just after hide or
-    /// switch still owes time to work the earlier hover exit started.
-    func recordDeparture() {
-        lastDepartureAt = Date()
+    /// Used by the native event monitor; hit-testing attributes mouse input
+    /// to the page, while keyboard input follows the actual first responder.
+    func observe(_ event: NSEvent) {
+        guard let window = event.window else { return }
+        let target: NSView?
+        if event.type == .keyDown {
+            let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            if flags == .command,
+               ["h", "q", "r", "[", "]"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") {
+                return
+            }
+            target = window.firstResponder as? NSView
+        } else {
+            guard let content = window.contentView else { return }
+            target = content.hitTest(content.convert(event.locationInWindow, from: nil))
+        }
+        var view = target
+        while let current = view {
+            if let page = current as? WKWebView {
+                recordInput(in: page)
+                return
+            }
+            view = current.superview
+        }
     }
 
-    func waitForSettle() async {
-        let remaining = Self.remainingWait(
-            since: max(lastInputAt, lastDepartureAt),
-            now: Date(),
-            window: Self.settleWindow
-        )
-        guard remaining > 0 else { return }
-        try? await Task.sleep(for: .seconds(remaining))
+    func recordInput(in page: WKWebView) {
+        entries = entries.filter { $0.value.page != nil }
+        entries[ObjectIdentifier(page)] = Entry(page: page, timestamp: now())
     }
 
-    /// The wait the settle window calls for. Pure, so the arithmetic is
-    /// testable without a clock or a page.
-    nonisolated static func remainingWait(
-        since lastInput: Date,
-        now: Date,
-        window: TimeInterval
-    ) -> TimeInterval {
+    /// An exit can itself start page work; remember it across hide/switch/quit.
+    func recordDeparture(in page: WKWebView) {
+        recordInput(in: page)
+    }
+
+    func remainingWait(for page: WKWebView) -> TimeInterval {
+        guard let entry = entries[ObjectIdentifier(page)], entry.page === page else { return 0 }
+        return max(0, window - (now() - entry.timestamp))
+    }
+
+    func waitForSettle(in pages: [WKWebView]) async {
+        let deadline = now() + window
+        while !Task.isCancelled {
+            let remaining = min(pages.map { remainingWait(for: $0) }.max() ?? 0, deadline - now())
+            guard remaining > 0 else { return }
+            do { try await sleep(remaining) } catch { return }
+        }
+    }
+
+    nonisolated static func remainingWait(since lastInput: Date, now: Date, window: TimeInterval) -> TimeInterval {
         max(0, window - now.timeIntervalSince(lastInput))
     }
 }

@@ -5,10 +5,15 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- Chorus can open mail links from macOS in a floating window for a chosen account. Choose Save and detect mail links in that service’s settings, then approve its page for new drafts. Links clicked inside services still use the Mac’s default mail app.
+
 ### Fixed
 
-- Hiding Chorus and switching services happen at once. Chorus gives Gmail time to finish work from your click before it clears hover state or puts the page aside. Reloading or quitting immediately after a click can still lose the change if Gmail has not sent it yet.
-- Chorus tells Gmail it is Safari 27 rather than 26.
+- Hiding Chorus and switching services happen at once. Chorus gives recent page actions a short time to finish before clearing hover or putting the page aside. This does not confirm a server save: reloading or quitting immediately after a click can still lose an unsent change.
+- Service tabs no longer cover the top of the page. Returning from Hide cancels its delayed hover exit, and repeated reload requests share one pending reload. Mail compose windows stay open when an editor disappears and hide with their popups when Chorus locks.
+- Chorus tells sites it is Safari 27 rather than 26 unless the service has a custom browser setting.
 
 ## [1.5.27] - 2026-10-05
 

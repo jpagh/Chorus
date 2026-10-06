@@ -6,6 +6,46 @@ import XCTest
 
 @MainActor
 final class WebViewDepartureTests: XCTestCase {
+    func testTabStripReservesPageHeightAndClosingLastTabRestoresIt() async throws {
+        let (window, webView, hosting, service) = try await selectedCardFixture()
+        defer { window.close() }
+        let tabs = ServiceTabs()
+        let tab = ServiceTab(webView: webView)
+        tabs.add(tab)
+        hosting.rootView = WebContentCard(
+            service: service, webView: webView, tabs: tabs,
+            transitionSnapshot: nil, isLoading: false,
+            findInPageVisible: .constant(false), onCloseTab: { _ in }
+        ) { Color.clear }
+        hosting.layoutSubtreeIfNeeded()
+
+        XCTAssertLessThan(webView.frame.height, hosting.bounds.height - 20,
+                          "The tab strip must reserve height, not cover the page")
+        let originalHost = webView.superview
+        tabs.remove(tab.id)
+        hosting.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(webView.frame.height, hosting.bounds.height, accuracy: 1)
+        XCTAssertTrue(webView.superview === originalHost, "Keep the page host mounted as tabs change")
+    }
+
+    func testUpdatingCurrentPageDoesNotReclaimItFromFullscreenHost() async throws {
+        let (window, webView) = try await hoveredFixture()
+        defer { window.close() }
+        let host = try XCTUnwrap(window.contentView as? WebViewHostView)
+        let fullscreenHost = NSView(frame: host.bounds)
+        webView.removeFromSuperview()
+        fullscreenHost.addSubview(webView)
+
+        host.setWebView(webView)
+
+        XCTAssertTrue(webView.superview === fullscreenHost,
+                      "WebKit owns the view until it restores it from fullscreen")
+        webView.removeFromSuperview()
+        host.setWebView(webView)
+        XCTAssertTrue(webView.superview === host, "An unattached page can be restored")
+    }
+
     func testDepartureClearsNativeHoverWithoutMovingThePointer() async throws {
         let (window, webView) = try await hoveredFixture()
         defer { window.close() }
@@ -17,22 +57,44 @@ final class WebViewDepartureTests: XCTestCase {
         XCTAssertEqual(NSEvent.mouseLocation, cursorBefore)
     }
 
-    func testHideCommandDoesNotWaitAndClearsNativeHover() async throws {
+    func testReturningFromHideDoesNotEndHoverOnTheRestoredPage() async throws {
         let (window, webView) = try await hoveredFixture()
         let wasHidden = NSApp.isHidden
         defer {
             if wasHidden { NSApp.hide(nil) } else { NSApp.unhideWithoutActivation() }
             window.close()
         }
+        InputSettle.shared.recordDeparture(in: webView)
+        let started = ContinuousClock.now
+        WebViewDeparture.hideApplication()
+        XCTAssertLessThan(started.duration(to: .now), .seconds(1))
+
+        // AppKit orders hide asynchronously; return after that transition,
+        // rather than asking to unhide before Hide has taken effect.
+        try await Task.sleep(for: .milliseconds(100))
+        NSApp.unhideWithoutActivation()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(NSApp.isHidden)
+        try await seedHover(in: webView, window: window)
+        let exitsBeforeWait = try await webView.evaluateJavaScript("window.trustedExits") as? Int
+        try await Task.sleep(for: .seconds(2.6))
+        let exits = try await webView.evaluateJavaScript("window.trustedExits") as? Int
+        XCTAssertEqual(exits, exitsBeforeWait, "A stale hide must not end hover after return")
+        let hovered = try await webView.evaluateJavaScript("document.getElementById('target').matches(':hover')")
+        XCTAssertEqual(hovered as? Bool, true)
+    }
+
+    func testEmptyPageDoesNotWaitForAnotherPagesDeparture() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let otherPage = WKWebView(frame: .zero, configuration: configuration)
+        InputSettle.shared.recordDeparture(in: otherPage)
         let started = ContinuousClock.now
 
-        WebViewDeparture.hideApplication()
+        await WebViewDeparture.prepareForDestruction(in: [webView])
 
-        XCTAssertLessThan(started.duration(to: .now), .seconds(1))
-        // AppKit can refuse to hide an inactive app on a locked runner. Test
-        // the command's departure policy here; actual hiding is a live check.
-        NSApp.unhideWithoutActivation()
-        try await waitUntil(webView, "window.trustedExits > 0 && !document.getElementById('target').matches(':hover')")
+        XCTAssertLessThan(started.duration(to: .now), .milliseconds(500))
     }
 
     func testDestructiveDepartureAllowsWorkStartedByHoverExit() async throws {
@@ -131,6 +193,49 @@ final class WebViewDepartureTests: XCTestCase {
             transitionSnapshot: nil, isLoading: false,
             findInPageVisible: .constant(false), onCloseTab: { _ in }
         ) { Color.clear }
+    }
+
+    func testRepeatedReloadDoesNotQueueAnotherDeparture() async throws {
+        let (window, webView) = try await hoveredFixture()
+        defer { window.close() }
+        let first = Task { @MainActor in
+            await WebViewCoordinator.reload(webView, fallbackURL: nil)
+        }
+        try await waitUntil(webView, "window.trustedExits > 0")
+
+        await WebViewCoordinator.reload(webView, fallbackURL: nil)
+        let loads = try await webView.evaluateJavaScript("window.loadCount")
+        XCTAssertEqual(loads as? Int, 1, "Repeated intent returns while the original reload is pending")
+        await first.value
+        try await waitUntil(webView, "window.loadCount === 2")
+    }
+
+    func testNewDocumentSupersedesPendingReload() async throws {
+        let (window, webView) = try await hoveredFixture()
+        defer { window.close() }
+        let reload = Task { @MainActor in
+            await WebViewCoordinator.reload(webView, fallbackURL: nil)
+        }
+        try await waitUntil(webView, "window.trustedExits > 0")
+        webView.loadHTMLString("<script>window.newDocument = true;</script>", baseURL: nil)
+        try await waitUntil(webView, "window.newDocument === true")
+        let origin = try await webView.evaluateJavaScript("performance.timeOrigin") as? Double
+        await reload.value
+        let originAfter = try await webView.evaluateJavaScript("performance.timeOrigin") as? Double
+        XCTAssertEqual(originAfter, origin, "Do not reload a document that replaced the requested target")
+    }
+
+    func testRequestedReloadSurvivesSameDocumentHashChange() async throws {
+        let (window, webView) = try await hoveredFixture()
+        defer { window.close() }
+        let reload = Task { @MainActor in
+            await WebViewCoordinator.reload(webView, fallbackURL: nil)
+        }
+        try await waitUntil(webView, "window.trustedExits > 0")
+        try await webView.evaluateJavaScript("location.hash = 'changed'; null")
+        await reload.value
+
+        try await waitUntil(webView, "window.loadCount === 2")
     }
 
     func testReloadPreservesWorkStartedByHoverExit() async throws {

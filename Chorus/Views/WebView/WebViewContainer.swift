@@ -56,6 +56,11 @@ final class WebViewHostView: NSView {
     }
 
     func setWebView(_ webView: WKWebView?) {
+        // WebKit temporarily owns a page during element fullscreen. Only
+        // transfer between Chorus hosts or restore an unattached page.
+        if let owner = webView?.superview, owner !== self, !(owner is WebViewHostView) {
+            return
+        }
         guard webView !== currentWebView || (webView != nil && webView?.superview !== self) else { return }
 
         // A quick return (even through a different host) cancels the old

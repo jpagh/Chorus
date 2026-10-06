@@ -371,33 +371,32 @@ struct WebContentCard<EmptyContent: View>: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Keep the host in the hierarchy for every selection. Hiding or
-            // removing it would prevent the outgoing page's native exit.
-            WebViewContainer(webView: pageWebView)
+        VStack(spacing: 0) {
+            if let service, pageWebView != nil, let tabs, !tabs.isEmpty {
+                ServiceTabStrip(
+                    serviceLabel: service.label,
+                    tabs: tabs,
+                    onClose: onCloseTab
+                )
+            }
+            ZStack(alignment: .topTrailing) {
+                // Keep one host mounted through web, native and empty selections.
+                WebViewContainer(webView: pageWebView)
 
-            if let service, let bundleID = service.nativeAppBundleID {
-                NativeAppPanel(label: service.label, bundleID: bundleID)
-                    .background(ChorusColor.card)
-            } else if let service, let webView = pageWebView {
-                VStack(spacing: 0) {
-                    if let tabs, !tabs.isEmpty {
-                        ServiceTabStrip(
-                            serviceLabel: service.label,
-                            tabs: tabs,
-                            onClose: onCloseTab
-                        )
-                    }
+                if let service, let bundleID = service.nativeAppBundleID {
+                    NativeAppPanel(label: service.label, bundleID: bundleID)
+                        .background(ChorusColor.card)
+                } else if let webView = pageWebView {
                     pageChrome(webView)
+                } else if service != nil {
+                    ProgressView("Loading service…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ChorusColor.card)
+                } else {
+                    emptyContent()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ChorusColor.card)
                 }
-            } else if service != nil {
-                ProgressView("Loading service…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(ChorusColor.card)
-            } else {
-                emptyContent()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(ChorusColor.card)
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isLoading)
