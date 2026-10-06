@@ -23,7 +23,13 @@ final class WebViewDepartureTests: XCTestCase {
                           "The tab strip must reserve height, not cover the page")
         let originalHost = webView.superview
         tabs.remove(tab.id)
-        hosting.layoutSubtreeIfNeeded()
+        // SwiftUI invalidates Observation-backed layout on a later AppKit turn
+        // on macOS 15. Wait for that update without relaxing the geometry check.
+        for _ in 0..<100 {
+            hosting.layoutSubtreeIfNeeded()
+            if abs(webView.frame.height - hosting.bounds.height) <= 1 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         XCTAssertEqual(webView.frame.height, hosting.bounds.height, accuracy: 1)
         XCTAssertTrue(webView.superview === originalHost, "Keep the page host mounted as tabs change")

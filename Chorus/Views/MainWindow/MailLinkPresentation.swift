@@ -4,29 +4,47 @@ import SwiftUI
 struct MailLinkPresentation: ViewModifier {
     let appState: AppState
     @State private var displayedChoice: AppState.PendingMailLink?
+    @State private var choiceIsPresented = false
 
     func body(content: Content) -> some View {
         let choice = displayedChoice
         content.sheet(isPresented: Binding(
-            get: { !appState.isLocked && displayedChoice != nil },
+            get: { !appState.isLocked && choiceIsPresented },
             set: { shown in
                 guard !shown, let choice, displayedChoice?.id == choice.id else { return }
-                displayedChoice = nil
+                choiceIsPresented = false
                 appState.cancelMailLink(choice.id)
             }
-        )) {
+        ), onDismiss: {
+            // Retain the old identity until native dismissal finishes. A yield
+            // can merge hide/show into one update and cancel the next request.
+            guard let choice, displayedChoice?.id == choice.id else { return }
+            choiceIsPresented = false
+            displayedChoice = nil
+            showPendingChoice()
+        }) {
             if !appState.isLocked, let choice {
                 MailServiceChooser(request: choice).environment(appState)
             }
         }
-        .task(id: appState.pendingMailLink?.id) {
-            displayedChoice = nil
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            displayedChoice = appState.pendingMailLink
+        .onChange(of: appState.pendingMailLink?.id, initial: true) {
+            if let displayedChoice {
+                if displayedChoice.id != appState.pendingMailLink?.id {
+                    choiceIsPresented = false
+                }
+            } else {
+                showPendingChoice()
+            }
         }
         .modifier(MailLinkErrorPresentation(appState: appState))
         .modifier(MailHandlerApprovalPresentation(appState: appState))
+    }
+
+    private func showPendingChoice() {
+        guard displayedChoice == nil, !appState.isLocked,
+              let choice = appState.pendingMailLink else { return }
+        displayedChoice = choice
+        choiceIsPresented = true
     }
 }
 

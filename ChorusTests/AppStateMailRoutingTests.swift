@@ -78,6 +78,57 @@ final class AppStateMailRoutingTests: XCTestCase {
         XCTAssertEqual(service.mailtoHandlerTemplate, "https://fixture.example.test/new?mail=%s")
     }
 
+    func testDeclarationReceivedWhileLockedDoesNotReappearAfterUnlock() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = ServiceInstance(label: "Account", url: "https://fixture.example.test")
+        fixture.container.mainContext.insert(service)
+        try fixture.container.mainContext.save()
+        fixture.app.appLockEnabled = true
+        fixture.app.lock()
+        XCTAssertTrue(fixture.app.isLocked)
+        fixture.app.userScriptManager.onMailHandlerDeclaration?(MailHandlerDeclaration(
+            serviceID: service.id, protocolName: "mailto", handlerTemplate: "/compose?mail=%s",
+            declaringPageURL: URL(string: service.url)!, isMainFrame: true))
+        fixture.app.isLocked = false
+        XCTAssertNil(fixture.app.pendingMailHandlerApproval)
+        XCTAssertNil(service.mailtoHandler)
+    }
+
+    func testExplicitDetectionReportsUnsupportedHTTPService() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = ServiceInstance(label: "Account", url: "http://fixture.example.test")
+        fixture.container.mainContext.insert(service)
+        fixture.app.detectMailHandler(for: service.id)
+        XCTAssertNotNil(fixture.app.mailLinkError)
+        XCTAssertEqual(fixture.app.mailLinkError?.consumesRequest, false)
+    }
+
+    func testExplicitDetectionReportsDisabledMailLinksWithoutEnablingThem() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = fixture.addAccount("Account", path: "/first")
+        service.mailtoHandlerEnabled = false
+        fixture.app.detectMailHandler(for: service.id)
+        XCTAssertNotNil(fixture.app.mailLinkError)
+        XCTAssertFalse(service.mailtoHandlerEnabledEffective)
+    }
+
+    func testProbeEligibilityUsesParsedAccountURLAndStillRejectsChangedPaths() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = ServiceInstance(label: "Account", url: "https://fixture.example.test/path with spaces")
+        fixture.container.mainContext.insert(service)
+        let requestedURL = try XCTUnwrap(URL(string: service.url))
+        XCTAssertEqual(fixture.app.webViewPool.canProbeMailHandler?(service.id, requestedURL), true)
+        service.mailtoHandlerEnabled = false
+        XCTAssertEqual(fixture.app.webViewPool.canProbeMailHandler?(service.id, requestedURL), false)
+        service.mailtoHandlerEnabled = true
+        service.url = "https://fixture.example.test/another-account"
+        XCTAssertEqual(fixture.app.webViewPool.canProbeMailHandler?(service.id, requestedURL), false)
+    }
+
     func testChangedServiceWhileApprovalIsVisibleDoesNotStrandQueuedMail() async throws {
         let fixture = try await RoutingFixture()
         defer { fixture.close() }
@@ -279,6 +330,33 @@ final class AppStateMailRoutingTests: XCTestCase {
         XCTAssertEqual(first.view.url, fixture.server.url("/first?mail=" + firstPayload))
         XCTAssertNil(fixture.app.mailLinkError)
         XCTAssertNil(fixture.app.pendingMailLink)
+    }
+
+    func testHostedChooserSurvivesLockWithoutCancellingItsQueuedMail() async throws {
+        let fixture = try await RoutingFixture()
+        let personal = fixture.addAccount("Personal", path: "/first")
+        _ = fixture.addAccount("Work", path: "/second")
+        let window = hostMailPresentation(fixture.app)
+        defer { window.close(); fixture.close() }
+        fixture.app.appLockEnabled = true
+        fixture.app.enqueueMailLink(try XCTUnwrap(URL(string: firstMail)))
+        let firstShown = await eventually { window.attachedSheet != nil }
+        XCTAssertTrue(firstShown)
+        let old = try XCTUnwrap(fixture.app.pendingMailLink)
+        fixture.app.lock()
+        XCTAssertTrue(fixture.app.isLocked)
+        let hidden = await eventually { window.attachedSheet == nil }
+        XCTAssertTrue(hidden)
+        XCTAssertNil(fixture.app.pendingMailLink)
+        fixture.app.isLocked = false
+        let restored = await eventually { window.attachedSheet != nil && fixture.app.pendingMailLink != nil }
+        XCTAssertTrue(restored)
+        let current = try XCTUnwrap(fixture.app.pendingMailLink)
+        fixture.app.cancelMailLink(old.id)
+        XCTAssertEqual(fixture.app.pendingMailLink?.id, current.id)
+        fixture.app.chooseMailService(personal.id, requestID: current.id)
+        XCTAssertEqual(fixture.loads.count, 1)
+        XCTAssertEqual(fixture.loads.first?.url.absoluteString, "https://fixture.example.test/first?mail=" + firstPayload)
     }
 
     func testHostedErrorCompletionPreservesNextChooser() async throws {

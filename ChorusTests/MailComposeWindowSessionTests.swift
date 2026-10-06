@@ -107,6 +107,29 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertEqual(closeCount, 1)
     }
 
+    func testDialogCompletionCanPresentNextDialogOnTheSameWindow() async throws {
+        let session = try await openFixture("<textarea></textarea>")
+        defer { session.window.close() }
+        let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
+        var response: String?
+        WebViewDialogs.alert("First dialog", over: webView) {
+            WebViewDialogs.prompt("Next dialog", defaultText: "draft", over: webView) { response = $0 }
+        }
+        let firstShown = await eventually { session.window.attachedSheet != nil }
+        XCTAssertTrue(firstShown)
+        session.window.endSheet(try XCTUnwrap(session.window.attachedSheet), returnCode: .alertFirstButtonReturn)
+        let nextShown = await eventually { self.textField(in: session.window.attachedSheet?.contentView) != nil }
+        XCTAssertTrue(nextShown, "A dialog completion may immediately request the next dialog")
+        guard nextShown else { return }
+        let sheet = try XCTUnwrap(session.window.attachedSheet)
+        let field = try XCTUnwrap(textField(in: sheet.contentView))
+        XCTAssertEqual(field.stringValue, "draft")
+        field.stringValue = "saved response"
+        session.window.endSheet(sheet, returnCode: .alertFirstButtonReturn)
+        let answered = await eventually { response == "saved response" }
+        XCTAssertTrue(answered)
+    }
+
     func testAlertAndPromptArePresentedInsteadOfSilentlyDismissed() async throws {
         let session = try await openFixture("<script>window.result = null;</script>")
         defer { session.window.close() }
@@ -710,6 +733,25 @@ final class MailComposeWindowSessionTests: XCTestCase {
             XCTAssertTrue(published, "Abandoned probes cannot publish late declarations")
             pool.completeMailHandlerProbe(for: second.id)
         }
+    }
+
+    func testLockCancelsActiveAndQueuedCompatibilityLoads() {
+        var loaded: [URL] = []
+        let pool = WebViewPool(
+            dataStoreManager: DataStoreManager(makeStore: { _ in .nonPersistent() }),
+            userScriptManager: UserScriptManager(), contentBlocker: ContentBlockerManager(),
+            loadMailProbe: { _, url in loaded.append(url) })
+        let accounts = ["first", "queued", "after-unlock"].map {
+            ServiceInstance(label: $0, url: "https://\($0).example.test")
+        }
+        defer { accounts.forEach { pool.removeWebView(for: $0.id) } }
+        pool.probeMailHandler(for: accounts[0], userRequested: true)
+        pool.probeMailHandler(for: accounts[1], userRequested: true)
+        pool.setMailComposersLocked(true)
+        pool.setMailComposersLocked(false)
+        pool.probeMailHandler(for: accounts[2], userRequested: true)
+        XCTAssertEqual(loaded, [URL(string: accounts[0].url)!, URL(string: accounts[2].url)!],
+                       "Lock discards hidden loads without restarting the waiting account")
     }
 
     func testExplicitRetryAfterSignInIsNotSilentlyThrottled() {

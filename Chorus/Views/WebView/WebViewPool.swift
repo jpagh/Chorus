@@ -586,6 +586,14 @@ final class WebViewPool {
 
     /// Conceal drafts and descendants while retaining their page state.
     func setMailComposersLocked(_ locked: Bool) {
+        if locked {
+            // Compatibility loads hold no drafts and must not propose handlers
+            // after lock has discarded the pending consent UI.
+            mailHandlerProbeQueue = MailHandlerProbeQueue()
+            mailHandlerProbeRequests.removeAll()
+            activeMailHandlerProbe?.cancel(using: userScriptManager)
+            activeMailHandlerProbe = nil
+        }
         for composer in mailComposeWindows.values { composer.session.setLocked(locked) }
     }
 
@@ -884,6 +892,7 @@ final class WebViewPool {
     private func teardownWebView(_ instanceID: UUID) {
         coordinators[instanceID]?.closeAllTabs()
         if let webView = webViews[instanceID] {
+            userScriptManager.removeMailHandler(on: webView.configuration.userContentController)
             webView.configuration.userContentController.removeAllScriptMessageHandlers()
             webView.stopLoading()
             webView.navigationDelegate = nil

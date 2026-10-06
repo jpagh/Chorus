@@ -102,9 +102,9 @@ final class MailComposeWindowSession: NSObject, NSWindowDelegate {
         var seen = Set<ObjectIdentifier>()
         func descendants(_ window: NSWindow) -> [NSWindow] {
             guard seen.insert(ObjectIdentifier(window)).inserted else { return [] }
-            return [window] + (window.childWindows ?? []).flatMap(descendants)
+            return [window] + (window.childWindows ?? []).flatMap { descendants($0) }
         }
-        return ([window] + coordinator.auxiliaryWindows + [webView.window].compactMap { $0 }).flatMap(descendants)
+        return ([window] + coordinator.auxiliaryWindows + [webView.window].compactMap { $0 }).flatMap { descendants($0) }
     }
 
     /// Hide drafts and all owned dialogs/popups, but keep their state alive.

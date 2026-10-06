@@ -591,10 +591,12 @@ final class AppState {
         }
         webViewPool.canProbeMailHandler = { [weak self] id, url in
             guard let self, !self.isLocked, let service = self.fetchService(id: id) else { return false }
-            return service.url == url.absoluteString && service.nativeAppBundleID == nil
+            return URL(string: service.url) == url && service.nativeAppBundleID == nil
+                && service.mailtoHandlerEnabledEffective
         }
         webViewPool.onMailHandlerProbeFailed = { [weak self] id in
-            guard let self, !self.isLocked, self.fetchService(id: id) != nil, self.mailLinkError == nil else { return }
+            guard let self, !self.isLocked, let service = self.fetchService(id: id),
+                  service.mailtoHandlerEnabledEffective, self.mailLinkError == nil else { return }
             self.mailLinkError = MailLinkError(
                 message: "Chorus could not find a page for new drafts. Sign in to this service, then try Save and detect mail links in its settings again.",
                 consumesRequest: false)
@@ -946,7 +948,7 @@ final class AppState {
     }
 
     private func acceptMailHandlerDeclaration(_ declaration: MailHandlerDeclaration) {
-        guard let service = fetchService(id: declaration.serviceID),
+        guard !isLocked, let service = fetchService(id: declaration.serviceID),
               let registration = MailLinkRouter.registration(
                 for: service,
                 protocolName: declaration.protocolName,
@@ -999,6 +1001,20 @@ final class AppState {
     /// because an unrelated service finished navigating.
     func detectMailHandler(for serviceID: UUID) {
         guard !isLocked, let service = fetchService(id: serviceID), service.nativeAppBundleID == nil else { return }
+        guard service.mailtoHandlerEnabledEffective else {
+            mailLinkError = MailLinkError(
+                message: "Turn on Use for mail links in this service’s settings before trying detection.",
+                consumesRequest: false)
+            bringMainWindowForward()
+            return
+        }
+        guard let url = URL(string: service.url), url.scheme?.lowercased() == "https", Origin(url) != nil else {
+            mailLinkError = MailLinkError(
+                message: "Use a service address that starts with https:// to detect mail links.",
+                consumesRequest: false)
+            bringMainWindowForward()
+            return
+        }
         declinedMailHandlers.removeValue(forKey: serviceID)
         webViewPool.probeMailHandler(for: service, userRequested: true)
     }
