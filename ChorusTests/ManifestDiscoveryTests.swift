@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Security
 import SwiftData
 import WebKit
@@ -167,7 +168,7 @@ private final class ManifestFixture {
         let key = try XCTUnwrap(SecKeyCreateWithData(keyData as CFData, [
             kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeyClass: kSecAttrKeyClassPrivate
         ] as CFDictionary, nil))
-        let identity = try XCTUnwrap(SecIdentityCreate(nil, certificate, key))
+        let identity = try Self.makeIdentity(certificate: certificate, key: key)
         var responses = manifests.mapValues { response in
             var response = response
             response.headers["Content-Type"] = "application/manifest+json"
@@ -179,6 +180,19 @@ private final class ManifestFixture {
         server = try await ComposeFixtureServer(responses: responses, tlsIdentity: identity)
         container = try ModelContainer(for: Schema(versionedSchema: ChorusSchemaVCurrent.self), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         app = AppState(modelContainer: container, dataStoreManager: DataStoreManager(makeStore: { _ in .nonPersistent() }))
+    }
+
+    private static func makeIdentity(certificate: SecCertificate, key: SecKey) throws -> SecIdentity {
+        #if compiler(>=6.2)
+        return try XCTUnwrap(SecIdentityCreate(nil, certificate, key))
+        #else
+        // The API exists from macOS 10.12, but Xcode 16 lacks its declaration.
+        // Resolve its C ABI without importing a fixture into any Keychain.
+        typealias CreateIdentity = @convention(c) (CFAllocator?, SecCertificate, SecKey) -> Unmanaged<SecIdentity>?
+        let symbol = try XCTUnwrap(dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecIdentityCreate"))
+        let create = unsafeBitCast(symbol, to: CreateIdentity.self)
+        return try XCTUnwrap(create(nil, certificate, key)).takeRetainedValue()
+        #endif
     }
 
     func addAccount(_ label: String) -> ServiceInstance {
