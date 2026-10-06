@@ -261,6 +261,13 @@ enum MailLinkRouter {
     private static func resolveTemplate(_ template: String, against base: URL) -> String? {
         let sentinel = "CHORUS_MAILTO_PLACEHOLDER_8E7A1D"
         let protected = template.replacingOccurrences(of: "%s", with: sentinel)
+        guard let components = URLComponents(string: protected) else { return nil }
+        if components.scheme == nil {
+            // A relative path's first segment cannot contain a raw colon.
+            // Older Foundation parsers otherwise accept malformed scheme-like input.
+            let firstSegment = protected.prefix { $0 != "/" && $0 != "?" && $0 != "#" }
+            guard !firstSegment.contains(":") else { return nil }
+        }
         guard let resolved = URL(string: protected, relativeTo: base)?.absoluteURL.absoluteString else { return nil }
         return resolved.replacingOccurrences(of: sentinel, with: "%s")
     }

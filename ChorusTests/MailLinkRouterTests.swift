@@ -137,6 +137,15 @@ final class MailLinkRouterTests: XCTestCase {
         XCTAssertFalse(accepted(page: "https://mail.example.com", service: "https://mail.example.com:444"))
     }
 
+    func testRelativeTemplateMayUseAnEncodedLeadingColon() {
+        let registration = MailLinkRouter.registration(
+            account: MailLinkAccount(serviceID: gmailID, label: "Mail", providerLabel: nil, spaceLabels: []),
+            serviceURL: "https://mail.example.com/", protocolName: "mailto",
+            handlerTemplate: "%3Acompose?url=%s", declaringPageURL: "https://mail.example.com/inbox",
+            isMainFrame: true, enabled: true)
+        XCTAssertEqual(registration?.handlerTemplate, "https://mail.example.com/%3Acompose?url=%s")
+    }
+
     func testDefaultHTTPSPortIsTheSameOrigin() {
         XCTAssertNotNil(MailLinkRouter.registration(
             account: MailLinkAccount(serviceID: gmailID, label: "Mail", providerLabel: nil, spaceLabels: []),
