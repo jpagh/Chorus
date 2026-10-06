@@ -180,7 +180,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         weak var webView = window.contentView as? WKWebView
         window.performClose(nil) // The standard close action used by red close and Command-W.
         let released = await eventually { session == nil && webView == nil }
-        XCTAssertTrue(released)
+        XCTAssertTrue(released, "Session retained: \(session != nil); web view retained: \(webView != nil); closes: \(closes)")
         XCTAssertNil(window.contentView)
         XCTAssertFalse(window.isVisible)
         window.close()

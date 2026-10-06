@@ -259,7 +259,11 @@ enum MailLinkRouter {
     /// Foundation treats `%s` as malformed percent encoding in some URL paths.
     /// Resolve with a URL-safe sentinel, then put the protocol placeholder back.
     private static func resolveTemplate(_ template: String, against base: URL) -> String? {
-        let sentinel = "CHORUS_MAILTO_PLACEHOLDER_8E7A1D"
+        var sentinel = "CHORUS_MAILTO_PLACEHOLDER_8E7A1D"
+        // Resolution can inherit path text from the declaring page as well.
+        while template.contains(sentinel) || base.absoluteString.contains(sentinel) {
+            sentinel += "_"
+        }
         let protected = template.replacingOccurrences(of: "%s", with: sentinel)
         guard let components = URLComponents(string: protected) else { return nil }
         if components.scheme == nil {

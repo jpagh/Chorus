@@ -137,6 +137,27 @@ final class MailLinkRouterTests: XCTestCase {
         XCTAssertFalse(accepted(page: "https://mail.example.com", service: "https://mail.example.com:444"))
     }
 
+    func testRelativeTemplatePreservesPlaceholderSentinelTextInTemplateAndBase() throws {
+        let marker = "CHORUS_MAILTO_PLACEHOLDER_8E7A1D"
+        for (template, page, expected) in [
+            ("/compose?tag=\(marker)&url=%s", "https://mail.example.com/inbox",
+             "https://mail.example.com/compose?tag=\(marker)&url=%s"),
+            ("?url=%s", "https://mail.example.com/\(marker)",
+             "https://mail.example.com/\(marker)?url=%s")
+        ] {
+            let registration = try XCTUnwrap(MailLinkRouter.registration(
+                account: MailLinkAccount(serviceID: gmailID, label: "Mail", providerLabel: nil, spaceLabels: []),
+                serviceURL: "https://mail.example.com/", protocolName: "mailto",
+                handlerTemplate: template, declaringPageURL: page, isMainFrame: true, enabled: true))
+            XCTAssertEqual(registration.handlerTemplate, expected)
+            let destination = try XCTUnwrap(MailLinkRouter.destination(
+                for: try XCTUnwrap(URL(string: "mailto:alice@example.com")),
+                serviceID: gmailID, registrations: [registration]))
+            XCTAssertTrue(destination.url.absoluteString.contains(marker))
+            XCTAssertTrue(destination.url.absoluteString.contains("mailto%3Aalice%40example.com"))
+        }
+    }
+
     func testRelativeTemplateMayUseAnEncodedLeadingColon() {
         let registration = MailLinkRouter.registration(
             account: MailLinkAccount(serviceID: gmailID, label: "Mail", providerLabel: nil, spaceLabels: []),
