@@ -919,7 +919,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         tab.webView.removeFromSuperview()
         closingTabs = closingTabs + [tab]
         Task { @MainActor [weak self] in
-            _ = try? await tab.webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+            _ = try? await tab.webView.evaluateJavaScriptValue(UserScriptManager.quitReleaseJS)
             try? await Task.sleep(for: Self.tabSaveWindow)
             Self.tearDown(tab.webView)
             self?.closingTabs.removeAll { $0 === tab }

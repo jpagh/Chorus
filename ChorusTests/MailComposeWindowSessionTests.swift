@@ -86,7 +86,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         defer { session.window.close() }
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
 
-        try await webView.evaluateJavaScript("setTimeout(() => document.getElementById('discard').click(), 0); null")
+        try await webView.evaluateJavaScriptValue("setTimeout(() => document.getElementById('discard').click(), 0); null")
         let presented = await eventually { session.window.attachedSheet != nil }
         XCTAssertTrue(presented, "Provider confirmation must appear instead of silently cancelling")
         guard presented else { return }
@@ -96,7 +96,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertTrue(session.window.isVisible)
         XCTAssertEqual(closeCount, 0)
 
-        try await webView.evaluateJavaScript("setTimeout(() => document.getElementById('discard').click(), 0); null")
+        try await webView.evaluateJavaScriptValue("setTimeout(() => document.getElementById('discard').click(), 0); null")
         let presentedAgain = await eventually { session.window.attachedSheet != nil }
         XCTAssertTrue(presentedAgain)
         guard presentedAgain else { return }
@@ -146,7 +146,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let session = try await openFixture("<script>window.result = null;</script>")
         defer { session.window.close() }
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
-        try await webView.evaluateJavaScript("setTimeout(() => { alert('Fixture notice'); window.result = prompt('Fixture input', 'default'); }, 0); null")
+        try await webView.evaluateJavaScriptValue("setTimeout(() => { alert('Fixture notice'); window.result = prompt('Fixture input', 'default'); }, 0); null")
         let alertShown = await eventually { session.window.attachedSheet != nil }
         XCTAssertTrue(alertShown)
         guard alertShown else { return }
@@ -163,7 +163,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         field.stringValue = "fixture response"
         session.window.endSheet(sheet, returnCode: .alertFirstButtonReturn)
         let resumed = await eventually {
-            (try? await webView.evaluateJavaScript("window.result")) as? String == "fixture response"
+            (try? await webView.evaluateJavaScriptValue("window.result")) as? String == "fixture response"
         }
         XCTAssertTrue(resumed)
     }
@@ -193,7 +193,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         defer { session.window.close() }
         let view = try XCTUnwrap(session.window.contentView as? WKWebView)
         try await Task.sleep(for: .milliseconds(700))
-        try await view.evaluateJavaScript("document.getElementById('editor').style.display = 'none'; null")
+        try await view.evaluateJavaScriptValue("document.getElementById('editor').style.display = 'none'; null")
         try await Task.sleep(for: .milliseconds(800))
         XCTAssertEqual(closes, 0)
         XCTAssertTrue(session.window.isVisible)
@@ -213,7 +213,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         defer { session.window.close() }
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
         let finished = await eventually {
-            (try? await webView.evaluateJavaScript("window.startupFinished === true")) as? Bool == true
+            (try? await webView.evaluateJavaScriptValue("window.startupFinished === true")) as? Bool == true
         }
         XCTAssertTrue(finished)
         XCTAssertTrue(session.window.isVisible, "A transient startup editor must not arm inferred closure")
@@ -226,7 +226,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
         try await Task.sleep(for: .milliseconds(700))
         // A brief detach, then a replacement with signature-like markup, is not completion.
-        try await webView.evaluateJavaScript("""
+        try await webView.evaluateJavaScriptValue("""
             var editor = document.getElementById('editor');
             editor.remove();
             setTimeout(() => document.body.appendChild(editor), 100);
@@ -234,7 +234,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
             """)
         try await Task.sleep(for: .milliseconds(700))
         XCTAssertTrue(session.window.isVisible)
-        try await webView.evaluateJavaScript("""
+        try await webView.evaluateJavaScriptValue("""
             document.getElementById('editor').outerHTML = '<div id="editor" contenteditable="true"><p>Fresh signature</p></div>';
             null
             """)
@@ -242,13 +242,13 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertTrue(session.window.isVisible, "An ambiguous replacement must preserve the draft")
         XCTAssertEqual(closes, 0)
 
-        try await webView.evaluateJavaScript("document.getElementById('editor').remove(); null")
+        try await webView.evaluateJavaScriptValue("document.getElementById('editor').remove(); null")
         try await Task.sleep(for: .milliseconds(150))
         XCTAssertTrue(session.window.isVisible)
         try await Task.sleep(for: .milliseconds(700))
         XCTAssertEqual(closes, 0, "Editor disappearance does not mean send or discard")
         XCTAssertTrue(session.window.isVisible)
-        try await webView.evaluateJavaScript("window.close(); null")
+        try await webView.evaluateJavaScriptValue("window.close(); null")
         let closed = await eventually { closes == 1 }
         XCTAssertTrue(closed, "An explicit provider close must finish the session")
         XCTAssertFalse(session.window.isVisible)
@@ -261,7 +261,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(1100))
         XCTAssertTrue(session.window.isVisible)
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
-        try await webView.evaluateJavaScript("setTimeout(() => confirm('Fixture confirmation'), 0); null")
+        try await webView.evaluateJavaScriptValue("setTimeout(() => confirm('Fixture confirmation'), 0); null")
         let shown = await eventually { session.window.attachedSheet != nil }
         XCTAssertTrue(shown)
         guard shown else { return }
@@ -298,15 +298,15 @@ final class MailComposeWindowSessionTests: XCTestCase {
         defer { session.window.close() }
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
         try await Task.sleep(for: .milliseconds(700))
-        try await webView.evaluateJavaScript("document.getElementById('untrusted').contentWindow.postMessage('try', '*'); null")
+        try await webView.evaluateJavaScriptValue("document.getElementById('untrusted').contentWindow.postMessage('try', '*'); null")
         let attempted = await eventually {
-            (try? await webView.evaluateJavaScript("window.attempted === true")) as? Bool == true
+            (try? await webView.evaluateJavaScriptValue("window.attempted === true")) as? Bool == true
         }
         XCTAssertTrue(attempted, "Untrusted fixture must actually attempt to close the window")
         try await Task.sleep(for: .milliseconds(700))
         XCTAssertTrue(session.window.isVisible)
         XCTAssertEqual(closes, 0)
-        try await webView.evaluateJavaScript("document.getElementById('trusted').contentWindow.postMessage('complete', '*'); null")
+        try await webView.evaluateJavaScriptValue("document.getElementById('trusted').contentWindow.postMessage('complete', '*'); null")
         let closed = await eventually { closes == 1 }
         XCTAssertTrue(closed, "Trusted child-frame close must reach the native window")
     }
@@ -331,15 +331,15 @@ final class MailComposeWindowSessionTests: XCTestCase {
         defer { first.window.close(); second.window.close(); third.window.close() }
         for (session, expected) in [(first, "personal"), (second, "personal"), (third, "work")] {
             let view = try XCTUnwrap(session.window.contentView as? WKWebView)
-            let marker = try await view.evaluateJavaScript("document.cookie") as? String
+            let marker = try await view.evaluateJavaScriptValue("document.cookie") as? String
             XCTAssertEqual(marker, "fixtureAccount=\(expected)")
         }
         let otherView = try XCTUnwrap(second.window.contentView as? WKWebView)
-        try await otherView.evaluateJavaScript("window.preserved = 17; null")
+        try await otherView.evaluateJavaScriptValue("window.preserved = 17; null")
         first.window.performClose(nil)
         XCTAssertTrue(second.window.isVisible)
         XCTAssertTrue(third.window.isVisible)
-        let preserved = try await otherView.evaluateJavaScript("window.preserved") as? Int
+        let preserved = try await otherView.evaluateJavaScriptValue("window.preserved") as? Int
         XCTAssertEqual(preserved, 17, "Closing another request must not reload this view")
     }
 
@@ -362,7 +362,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertTrue(session.window.isVisible)
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
         XCTAssertEqual(webView.url, server.url("/compose"))
-        let userAgent = try await webView.evaluateJavaScript("navigator.userAgent") as? String
+        let userAgent = try await webView.evaluateJavaScriptValue("navigator.userAgent") as? String
         XCTAssertEqual(userAgent, UserAgentProvider.safariDefault)
     }
 
@@ -378,7 +378,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertFalse(delegate.opensServiceTabs, "A floating window must not open inaccessible service tabs")
         let requested = await eventually {
             if session.window.attachedSheet != nil { return true }
-            _ = try? await view.evaluateJavaScript("document.getElementById('attachment').click(); null")
+            _ = try? await view.evaluateJavaScriptValue("document.getElementById('attachment').click(); null")
             return session.window.attachedSheet != nil
         }
         XCTAssertTrue(requested, "The native attachment picker must actually open")
@@ -394,9 +394,9 @@ final class MailComposeWindowSessionTests: XCTestCase {
         session.show()
         defer { session.window.close() }
         let view = try XCTUnwrap(session.window.contentView as? WKWebView)
-        let ready = await eventually { (try? await view.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true }
+        let ready = await eventually { (try? await view.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
         XCTAssertTrue(ready)
-        try await view.evaluateJavaScript("location.href = 'mailto:script@example.test'; null")
+        try await view.evaluateJavaScriptValue("location.href = 'mailto:script@example.test'; null")
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertTrue(requests.isEmpty)
         XCTAssertEqual(view.url, server.url())
@@ -421,11 +421,11 @@ final class MailComposeWindowSessionTests: XCTestCase {
         defer { session.window.close() }
         let view = try XCTUnwrap(session.window.contentView as? WKWebView)
         let ready = await eventually {
-            (try? await view.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true
+            (try? await view.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true
         }
         XCTAssertTrue(ready)
         for (index, id) in ["ordinary", "newTarget"].enumerated() {
-            try await view.evaluateJavaScript("document.getElementById('\(id)').click()")
+            try await view.evaluateJavaScriptValue("document.getElementById('\(id)').click()")
             let delivered = await eventually { received.count == index + 1 }
             XCTAssertTrue(delivered)
         }
@@ -433,7 +433,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertEqual(received.map(\.absoluteString), [mail, mail])
         XCTAssertEqual(view.url, server.url())
         XCTAssertTrue(session.window.isVisible)
-        try await view.evaluateJavaScript("document.getElementById('web').click()")
+        try await view.evaluateJavaScriptValue("document.getElementById('web').click()")
         let navigated = await eventually { view.url == server.url("/next") }
         XCTAssertTrue(navigated, "Non-mail navigation must retain its existing behavior")
         XCTAssertEqual(received.count, 2)
@@ -543,15 +543,15 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let inbox = app.webViewPool.webView(for: services[0])
         inbox.loadHTMLString("<script>window.fixtureReady = true; window.draftMarker = 17;</script>", baseURL: server.url())
         defer { app.webViewPool.removeWebView(for: services[0].id) }
-        let inboxReady = await eventually { (try? await inbox.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true }
+        let inboxReady = await eventually { (try? await inbox.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
         XCTAssertTrue(inboxReady)
         let selectedSpace = UUID()
         app.selectedSpaceID = selectedSpace
         app.selectedServiceID = services[0].id
         let view = try XCTUnwrap(window.contentView as? WKWebView)
-        let ready = await eventually { (try? await view.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true }
+        let ready = await eventually { (try? await view.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
         XCTAssertTrue(ready)
-        try await view.evaluateJavaScript("document.getElementById('mail').click()")
+        try await view.evaluateJavaScriptValue("document.getElementById('mail').click()")
         let choosing = await eventually { app.pendingMailLink != nil }
         XCTAssertTrue(choosing)
         XCTAssertEqual(app.pendingMailLink?.candidates.count, 2)
@@ -561,7 +561,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertNil(app.pendingMailLink, "A single click must enqueue exactly one request")
         XCTAssertNil(app.mailLinkErrorMessage)
 
-        try await view.evaluateJavaScript("document.getElementById('mail').click()")
+        try await view.evaluateJavaScriptValue("document.getElementById('mail').click()")
         let choosingAgain = await eventually { app.pendingMailLink != nil }
         XCTAssertTrue(choosingAgain)
         app.chooseMailService(services[1].id, requestID: try XCTUnwrap(app.pendingMailLink).id)
@@ -573,7 +573,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertEqual(view.url, server.url())
         XCTAssertEqual(app.selectedSpaceID, selectedSpace)
         XCTAssertEqual(app.selectedServiceID, services[0].id)
-        let marker = try await inbox.evaluateJavaScript("window.draftMarker") as? Int
+        let marker = try await inbox.evaluateJavaScriptValue("window.draftMarker") as? Int
         XCTAssertEqual(marker, 17, "Composing must not navigate or reload the inbox")
     }
 
@@ -608,9 +608,9 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let inbox = app.webViewPool.webView(for: service)
         defer { app.webViewPool.removeWebView(for: service.id) }
         inbox.loadHTMLString("<script>window.fixtureReady = true;</script>", baseURL: URL(string: service.url))
-        let ready = await eventually { (try? await inbox.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true }
+        let ready = await eventually { (try? await inbox.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
         XCTAssertTrue(ready)
-        try await inbox.evaluateJavaScript("try { navigator.registerProtocolHandler('mailto', '/compose?mail=%s', 'Fixture'); } catch (_) {}")
+        try await inbox.evaluateJavaScriptValue("try { navigator.registerProtocolHandler('mailto', '/compose?mail=%s', 'Fixture'); } catch (_) {}")
         let discovered = await eventually { app.pendingMailHandlerApproval != nil }
         XCTAssertTrue(discovered, "Isolated setup must install the production discovery connection")
         XCTAssertNil(service.mailtoHandler)
@@ -669,7 +669,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertNil(service.mailtoHandlerTemplate, "A subframe declaration must not be stored")
         XCTAssertNil(service.mailtoHandlerOrigin)
         XCTAssertNil(app.pendingMailHandlerApproval, "The subframe cannot propose a handler either")
-        try await inbox.evaluateJavaScript("try { navigator.registerProtocolHandler('mailto', '/compose?mail=%s', 'Fixture'); } catch (_) {}")
+        try await inbox.evaluateJavaScriptValue("try { navigator.registerProtocolHandler('mailto', '/compose?mail=%s', 'Fixture'); } catch (_) {}")
         let discovered = await eventually { app.pendingMailHandlerApproval != nil }
         XCTAssertTrue(discovered, "The main frame declaration must still be proposed")
         app.answerMailHandlerApproval(try XCTUnwrap(app.pendingMailHandlerApproval).id, allow: true)
@@ -725,7 +725,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
             XCTAssertEqual(loaded.count, 1)
             XCTAssertTrue(loaded[0].configuration.websiteDataStore === stores.dataStore(for: first))
             XCTAssertEqual(loaded[0].customUserAgent, UserAgentProvider.chromiumMailHandlerDiscovery)
-            let ready = await eventually { (try? await loaded[0].evaluateJavaScript("window.fixtureReady === true")) as? Bool == true }
+            let ready = await eventually { (try? await loaded[0].evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
             XCTAssertTrue(ready)
             switch ending {
             case "completion": pool.completeMailHandlerProbe(for: first.id)
@@ -736,11 +736,11 @@ final class MailComposeWindowSessionTests: XCTestCase {
             XCTAssertTrue(advanced)
             guard loaded.count == 2 else { continue }
             XCTAssertTrue(loaded[1].configuration.websiteDataStore === stores.dataStore(for: second))
-            let secondReady = await eventually { (try? await loaded[1].evaluateJavaScript("window.fixtureReady === true")) as? Bool == true }
+            let secondReady = await eventually { (try? await loaded[1].evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
             XCTAssertTrue(secondReady)
             let declaration = "try { navigator.registerProtocolHandler('mailto', '/compose?mail=%s', 'Fixture'); } catch (_) {}"
-            try await loaded[0].evaluateJavaScript(declaration)
-            try await loaded[1].evaluateJavaScript(declaration)
+            try await loaded[0].evaluateJavaScriptValue(declaration)
+            try await loaded[1].evaluateJavaScriptValue(declaration)
             let published = await eventually { declarations == [second.id] }
             XCTAssertTrue(published, "Abandoned probes cannot publish late declarations")
             pool.completeMailHandlerProbe(for: second.id)
@@ -861,7 +861,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         session.show()
         let webView = try XCTUnwrap(session.window.contentView as? WKWebView)
         let ready = await eventually {
-            (try? await webView.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true
+            (try? await webView.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true
         }
         XCTAssertTrue(ready)
         return session
@@ -894,7 +894,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
 
     private func fixturePageIsReady(_ webView: WKWebView) async -> Bool {
         await eventually {
-            (try? await webView.evaluateJavaScript("window.fixtureReady === true")) as? Bool == true
+            (try? await webView.evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true
         }
     }
 

@@ -3459,7 +3459,7 @@ final class ChorusTests: XCTestCase {
     /// polling readyState races through and every query comes back empty.
     private func waitForFixture(_ webView: WKWebView) async throws {
         for _ in 0..<100 {
-            let mains = try? await webView.evaluateJavaScript("document.querySelectorAll('div[role=main]').length") as? Int
+            let mains = try? await webView.evaluateJavaScriptValue("document.querySelectorAll('div[role=main]').length") as? Int
             if let mains, mains > 0 { return }
             try await Task.sleep(for: .milliseconds(50))
         }
@@ -3487,15 +3487,15 @@ final class ChorusTests: XCTestCase {
         """, baseURL: URL(string: "https://web.whatsapp.com/"))
         try await waitForFixture(webView)
 
-        let before = try await webView.evaluateJavaScript("[document.hidden, seen.join(',')].join('|')") as? String
+        let before = try await webView.evaluateJavaScriptValue("[document.hidden, seen.join(',')].join('|')") as? String
         XCTAssertEqual(before, "false|", "pinned visible, and a visibilitychange before the release is swallowed")
 
-        _ = try await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
-        let after = try await webView.evaluateJavaScript("[document.hidden, seen.join(',')].join('|')") as? String
+        _ = try await webView.evaluateJavaScriptValue(UserScriptManager.quitReleaseJS)
+        let after = try await webView.evaluateJavaScriptValue("[document.hidden, seen.join(',')].join('|')") as? String
         XCTAssertEqual(after, "true|visibility:hidden,pagehide")
 
-        _ = try await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
-        let again = try await webView.evaluateJavaScript("seen.length") as? Int
+        _ = try await webView.evaluateJavaScriptValue(UserScriptManager.quitReleaseJS)
+        let again = try await webView.evaluateJavaScriptValue("seen.length") as? Int
         XCTAssertEqual(again, 2, "a second release sends nothing more")
     }
 
@@ -3509,7 +3509,7 @@ final class ChorusTests: XCTestCase {
         try await waitForFixture(webView)
 
         // The fixture reproduces the bug: the old expression still reads 101 here.
-        let documentWide = try await webView.evaluateJavaScript("document.querySelectorAll('tr.zA.zE').length") as? Int
+        let documentWide = try await webView.evaluateJavaScriptValue("document.querySelectorAll('tr.zA.zE').length") as? Int
         XCTAssertEqual(documentWide, 101, "fixture should hold the 101 unread rows that made the badge read 99+")
 
         let badgeManager = BadgeManager()
@@ -3533,7 +3533,7 @@ final class ChorusTests: XCTestCase {
         guard let js = ServiceCatalog.shared.entry(for: "gmail")?.badgeJS else {
             return XCTFail("Gmail catalog entry should define badgeJS")
         }
-        let count = try await webView.evaluateJavaScript(js) as? Int
+        let count = try await webView.evaluateJavaScriptValue(js) as? Int
         XCTAssertEqual(count, 3, "an offscreen view should still read the inbox count from the nav label")
     }
 

@@ -226,7 +226,7 @@ private final class ManifestFixture {
                               "A new declaration is not persisted before consent")
             app.answerMailHandlerApproval(approval.id, allow: true)
         }
-        let errors = try await view.evaluateJavaScript("window.fixtureErrors.join('|')") as? String
+        let errors = try await view.evaluateJavaScriptValue("window.fixtureErrors.join('|')") as? String
         XCTAssertEqual(errors, "", "Discovery failures must not escape into the provider page")
     }
 

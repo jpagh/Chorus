@@ -205,7 +205,7 @@ final class NotificationManager {
     /// the default (true): reading your inbox empty authoritatively clears it.
     private func pollTitle(webView: WKWebView, instanceID: UUID, isMuted: Bool, showBadge: Bool, resetToZero: Bool = true) async {
         do {
-            let result = try await webView.evaluateJavaScript("document.title")
+            let result = try await webView.evaluateJavaScriptValue("document.title")
             // The JS await is a suspension point: the poll task may have been
             // cancelled (service switched away / hibernated) while it ran. Drop
             // the result so a stale tick can't write a badge after cancellation.
@@ -223,7 +223,7 @@ final class NotificationManager {
     private func pollBadge(webView: WKWebView, instanceID: UUID, isMuted: Bool, showBadge: Bool, catalogEntry: ServiceCatalogEntry, resetToZero: Bool = true) async {
         guard let badgeJS = catalogEntry.badgeJS else { return }
         do {
-            let result = try await webView.evaluateJavaScript(badgeJS)
+            let result = try await webView.evaluateJavaScriptValue(badgeJS)
             // Drop the result if the poll task was cancelled during the JS await,
             // so a stale tick can't write a badge after cancellation.
             guard !Task.isCancelled else { return }

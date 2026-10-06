@@ -157,7 +157,7 @@ struct WebContentView: View {
     private static func nudgeLayout(of webView: WKWebView) {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(250))
-            _ = try? await webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'))")
+            _ = try? await webView.evaluateJavaScriptValue("window.dispatchEvent(new Event('resize'))")
         }
     }
 

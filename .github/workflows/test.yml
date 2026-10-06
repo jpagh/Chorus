@@ -78,8 +78,6 @@ jobs:
       # ad-hoc xctest bundle. Forcing CODE_SIGNING_ALLOWED=NO breaks that
       # pairing and the tests fail to load.
       - name: Test
-        env:
-          SWIFT_BACKTRACE: enable=yes,interactive=no
         run: |
           set -o pipefail
           xcodebuild test \

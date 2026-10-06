@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0294214694FE69AB69B03C55 /* WebViewJavaScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8291060BF6847242E1F03C6 /* WebViewJavaScript.swift */; };
 		03162EF33AE4EEB6E524E5B1 /* CatalogGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F17BFF4DCC563429E130A13 /* CatalogGridView.swift */; };
 		0413EB0C08636424F9362A1C /* FeatureTips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F8BC3392C6945D38F1AEA7 /* FeatureTips.swift */; };
 		0551F23E1A9E226486C1A0BB /* AddServiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCC4A3133903E40BFB42AA6 /* AddServiceSheet.swift */; };
@@ -202,6 +203,7 @@
 		B5AEA5DCBB5AB96E2C962A90 /* WindowBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowBackdrop.swift; sourceTree = "<group>"; };
 		B5C7C102F7F878633629C1DF /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
 		B71CC3F7D7BD76E4100BC126 /* StoreRelocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRelocation.swift; sourceTree = "<group>"; };
+		B8291060BF6847242E1F03C6 /* WebViewJavaScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewJavaScript.swift; sourceTree = "<group>"; };
 		B8E0761BBE5A85E34BC73573 /* ServiceTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceTabs.swift; sourceTree = "<group>"; };
 		BBF0CEB73B831B9248D9CC59 /* MailComposeWindowSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailComposeWindowSession.swift; sourceTree = "<group>"; };
 		BFD9BB4DBF6536D1AD0CA298 /* ServiceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceHealth.swift; sourceTree = "<group>"; };
@@ -364,6 +366,7 @@
 				89214AFC85F9FE43143A36EC /* InputSettle.swift */,
 				313680424148829FCBEAA9BC /* ModelContext+Save.swift */,
 				E1E431CF7CE145D536081A23 /* UserAgentProvider.swift */,
+				B8291060BF6847242E1F03C6 /* WebViewJavaScript.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -704,6 +707,7 @@
 				DF712EA56B5AE10C7BF77176 /* WebViewCoordinator.swift in Sources */,
 				D887CCC00E8FE67581C132C4 /* WebViewDeparture.swift in Sources */,
 				BAFA348635B413979EDEC95B /* WebViewDialogs.swift in Sources */,
+				0294214694FE69AB69B03C55 /* WebViewJavaScript.swift in Sources */,
 				BAA5421430BDF6F9B918B7B5 /* WebViewPool.swift in Sources */,
 				783EF6C467034D74DE8D5F52 /* WebViewState.swift in Sources */,
 				27E1865FA1BB65766DBDB808 /* WhatsNew.swift in Sources */,

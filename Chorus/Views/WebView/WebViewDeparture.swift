@@ -71,7 +71,7 @@ enum WebViewDeparture {
         await withDeadline(seconds: 0.3, fallback: ()) {
             let releases = webViews.map { webView in
                 Task { @MainActor in
-                    _ = try? await webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+                    _ = try? await webView.evaluateJavaScriptValue(UserScriptManager.quitReleaseJS)
                 }
             }
             for release in releases { await release.value }
@@ -116,7 +116,7 @@ enum WebViewDeparture {
             for webView in attached {
                 // :root makes this work in quirks mode too, where a bare
                 // :hover selector can report false despite a hovered element.
-                let result = try? await webView.evaluateJavaScript("document.documentElement.matches(':root:hover')")
+                let result = try? await webView.evaluateJavaScriptValue("document.documentElement.matches(':root:hover')")
                 if result as? Bool != false { return true }
             }
             return false

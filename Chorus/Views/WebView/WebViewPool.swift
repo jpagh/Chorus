@@ -526,7 +526,7 @@ final class WebViewPool {
     /// tasks carry only Sendable values.
     private func probeCallDetection(_ instanceID: UUID) async -> Bool {
         guard let webView = webViews[instanceID] else { return false }
-        let result = try? await webView.evaluateJavaScript(UserScriptManager.callDetectionQueryJS)
+        let result = try? await webView.evaluateJavaScriptValue(UserScriptManager.callDetectionQueryJS)
         return (result as? Bool) == true
     }
 

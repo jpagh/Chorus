@@ -6,6 +6,22 @@ import XCTest
 
 @MainActor
 final class WebViewDepartureTests: XCTestCase {
+    func testJavaScriptEvaluationAcceptsUndefinedAndPreservesValuesAndErrors() async throws {
+        let (window, webView) = try await hoveredFixture()
+        defer { window.close() }
+        let undefined = try await webView.evaluateJavaScriptValue("window.optionalResultMarker = 42; void 0")
+        XCTAssertNil(undefined)
+        let marker = try await webView.evaluateJavaScriptValue("window.optionalResultMarker") as? Int
+        XCTAssertEqual(marker, 42)
+        do {
+            _ = try await webView.evaluateJavaScriptValue("throw new Error('fixture error')")
+            XCTFail("JavaScript exceptions must reach the caller")
+        } catch {
+            XCTAssertEqual((error as NSError).domain, WKError.errorDomain)
+            XCTAssertEqual((error as NSError).code, WKError.Code.javaScriptExceptionOccurred.rawValue)
+        }
+    }
+
     func testTabStripReservesPageHeightAndClosingLastTabRestoresIt() async throws {
         let (window, webView, hosting, service) = try await selectedCardFixture()
         defer { window.close() }
@@ -82,11 +98,11 @@ final class WebViewDepartureTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertFalse(NSApp.isHidden)
         try await seedHover(in: webView, window: window)
-        let exitsBeforeWait = try await webView.evaluateJavaScript("window.trustedExits") as? Int
+        let exitsBeforeWait = try await webView.evaluateJavaScriptValue("window.trustedExits") as? Int
         try await Task.sleep(for: .seconds(2.6))
-        let exits = try await webView.evaluateJavaScript("window.trustedExits") as? Int
+        let exits = try await webView.evaluateJavaScriptValue("window.trustedExits") as? Int
         XCTAssertEqual(exits, exitsBeforeWait, "A stale hide must not end hover after return")
-        let hovered = try await webView.evaluateJavaScript("document.getElementById('target').matches(':hover')")
+        let hovered = try await webView.evaluateJavaScriptValue("document.getElementById('target').matches(':hover')")
         XCTAssertEqual(hovered as? Bool, true)
     }
 
@@ -109,7 +125,7 @@ final class WebViewDepartureTests: XCTestCase {
 
         await WebViewDeparture.prepareForDestruction(in: [webView])
 
-        let status = try await webView.evaluateJavaScript("document.getElementById('status').textContent")
+        let status = try await webView.evaluateJavaScriptValue("document.getElementById('status').textContent")
         XCTAssertEqual(status as? String, "Saved")
     }
 
@@ -159,7 +175,7 @@ final class WebViewDepartureTests: XCTestCase {
         try await Task.sleep(for: .seconds(3))
 
         XCTAssertTrue(webView.window === window)
-        let exits = try await webView.evaluateJavaScript("window.trustedExits")
+        let exits = try await webView.evaluateJavaScriptValue("window.trustedExits")
         XCTAssertEqual(exits as? Int, 0, "A cancelled departure must not end hover on the restored page")
         let host = try XCTUnwrap(webView.superview as? WebViewHostView)
         XCTAssertTrue(host.hitTest(NSPoint(x: 100, y: 100))?.isDescendant(of: webView) == true)
@@ -210,7 +226,7 @@ final class WebViewDepartureTests: XCTestCase {
         try await waitUntil(webView, "window.trustedExits > 0")
 
         await WebViewCoordinator.reload(webView, fallbackURL: nil)
-        let loads = try await webView.evaluateJavaScript("window.loadCount")
+        let loads = try await webView.evaluateJavaScriptValue("window.loadCount")
         XCTAssertEqual(loads as? Int, 1, "Repeated intent returns while the original reload is pending")
         await first.value
         try await waitUntil(webView, "window.loadCount === 2")
@@ -235,7 +251,7 @@ final class WebViewDepartureTests: XCTestCase {
         try await waitUntil(webView, "window.newDocument === true")
         // A timing value is not document identity. Use a token created once
         // per real, reloadable document, independent of clock precision.
-        let tokenValue = try await webView.evaluateJavaScript("window.documentToken")
+        let tokenValue = try await webView.evaluateJavaScriptValue("window.documentToken")
         let token = try XCTUnwrap(tokenValue as? String)
         await reload.value
         for _ in 0..<100 {
@@ -243,7 +259,7 @@ final class WebViewDepartureTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertFalse(webView.isLoading)
-        let tokenAfterValue = try await webView.evaluateJavaScript("window.documentToken")
+        let tokenAfterValue = try await webView.evaluateJavaScriptValue("window.documentToken")
         let tokenAfter = try XCTUnwrap(tokenAfterValue as? String)
         XCTAssertEqual(tokenAfter, token, "Do not reload a document that replaced the requested target")
     }
@@ -255,7 +271,7 @@ final class WebViewDepartureTests: XCTestCase {
             await WebViewCoordinator.reload(webView, fallbackURL: nil)
         }
         try await waitUntil(webView, "window.trustedExits > 0")
-        try await webView.evaluateJavaScript("location.hash = 'changed'; null")
+        try await webView.evaluateJavaScriptValue("location.hash = 'changed'; null")
         await reload.value
 
         try await waitUntil(webView, "window.loadCount === 2")
@@ -268,7 +284,7 @@ final class WebViewDepartureTests: XCTestCase {
         await WebViewCoordinator.reload(webView, fallbackURL: nil)
 
         try await waitUntil(webView, "window.loadCount === 2")
-        let status = try await webView.evaluateJavaScript("document.getElementById('status').textContent")
+        let status = try await webView.evaluateJavaScriptValue("document.getElementById('status').textContent")
         XCTAssertEqual(status as? String, "Saved")
     }
 
@@ -284,7 +300,7 @@ final class WebViewDepartureTests: XCTestCase {
 
         XCTAssertTrue(webView.superview === host)
         XCTAssertTrue(host.subviews.last === webView)
-        let hovering = try await webView.evaluateJavaScript("document.getElementById('target').matches(':hover')")
+        let hovering = try await webView.evaluateJavaScriptValue("document.getElementById('target').matches(':hover')")
         XCTAssertEqual(hovering as? Bool, true)
         XCTAssertNil(replacement.superview)
     }
@@ -295,7 +311,7 @@ final class WebViewDepartureTests: XCTestCase {
 
         await WebViewDeparture.prepareForQuit(in: [webView])
 
-        let status = try await webView.evaluateJavaScript("document.getElementById('status').textContent")
+        let status = try await webView.evaluateJavaScriptValue("document.getElementById('status').textContent")
         XCTAssertEqual(status as? String, "pagehide:Saved")
     }
 
@@ -307,7 +323,7 @@ final class WebViewDepartureTests: XCTestCase {
 
         await WebViewDeparture.prepareForQuit(in: [webView])
 
-        let status = try await webView.evaluateJavaScript("document.getElementById('status').textContent")
+        let status = try await webView.evaluateJavaScriptValue("document.getElementById('status').textContent")
         XCTAssertEqual(status as? String, "pagehide:Saved")
     }
 
@@ -317,7 +333,7 @@ final class WebViewDepartureTests: XCTestCase {
 
         await WebViewDeparture.prepareForDestruction(in: [webView])
 
-        let status = try await webView.evaluateJavaScript("document.getElementById('status').textContent")
+        let status = try await webView.evaluateJavaScriptValue("document.getElementById('status').textContent")
         XCTAssertEqual(status as? String, "Saved")
     }
 
@@ -332,7 +348,7 @@ final class WebViewDepartureTests: XCTestCase {
         reload.cancel()
         await reload.value
 
-        let loads = try await webView.evaluateJavaScript("window.loadCount")
+        let loads = try await webView.evaluateJavaScriptValue("window.loadCount")
         XCTAssertEqual(loads as? Int, 1)
     }
 
@@ -470,7 +486,7 @@ final class WebViewDepartureTests: XCTestCase {
         // The shared settle window can still be running from the previous
         // departure. Allow its 2.2 seconds plus exit work and runner overhead.
         for _ in 0..<200 {
-            if try await webView.evaluateJavaScript(condition) as? Bool == true { return }
+            if try await webView.evaluateJavaScriptValue(condition) as? Bool == true { return }
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTFail("WebKit did not reach expected state: \(condition)")

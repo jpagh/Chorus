@@ -215,7 +215,7 @@ final class AppStateMailRoutingTests: XCTestCase {
         fixture.server.releaseHeldResponses()
         let firstLoaded = await eventually { first.view.url == fixture.server.url("/first?mail=" + self.firstPayload) && !first.view.isLoading }
         XCTAssertTrue(firstLoaded, "The stall must end in a successful navigation, not a connection failure")
-        let marker = try await first.view.evaluateJavaScript("window.fixtureMarker") as? String
+        let marker = try await first.view.evaluateJavaScriptValue("window.fixtureMarker") as? String
         XCTAssertEqual(marker, "retained")
     }
 
@@ -228,7 +228,7 @@ final class AppStateMailRoutingTests: XCTestCase {
         let load = try XCTUnwrap(fixture.loads.first)
         let ready = await eventually { load.view.url != nil && !load.view.isLoading }
         XCTAssertTrue(ready)
-        try await load.view.evaluateJavaScript("window.draftMarker = 41; window.open('/picker', 'fixturePicker', 'width=700,height=500'); null")
+        try await load.view.evaluateJavaScriptValue("window.draftMarker = 41; window.open('/picker', 'fixturePicker', 'width=700,height=500'); null")
         let coordinator = try XCTUnwrap(load.view.uiDelegate as? WebViewCoordinator)
         let popupOpened = await eventually { !coordinator.auxiliaryWindows.isEmpty }
         XCTAssertTrue(popupOpened)
@@ -246,7 +246,7 @@ final class AppStateMailRoutingTests: XCTestCase {
         fixture.app.isLocked = false
         XCTAssertTrue(composer.isVisible)
         XCTAssertTrue(popup.isVisible)
-        let marker = try await load.view.evaluateJavaScript("window.draftMarker") as? Int
+        let marker = try await load.view.evaluateJavaScriptValue("window.draftMarker") as? Int
         XCTAssertEqual(marker, 41)
     }
 
@@ -299,11 +299,11 @@ final class AppStateMailRoutingTests: XCTestCase {
         let first = try XCTUnwrap(fixture.loads.first)
         let loaded = await eventually { !first.view.isLoading && first.view.url != nil }
         XCTAssertTrue(loaded)
-        try await first.view.evaluateJavaScript("window.draftMarker = 29; null")
+        try await first.view.evaluateJavaScriptValue("window.draftMarker = 29; null")
         let inbox = fixture.app.webViewPool.webView(for: personal)
         defer { fixture.app.webViewPool.removeWebView(for: personal.id) }
         inbox.loadHTMLString("<script>window.inboxMarker = 17;</script>", baseURL: fixture.server.url())
-        let inboxReady = await eventually { (try? await inbox.evaluateJavaScript("window.inboxMarker")) as? Int == 17 }
+        let inboxReady = await eventually { (try? await inbox.evaluateJavaScriptValue("window.inboxMarker")) as? Int == 17 }
         XCTAssertTrue(inboxReady)
         let space = UUID()
         fixture.app.selectedSpaceID = space
@@ -323,9 +323,9 @@ final class AppStateMailRoutingTests: XCTestCase {
         XCTAssertEqual(fixture.app.selectedSpaceID, space)
         XCTAssertEqual(fixture.app.selectedServiceID, personal.id)
         XCTAssertTrue(try XCTUnwrap(first.view.window).isVisible)
-        let draftMarker = try await first.view.evaluateJavaScript("window.draftMarker") as? Int
+        let draftMarker = try await first.view.evaluateJavaScriptValue("window.draftMarker") as? Int
         XCTAssertEqual(draftMarker, 29)
-        let inboxMarker = try await inbox.evaluateJavaScript("window.inboxMarker") as? Int
+        let inboxMarker = try await inbox.evaluateJavaScriptValue("window.inboxMarker") as? Int
         XCTAssertEqual(inboxMarker, 17)
         XCTAssertEqual(first.view.url, fixture.server.url("/first?mail=" + firstPayload))
         XCTAssertNil(fixture.app.mailLinkError)

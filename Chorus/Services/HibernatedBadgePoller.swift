@@ -349,14 +349,14 @@ final class TransientBadgeFetcher {
             // with a selector never reads the title, so a title count for another
             // view can't inflate the badge.
             if let js = target.badgeJS {
-                if let result = try? await webView.evaluateJavaScript(js) {
+                if let result = try? await webView.evaluateJavaScriptValue(js) {
                     if let intResult = result as? Int {
                         best = max(best, intResult)
                     } else if let stringResult = result as? String, let parsed = Int(stringResult) {
                         best = max(best, parsed)
                     }
                 }
-            } else if let title = (try? await webView.evaluateJavaScript("document.title")) as? String {
+            } else if let title = (try? await webView.evaluateJavaScriptValue("document.title")) as? String {
                 best = max(best, NotificationManager.extractBadgeCount(from: title))
             }
 
