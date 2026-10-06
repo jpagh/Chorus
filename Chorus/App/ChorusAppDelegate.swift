@@ -12,9 +12,12 @@ final class ChorusAppDelegate: NSObject, NSApplicationDelegate {
         for url in urls { onOpenURL?(url) }
     }
 
-    /// Set once the main window appears. Until then there are no pages to
-    /// release, and a quit goes straight through.
+    /// Available before the main window appears: URL delivery may already
+    /// have opened a floating draft.
     weak var appState: AppState?
+    var terminationReply: @MainActor (NSApplication, Bool) -> Void = {
+        $0.reply(toApplicationShouldTerminate: $1)
+    }
 
     /// The handoff runs once. The second `terminate` it triggers, and any quit
     /// asked for while it runs, must not start it again.
@@ -58,13 +61,14 @@ final class ChorusAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let appState, !isReleasingPages, appState.webViewPool.loadedCount > 0 else {
+        if isReleasingPages { return .terminateLater }
+        guard let appState, !appState.webViewPool.liveWebViews.isEmpty else {
             return .terminateNow
         }
         isReleasingPages = true
         Task { @MainActor in
             await appState.releasePagesForQuit()
-            sender.reply(toApplicationShouldTerminate: true)
+            terminationReply(sender, true)
         }
         return .terminateLater
     }

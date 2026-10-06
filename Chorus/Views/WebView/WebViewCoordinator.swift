@@ -59,6 +59,9 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     var isBrowserLocked = false
     var opensServiceTabs = true
     var auxiliaryWindows: [NSWindow] { popups.map(\.window) }
+    var auxiliaryWebViews: [WKWebView] {
+        popups.map(\.webView) + closingTabs.map(\.webView)
+    }
 
     func closeAuxiliaryWindows() {
         pendingOpenerReload?.cancel()
@@ -1075,16 +1078,20 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// the no-subject prompt), so a signed-in user clicking Send just saw nothing
     /// happen. Implementing all three restores the expected behaviour.
     ///
-    /// CRITICAL: `completionHandler` MUST be `@escaping @MainActor`. The WebKit
-    /// header annotates the block `WK_SWIFT_UI_ACTOR` (= `@MainActor`); drop it
-    /// and Swift silently declines to treat this as the protocol witness — the
-    /// method never reaches the Obj-C runtime, WebKit never calls it, and the
-    /// page hangs. Same trap as `runOpenPanelWith` above.
+    /// Match the SDK's optional witness exactly. Xcode 27 annotates the alert
+    /// completion with MainActor; older SDKs import it as Sendable only. A
+    /// mismatch omits the Obj-C selector, so WebKit silently skips the alert.
+    #if compiler(>=6.4)
+    typealias JavaScriptAlertCompletion = @MainActor () -> Void
+    #else
+    typealias JavaScriptAlertCompletion = @Sendable () -> Void
+    #endif
+
     func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor () -> Void
+        completionHandler: @escaping JavaScriptAlertCompletion
     ) {
         guard !isBrowserLocked else { completionHandler(); return }
         WebViewDialogs.alert(message, over: webView, completion: completionHandler)
@@ -1092,8 +1099,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
 
     /// Presents a native OK / Cancel panel for `window.confirm()`. Returns `true`
     /// only when the user chooses OK; window-close-first resolves to `false`, the
-    /// same as clicking Cancel. See the alert method above for the `@MainActor`
-    /// witness requirement — it applies identically here.
+    /// same as clicking Cancel. Its completion is MainActor on every supported SDK.
     func webView(
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
@@ -1106,8 +1112,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
 
     /// Presents a native text-input panel for `window.prompt()`. Returns the
     /// entered text on OK, or nil on Cancel / window-close-first (which the page
-    /// reads as a dismissed prompt). See the alert method above for the
-    /// `@MainActor` witness requirement.
+    /// reads as a dismissed prompt). Match the SDK's MainActor completion.
     func webView(
         _ webView: WKWebView,
         runJavaScriptTextInputPanelWithPrompt prompt: String,

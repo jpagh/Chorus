@@ -26,6 +26,7 @@ struct ChorusApp: App {
             userDriverDelegate: nil
         )
         #endif
+        appDelegate.appState = state
         appDelegate.onOpenURL = { [weak state] url in
             state?.enqueueMailLink(url)
         }

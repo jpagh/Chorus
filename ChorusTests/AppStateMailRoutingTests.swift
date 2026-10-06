@@ -332,6 +332,28 @@ final class AppStateMailRoutingTests: XCTestCase {
         XCTAssertNil(fixture.app.pendingMailLink)
     }
 
+    func testQuitWaitsForFloatingDraftAndCoalescesRepeatedQuitWithoutAnInbox() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        _ = fixture.addAccount("Personal", path: "/first")
+        fixture.app.enqueueMailLink(try XCTUnwrap(URL(string: firstMail)))
+        XCTAssertEqual(fixture.app.webViewPool.loadedCount, 0)
+        XCTAssertEqual(fixture.loads.count, 1)
+        let delegate = ChorusAppDelegate()
+        delegate.appState = fixture.app
+        var replies = 0
+        delegate.terminationReply = { _, allowed in
+            XCTAssertTrue(allowed)
+            replies += 1
+        }
+
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApp), .terminateLater)
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApp), .terminateLater)
+        let completed = await eventually { replies == 1 }
+        XCTAssertTrue(completed)
+        XCTAssertEqual(replies, 1, "Repeated quit must not bypass or duplicate the grace period")
+    }
+
     func testHostedChooserSurvivesLockWithoutCancellingItsQueuedMail() async throws {
         let fixture = try await RoutingFixture()
         let personal = fixture.addAccount("Personal", path: "/first")

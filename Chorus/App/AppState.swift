@@ -1265,9 +1265,9 @@ final class AppState {
         })
     }
 
-    /// Gives every live page a save point before the app quits, then lets it
-    /// go. Called from `applicationShouldTerminate`, so every way out — the
-    /// menu, ⌘Q, a relaunch, a Sparkle install — passes through it.
+    /// Gives live account pages and floating drafts bounded time before quit.
+    /// This is a grace period, not confirmation of a provider's server save.
+    /// Called for menu quit, ⌘Q, relaunch and Sparkle installation.
     func releasePagesForQuit() async {
         let webViews = webViewPool.liveWebViews
         await WebViewDeparture.prepareForQuit(in: webViews)

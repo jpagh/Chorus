@@ -512,9 +512,12 @@ final class WebViewPool {
         }
     }
 
-    /// Every live service web view and open tab, for the quit handoff.
+    /// Account pages, tabs, floating drafts and their popups for quit.
+    /// Compatibility probes have no user work and stay outside this snapshot.
     var liveWebViews: [WKWebView] {
         webViews.keys.flatMap { allWebViews(for: $0) }
+            + coordinators.values.flatMap { $0.auxiliaryWebViews }
+            + mailComposeWindows.values.flatMap { $0.session.liveWebViews }
     }
 
     /// Runs the call-detection JS for a service on the main actor, returning

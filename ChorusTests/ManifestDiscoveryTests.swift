@@ -265,8 +265,10 @@ private final class DiscoveryObservation: NSObject, WKNavigationDelegate, WKScri
     }
 
     nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, message.body as? String == "settled" else { return }
-        MainActor.assumeIsolated { settled = true }
+        MainActor.assumeIsolated {
+            guard message.frameInfo.isMainFrame, message.body as? String == "settled" else { return }
+            settled = true
+        }
     }
 
     // Observe completion only: native fetch, Response.json and URL are not

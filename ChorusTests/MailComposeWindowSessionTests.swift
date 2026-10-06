@@ -107,6 +107,18 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertEqual(closeCount, 1)
     }
 
+    func testBrowserUIDelegateImplementsNativeJavaScriptDialogSelectors() {
+        let delegate = WebViewCoordinator()
+        let selectors = [
+            #selector(WKUIDelegate.webView(_:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:)),
+            #selector(WKUIDelegate.webView(_:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:)),
+            #selector(WKUIDelegate.webView(_:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:))
+        ]
+        for selector in selectors {
+            XCTAssertTrue(delegate.responds(to: selector), "WebKit must see \(NSStringFromSelector(selector)) on every SDK")
+        }
+    }
+
     func testDialogCompletionCanPresentNextDialogOnTheSameWindow() async throws {
         let session = try await openFixture("<textarea></textarea>")
         defer { session.window.close() }
@@ -733,6 +745,27 @@ final class MailComposeWindowSessionTests: XCTestCase {
             XCTAssertTrue(published, "Abandoned probes cannot publish late declarations")
             pool.completeMailHandlerProbe(for: second.id)
         }
+    }
+
+    func testQuitPageSnapshotIncludesFloatingDraftWithoutLoadingItsInbox() throws {
+        var composed: WKWebView?
+        var probed: WKWebView?
+        let pool = WebViewPool(
+            dataStoreManager: DataStoreManager(makeStore: { _ in .nonPersistent() }),
+            userScriptManager: UserScriptManager(), contentBlocker: ContentBlockerManager(),
+            loadMailProbe: { view, _ in probed = view },
+            loadMailComposer: { view, _ in composed = view })
+        let service = ServiceInstance(label: "Account", url: "https://fixture.example.test")
+        defer { pool.removeWebView(for: service.id) }
+        pool.openMailComposer(for: service, at: try XCTUnwrap(URL(string: service.url + "/compose")))
+        let draft = try XCTUnwrap(composed)
+        XCTAssertNil(pool.liveWebView(for: service.id), "Composing must not create an inbox")
+        XCTAssertTrue(pool.liveWebViews.contains { $0 === draft }, "Quit must give floating drafts the same bounded grace")
+        pool.probeMailHandler(for: service, userRequested: true)
+        let probe = try XCTUnwrap(probed)
+        XCTAssertFalse(pool.liveWebViews.contains { $0 === probe }, "Discovery owns no user draft")
+        draft.window?.close()
+        XCTAssertTrue(pool.liveWebViews.isEmpty, "Closed drafts must leave the quit snapshot")
     }
 
     func testLockCancelsActiveAndQueuedCompatibilityLoads() {

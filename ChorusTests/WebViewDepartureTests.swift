@@ -223,12 +223,29 @@ final class WebViewDepartureTests: XCTestCase {
             await WebViewCoordinator.reload(webView, fallbackURL: nil)
         }
         try await waitUntil(webView, "window.trustedExits > 0")
-        webView.loadHTMLString("<script>window.newDocument = true;</script>", baseURL: nil)
+        let replacement = FileManager.default.temporaryDirectory.appendingPathComponent("reload-target-\(UUID()).html")
+        defer { try? FileManager.default.removeItem(at: replacement) }
+        try """
+            <script>
+                window.documentToken = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
+                window.newDocument = true;
+            </script>
+            """.write(to: replacement, atomically: true, encoding: .utf8)
+        webView.loadFileURL(replacement, allowingReadAccessTo: replacement.deletingLastPathComponent())
         try await waitUntil(webView, "window.newDocument === true")
-        let origin = try await webView.evaluateJavaScript("performance.timeOrigin") as? Double
+        // A timing value is not document identity. Use a token created once
+        // per real, reloadable document, independent of clock precision.
+        let tokenValue = try await webView.evaluateJavaScript("window.documentToken")
+        let token = try XCTUnwrap(tokenValue as? String)
         await reload.value
-        let originAfter = try await webView.evaluateJavaScript("performance.timeOrigin") as? Double
-        XCTAssertEqual(originAfter, origin, "Do not reload a document that replaced the requested target")
+        for _ in 0..<100 {
+            if !webView.isLoading { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(webView.isLoading)
+        let tokenAfterValue = try await webView.evaluateJavaScript("window.documentToken")
+        let tokenAfter = try XCTUnwrap(tokenAfterValue as? String)
+        XCTAssertEqual(tokenAfter, token, "Do not reload a document that replaced the requested target")
     }
 
     func testRequestedReloadSurvivesSameDocumentHashChange() async throws {

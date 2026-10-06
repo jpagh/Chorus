@@ -80,6 +80,11 @@ final class MailComposeWindowSession: NSObject, NSWindowDelegate {
         loadPage(webView, url)
     }
 
+    /// Account-owned pages that need the bounded quit handoff.
+    var liveWebViews: [WKWebView] {
+        isFinished ? [] : [webView] + coordinator.auxiliaryWebViews
+    }
+
     func show() {
         guard !isFinished, !isLocked else { return }
         cancelPendingFocus()
