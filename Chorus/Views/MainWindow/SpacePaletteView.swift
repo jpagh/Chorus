@@ -141,6 +141,7 @@ struct SpacePaletteView: View {
             space: space,
             serviceCount: serviceIDs.count,
             badgeCount: badgeCount,
+            needsAttention: !muted && appState.badgeManager.needsAttention(anyOf: serviceIDs),
             isMuted: muted,
             isCurrent: space.id == selectedSpaceID,
             isHighlighted: index == highlightedIndex
@@ -294,6 +295,7 @@ private struct SpacePaletteRow: View {
     let space: Space
     let serviceCount: Int
     let badgeCount: Int
+    let needsAttention: Bool
     let isMuted: Bool
     /// The space you are in now. Marked with a tint fill that stays put while
     /// the highlight moves over it.
@@ -328,7 +330,7 @@ private struct SpacePaletteRow: View {
                 Spacer(minLength: 4)
 
                 if badgeCount > 0 {
-                    BadgeCountView(count: badgeCount)
+                    BadgeCountView(count: badgeCount, needsAttention: needsAttention)
                 } else if isMuted {
                     Image(systemName: "bell.slash.fill")
                         .font(.system(size: 9))

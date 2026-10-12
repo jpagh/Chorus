@@ -21,6 +21,10 @@ enum ServiceIconPalette {
     /// Notification badge fill. #DC2626 clears 4.5:1 with white; pure system red
     /// does not.
     static let badgeRed = Color(red: 0.863, green: 0.149, blue: 0.149)
+    /// A count you already know about, where there is no name to sit beside:
+    /// grey, the same meaning as a grey count on a named row. #6B7280 clears
+    /// 4.5:1 with white.
+    static let badgeGrey = Color(red: 0.420, green: 0.447, blue: 0.502)
 
     static func color(for label: String) -> Color {
         tileColors[stableHash(label) % tileColors.count]
@@ -189,7 +193,9 @@ struct MediaIndicatorGlyph: View {
 
 struct BadgeCountView: View {
     let count: Int
-    /// The count went up while you were elsewhere: it pulses until seen.
+    /// The count went up while you were elsewhere: red, and it pulses until
+    /// seen. Otherwise grey, so a nameless badge keeps the same two meanings as
+    /// a count on a named row.
     var needsAttention = false
 
     var body: some View {
@@ -203,7 +209,7 @@ struct BadgeCountView: View {
             .frame(minWidth: 16, minHeight: 16)
             .background(
                 Capsule()
-                    .fill(ServiceIconPalette.badgeRed)
+                    .fill(needsAttention ? ServiceIconPalette.badgeRed : ServiceIconPalette.badgeGrey)
                     .overlay(
                         Capsule()
                             .strokeBorder(.white.opacity(0.3), lineWidth: 0.5)
@@ -245,8 +251,9 @@ struct ServiceDragPreview: View {
 
 /// An unread count the way the Notes sidebar shows one: a plain number at the
 /// end of a row that carries a name, in the row's own type, grey, and the
-/// label's colour on the selected row. The red badge is for places where
-/// there is no name to sit beside: nameless cells, tiles and the tab bar.
+/// label's colour on the selected row. The badge is for places where there
+/// is no name to sit beside: nameless cells, tiles and the tab bar; it is grey
+/// or red by the same rule.
 struct SidebarCount: View {
     let count: Int
     var isSelected = false
