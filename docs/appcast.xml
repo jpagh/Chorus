@@ -3,6 +3,24 @@
     <channel>
         <title>Chorus</title>
         <item>
+            <title>1.5.28</title>
+            <pubDate>Sun, 11 Oct 2026 23:58:00 -0700</pubDate>
+            <sparkle:version>41</sparkle:version>
+            <sparkle:shortVersionString>1.5.28</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li>A count badge with no name beside it, on the icon-only rail, a space's tile or the space switcher, is now grey when you already know about the messages. It turns red only when something new has arrived since you last looked, as a count next to a name does. Before, these badges were always red.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>A service whose page failed to load kept a grey loading ring on its icon and never showed the orange dot that marks a failure. It now shows the dot, and the ring goes away.</li>
+</ul>
+]]></description>
+            <enclosure url="https://github.com/nicojan/Chorus/releases/download/v1.5.28/Chorus-1.5.28.dmg" length="9738781" type="application/octet-stream" sparkle:edSignature="f5PeDdRhF7os1e3129cTa0dooTDIQmnbmQOCHwm4m9NhYNJ8P6/zywesIny/3CACMFYO29IbjAaEtnumknjBBw=="/>
+        </item>
+        <item>
             <title>1.5.27</title>
             <pubDate>Mon, 05 Oct 2026 00:12:42 -0700</pubDate>
             <sparkle:version>40</sparkle:version>
