@@ -5,6 +5,10 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+
+- Chorus tells sites it is Safari 27 rather than 26 unless the service has a custom browser setting.
+
 ### Fixed
 
 - Hiding Chorus and switching services happen at once. Chorus gives recent page actions a short time to finish before clearing hover or putting the page aside. This does not confirm a server save: reloading or quitting immediately after a click can still lose an unsent change.
