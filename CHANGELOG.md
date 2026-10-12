@@ -5,6 +5,10 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A service whose page failed to load kept a grey loading ring on its icon and never showed the orange dot that marks a failure. It now shows the dot, and the ring goes away.
+
 ## [1.5.27] - 2026-10-05
 
 ### Added
