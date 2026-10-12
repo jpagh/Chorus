@@ -194,12 +194,14 @@ struct EditServiceSheet: View {
             Toggle("Use for mail links", isOn: $handlesMailLinks)
                 .help("Offer this signed-in service when Chorus opens a mail link. Turning this off keeps the approved draft page.")
         }
-        Button("Save and detect mail links") {
+        Button(appState.webViewPool.isDetectingMailHandler(for: service.id)
+               ? "Detecting mail links…" : "Save and detect mail links") {
             saveEdits { appState.detectMailHandler(for: service.id) }
         }
-        .disabled(label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        .disabled(appState.webViewPool.isDetectingMailHandler(for: service.id)
+            || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .help("Loads another copy of this service with the same sign-in, telling the site it is Chrome. Chorus asks before using any draft page it finds.")
+        .help("Loads another copy of this service with the same sign-in, using Chrome’s browser identity only for Gmail. Chorus asks before using any draft page it finds.")
 
         Toggle("Always appear active", isOn: $stayActive)
             .help("Keeps this service from showing you as away or idle while Chorus is in the background, so your status stays active even when you work in other apps. Useful for Microsoft Teams. May hold back some of this service's notifications, since it now thinks you're looking at it.")

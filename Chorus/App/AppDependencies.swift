@@ -17,6 +17,7 @@ struct AppDependencies {
     init(
         modelContainer: ModelContainer,
         dataStoreManager: DataStoreManager,
+        loadMailProbe: @escaping (WKWebView, URL) -> Void = { view, url in view.load(URLRequest(url: url)) },
         loadMailComposer: @escaping (WKWebView, URL) -> Void = { view, url in view.load(URLRequest(url: url)) }
     ) {
         self.dataStoreManager = dataStoreManager
@@ -47,7 +48,7 @@ struct AppDependencies {
         contentBlocker = blocker
         webViewPool = WebViewPool(
             dataStoreManager: dataStoreManager, userScriptManager: scripts,
-            contentBlocker: blocker, loadMailComposer: loadMailComposer
+            contentBlocker: blocker, loadMailProbe: loadMailProbe, loadMailComposer: loadMailComposer
         )
         networkMonitor = NetworkMonitor()
     }

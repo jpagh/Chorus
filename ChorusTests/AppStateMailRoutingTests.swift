@@ -115,6 +115,169 @@ final class AppStateMailRoutingTests: XCTestCase {
         XCTAssertFalse(service.mailtoHandlerEnabledEffective)
     }
 
+    func testOrdinaryServiceActivityNeverLoadsDiscoveryOrInstallsManifestFetch() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = ServiceInstance(label: "Unrelated", url: fixture.server.url("/first").absoluteString)
+        fixture.container.mainContext.insert(service)
+        let pool = fixture.app.webViewPool
+        defer { pool.removeWebView(for: service.id) }
+        pool.preload(service)
+        let inbox = pool.webView(for: service)
+        let ready = await eventually { !inbox.isLoading && inbox.url != nil }
+        XCTAssertTrue(ready)
+        for _ in 0..<3 {
+            pool.navigate(service.id, to: fixture.server.url("/first"))
+            let finished = await eventually { !inbox.isLoading }
+            XCTAssertTrue(finished)
+            fixture.app.webViewPool.onNavigationFinished?(service.id)
+            _ = pool.webView(for: service)
+        }
+        pool.hibernate(service.id)
+        let restored = pool.webView(for: service)
+        XCTAssertTrue(fixture.probeLoads.isEmpty)
+        for view in [inbox, restored] {
+            let scripts = view.configuration.userContentController.userScripts.map(\.source)
+            XCTAssertFalse(scripts.contains(UserScriptManager.makeManifestDiscoveryScript()))
+            XCTAssertTrue(scripts.contains(UserScriptManager.makeMailHandlerRegistrationScript()))
+        }
+    }
+
+    func testSavedOptOutAndURLEditCancelActiveDetectionAndLockDropsTheQueue() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = fixture.addAccount("Account", path: "/first")
+        for changeURL in [false, true] {
+            fixture.app.detectMailHandler(for: service.id)
+            let probe = try XCTUnwrap(fixture.probeLoads.last?.view)
+            if changeURL { service.url = "https://changed.example.test/" }
+            else { service.mailtoHandlerEnabled = false }
+            fixture.app.applyServiceEdits(serviceID: service.id, urlChanged: changeURL)
+            XCTAssertFalse(fixture.app.webViewPool.isDetectingMailHandler(for: service.id))
+            XCTAssertNil(probe.navigationDelegate)
+            XCTAssertTrue(probe.configuration.userContentController.userScripts.isEmpty)
+            service.mailtoHandlerEnabled = true
+        }
+        let queued = fixture.addAccount("Queued", path: "/second")
+        fixture.app.detectMailHandler(for: service.id)
+        fixture.app.detectMailHandler(for: queued.id)
+        let count = fixture.probeLoads.count
+        fixture.app.appLockEnabled = true
+        fixture.app.lock()
+        XCTAssertFalse(fixture.app.webViewPool.isDetectingMailHandler(for: service.id))
+        XCTAssertFalse(fixture.app.webViewPool.isDetectingMailHandler(for: queued.id))
+        fixture.app.isLocked = false
+        XCTAssertEqual(fixture.probeLoads.count, count)
+    }
+
+    func testExplicitDetectionUsesChromeOnlyForExactGmailHTTPSOrigin() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let cases: [(String, String?)] = [
+            ("https://mail.google.com/mail/u/2/#inbox", nil),
+            ("https://MAIL.GOOGLE.COM:443/mail/u/1/", nil),
+            ("https://mail.google.com:8443/mail/u/0/", nil),
+            ("https://mail.google.com.evil.test/mail/u/0/", nil),
+            ("https://accounts.google.com/", nil),
+            ("https://fixture.example.test/?next=mail.google.com", nil),
+            ("https://fixture.example.test/", "Configured browser"),
+            ("https://fixture.example.test/mobile", UserAgentProvider.mobileSafari)
+        ]
+        for (index, item) in cases.enumerated() {
+            let service = ServiceInstance(label: "Gmail", url: item.0, catalogEntryID: "gmail")
+            service.userAgent = item.1
+            fixture.container.mainContext.insert(service)
+            fixture.app.detectMailHandler(for: service.id)
+            let load = try XCTUnwrap(fixture.probeLoads.last)
+            XCTAssertEqual(fixture.probeLoads.count, index + 1)
+            XCTAssertEqual(load.url.absoluteString, URL(string: item.0)?.absoluteString)
+            XCTAssertTrue(load.view.configuration.websiteDataStore === fixture.stores.dataStore(for: service))
+            XCTAssertEqual(load.view.customUserAgent, index < 2
+                ? UserAgentProvider.chromiumMailHandlerDiscovery
+                : item.1 ?? UserAgentProvider.safariDefault)
+            fixture.app.webViewPool.completeMailHandlerProbe(for: service.id)
+        }
+    }
+
+    func testDiscoveryNavigationRestoresNormalIdentityOutsideGmailAndDoesNotPromoteOtherProviders() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        for serviceURL in ["https://mail.google.com/mail/u/1/", "https://fixture.example.test/"] {
+            let service = ServiceInstance(label: "Account", url: serviceURL, userAgent: "FixtureBrowser/1.0")
+            fixture.container.mainContext.insert(service)
+            fixture.app.detectMailHandler(for: service.id)
+            let view = try XCTUnwrap(fixture.probeLoads.last?.view)
+            if serviceURL.contains("mail.google.com") {
+                XCTAssertEqual(view.customUserAgent, UserAgentProvider.chromiumMailHandlerDiscovery)
+                view.load(URLRequest(url: fixture.server.url("/first")))
+                let loaded = await eventually { !view.isLoading && view.url == fixture.server.url("/first") }
+                XCTAssertTrue(loaded)
+            } else {
+                // The standards probe must not gain a provider exception by navigating
+                // to a Gmail document. Inline content avoids contacting Google.
+                view.loadHTMLString("<script>window.fixtureReady = true;</script>", baseURL: URL(string: "https://mail.google.com/mail/u/0/"))
+                let loaded = await eventually { (try? await view.evaluateJavaScriptValue("window.fixtureReady")) as? Bool == true }
+                XCTAssertTrue(loaded)
+            }
+            XCTAssertEqual(view.customUserAgent, "FixtureBrowser/1.0")
+            let identity = try await view.evaluateJavaScriptValue("navigator.userAgent") as? String
+            XCTAssertEqual(identity, "FixtureBrowser/1.0")
+            fixture.app.userScriptManager.onMailHandlerDeclaration?(MailHandlerDeclaration(
+                serviceID: service.id, protocolName: "mailto", handlerTemplate: "/compose?mail=%s",
+                declaringPageURL: URL(string: "https://accounts.google.com/")!, isMainFrame: true))
+            XCTAssertNil(fixture.app.pendingMailHandlerApproval, "The browser exception must not grant trust to Google sign-in")
+            XCTAssertNil(service.mailtoHandler)
+            fixture.app.webViewPool.completeMailHandlerProbe(for: service.id)
+        }
+    }
+
+    func testQueuedDetectionUsesCurrentConfiguredIdentityAndCoalescesWaitingClicks() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let first = fixture.addAccount("First", path: "/first")
+        let queued = fixture.addAccount("Queued", path: "/second")
+        fixture.app.detectMailHandler(for: first.id)
+        fixture.app.detectMailHandler(for: queued.id)
+        fixture.app.detectMailHandler(for: queued.id)
+        queued.userAgent = "ChangedBrowser/1.0"
+        fixture.app.webViewPool.completeMailHandlerProbe(for: first.id)
+        XCTAssertEqual(fixture.probeLoads.count, 2)
+        XCTAssertEqual(fixture.probeLoads.last?.view.customUserAgent, "ChangedBrowser/1.0")
+    }
+
+    func testExplicitDetectionCoalescesClicksAndAllowsCompletedRetry() async throws {
+        let fixture = try await RoutingFixture()
+        defer { fixture.close() }
+        let service = fixture.addAccount("Account", path: "/first")
+        fixture.app.detectMailHandler(for: service.id)
+        fixture.app.detectMailHandler(for: service.id)
+        XCTAssertEqual(fixture.probeLoads.count, 1)
+        XCTAssertTrue(fixture.app.webViewPool.isDetectingMailHandler(for: service.id))
+        fixture.app.webViewPool.completeMailHandlerProbe(for: service.id)
+        XCTAssertFalse(fixture.app.webViewPool.isDetectingMailHandler(for: service.id))
+        fixture.app.detectMailHandler(for: service.id)
+        XCTAssertEqual(fixture.probeLoads.count, 2)
+    }
+
+    func testQueuedDetectionRevalidatesEditedDisabledAndDeletedServices() async throws {
+        for change in ["url", "disabled", "deleted"] {
+            let fixture = try await RoutingFixture()
+            defer { fixture.close() }
+            let first = fixture.addAccount("First", path: "/first")
+            let queued = ServiceInstance(label: "Gmail", url: "https://mail.google.com/mail/u/1/")
+            fixture.container.mainContext.insert(queued)
+            fixture.app.detectMailHandler(for: first.id)
+            fixture.app.detectMailHandler(for: queued.id)
+            switch change {
+            case "url": queued.url = "https://elsewhere.example.test/"
+            case "disabled": queued.mailtoHandlerEnabled = false
+            default: fixture.container.mainContext.delete(queued); try fixture.container.mainContext.save()
+            }
+            fixture.app.webViewPool.completeMailHandlerProbe(for: first.id)
+            XCTAssertEqual(fixture.probeLoads.count, 1, change)
+        }
+    }
+
     func testProbeEligibilityUsesParsedAccountURLAndStillRejectsChangedPaths() async throws {
         let fixture = try await RoutingFixture()
         defer { fixture.close() }
@@ -454,6 +617,7 @@ private final class RoutingFixture {
     let stores = DataStoreManager(makeStore: { _ in .nonPersistent() })
     let server: ComposeFixtureServer
     private(set) var app: AppState!
+    private(set) var probeLoads: [(view: WKWebView, url: URL)] = []
     private(set) var loads: [(view: WKWebView, url: URL)] = []
 
     init(holdPaths: Set<String> = []) async throws {
@@ -462,7 +626,9 @@ private final class RoutingFixture {
             "/second": "<textarea></textarea>"
         ], holdPaths: holdPaths)
         container = try ModelContainer(for: Schema(versionedSchema: ChorusSchemaVCurrent.self), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        app = AppState(modelContainer: container, dataStoreManager: stores, loadMailComposer: { [weak self] view, destination in
+        app = AppState(modelContainer: container, dataStoreManager: stores, loadMailProbe: { [weak self] view, url in
+            self?.probeLoads.append((view, url))
+        }, loadMailComposer: { [weak self] view, destination in
             guard let self else { return }
             self.loads.append((view, destination))
             view.load(URLRequest(url: self.server.url(destination.path + "?" + (destination.query ?? ""))))
@@ -478,6 +644,8 @@ private final class RoutingFixture {
     }
 
     func close() {
+        app.webViewPool.setMailComposersLocked(true)
+        probeLoads.removeAll()
         loads.forEach { $0.view.window?.close() }
         loads.removeAll()
         server.stop()

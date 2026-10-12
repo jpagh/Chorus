@@ -9,12 +9,9 @@ final class WebViewPool {
     private var lastAccessTimes: [UUID: Date] = [:]
     private var coordinators: [UUID: WebViewCoordinator] = [:]
 
-    /// Standards-discovery compatibility probes. They identify as Chromium only
-    /// long enough for sites that browser-gate `registerProtocolHandler` to make
-    /// their own declaration, while the visible service remains honest Safari.
+    /// Explicit standards discovery. Only Gmail gets a compatibility identity.
     private var mailHandlerProbeQueue = MailHandlerProbeQueue()
-    private var mailHandlerProbeThrottle = MailHandlerProbeThrottle()
-    private var mailHandlerProbeRequests: [UUID: (url: URL, dataStore: WKWebsiteDataStore)] = [:]
+    private var mailHandlerProbeRequests: [UUID: (url: URL, instance: ServiceInstance, dataStore: WKWebsiteDataStore)] = [:]
     private var activeMailHandlerProbe: ActiveMailHandlerProbe?
     private let loadMailProbe: (WKWebView, URL) -> Void
     private let mailProbeLifetime: Duration
@@ -319,12 +316,17 @@ final class WebViewPool {
     /// session. The page must still make a standards declaration; the probe does
     /// not infer providers or compose URLs. Duplicate requests are coalesced.
     func probeMailHandler(for instance: ServiceInstance, userRequested: Bool = false) {
-        guard let url = URL(string: instance.url), url.scheme?.lowercased() == "https" else { return }
+        guard userRequested, instance.nativeAppBundleID == nil, instance.mailtoHandlerEnabledEffective,
+              let url = URL(string: instance.url), url.scheme?.lowercased() == "https",
+              Origin(url) != nil else { return }
         let id = instance.id
-        guard userRequested || mailHandlerProbeThrottle.allowsProbe(for: id, at: Date()) else { return }
         guard mailHandlerProbeQueue.enqueue(id) else { return }
-        mailHandlerProbeRequests[id] = (url, dataStoreManager.dataStore(for: instance))
+        mailHandlerProbeRequests[id] = (url, instance, dataStoreManager.dataStore(for: instance))
         startNextMailHandlerProbe()
+    }
+
+    func isDetectingMailHandler(for instanceID: UUID) -> Bool {
+        mailHandlerProbeRequests[instanceID] != nil
     }
 
     /// Stops a successful probe as soon as AppState accepts its declaration.
@@ -336,7 +338,9 @@ final class WebViewPool {
         guard let id = mailHandlerProbeQueue.beginNext(),
               let request = mailHandlerProbeRequests[id]
         else { return }
-        guard canProbeMailHandler?(id, request.url) ?? true else {
+        guard canProbeMailHandler?(id, request.url) ?? true,
+              URL(string: request.instance.url) == request.url,
+              request.instance.nativeAppBundleID == nil, request.instance.mailtoHandlerEnabledEffective else {
             finishMailHandlerProbe(id)
             return
         }
@@ -348,8 +352,10 @@ final class WebViewPool {
         configuration.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.customUserAgent = UserAgentProvider.chromiumMailHandlerDiscovery
-        let delegate = MailHandlerProbeDelegate { [weak self] in
+        let normalUserAgent = request.instance.userAgent ?? UserAgentProvider.safariDefault
+        webView.customUserAgent = UserAgentProvider.mailHandlerDiscovery(for: request.url, normalUserAgent: normalUserAgent)
+        let delegate = MailHandlerProbeDelegate(normalUserAgent: normalUserAgent,
+            allowsGmailCompatibility: UserAgentProvider.usesGmailMailHandlerCompatibility(for: request.url)) { [weak self] in
             guard let self, self.activeMailHandlerProbe?.id == id else { return }
             // Give late page startup code a brief window after didFinish to make
             // its registration call, then release the duplicate web process.
@@ -458,7 +464,6 @@ final class WebViewPool {
         let composers = mailComposeWindows.values.filter { $0.serviceID == instanceID }
         for composer in composers { composer.session.window.close() }
         finishMailHandlerProbe(instanceID)
-        mailHandlerProbeThrottle.reset(for: instanceID)
         teardownWebView(instanceID)
         suspendedURLs.removeValue(forKey: instanceID)
         hibernatedServiceIDs.remove(instanceID)
@@ -1221,9 +1226,22 @@ private final class ActiveMailHandlerProbe {
 @MainActor
 private final class MailHandlerProbeDelegate: NSObject, WKNavigationDelegate {
     private let navigationEnded: () -> Void
+    private let normalUserAgent: String
+    private let allowsGmailCompatibility: Bool
 
-    init(navigationEnded: @escaping () -> Void) {
+    init(normalUserAgent: String, allowsGmailCompatibility: Bool, navigationEnded: @escaping () -> Void) {
+        self.normalUserAgent = normalUserAgent
+        self.allowsGmailCompatibility = allowsGmailCompatibility
         self.navigationEnded = navigationEnded
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        if navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url {
+            webView.customUserAgent = allowsGmailCompatibility
+                ? UserAgentProvider.mailHandlerDiscovery(for: url, normalUserAgent: normalUserAgent)
+                : normalUserAgent
+        }
+        return .allow
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

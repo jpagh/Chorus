@@ -425,10 +425,11 @@ final class AppState {
     init(
         modelContainer: ModelContainer,
         dataStoreManager: DataStoreManager,
+        loadMailProbe: @escaping (WKWebView, URL) -> Void = { view, url in view.load(URLRequest(url: url)) },
         loadMailComposer: @escaping (WKWebView, URL) -> Void = { view, url in view.load(URLRequest(url: url)) }
     ) {
         self.modelContainer = modelContainer
-        dependencies = AppDependencies(modelContainer: modelContainer, dataStoreManager: dataStoreManager, loadMailComposer: loadMailComposer)
+        dependencies = AppDependencies(modelContainer: modelContainer, dataStoreManager: dataStoreManager, loadMailProbe: loadMailProbe, loadMailComposer: loadMailComposer)
         storeURL = URL(fileURLWithPath: "/dev/null")
         storeFileName = "isolated.store"
         storeWasDamagedAtLaunch = false
@@ -1428,7 +1429,7 @@ final class AppState {
         presenceChanged: Bool = false
     ) {
         guard let service = currentServiceInstance(id: serviceID) else { return }
-        if urlChanged {
+        if urlChanged || !service.mailtoHandlerEnabledEffective {
             mailHandlerApprovals.removeAll { $0.serviceID == serviceID }
             declinedMailHandlers.removeValue(forKey: serviceID)
             webViewPool.completeMailHandlerProbe(for: serviceID)

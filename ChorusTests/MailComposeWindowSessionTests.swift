@@ -691,8 +691,8 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let first = ServiceInstance(label: "First", url: "https://first.example.test")
         let second = ServiceInstance(label: "Second", url: "https://second.example.test")
         defer { pool.removeWebView(for: first.id); pool.removeWebView(for: second.id) }
-        pool.probeMailHandler(for: first)
-        pool.probeMailHandler(for: second)
+        pool.probeMailHandler(for: first, userRequested: true)
+        pool.probeMailHandler(for: second, userRequested: true)
         let view = try XCTUnwrap(loaded.first)
         for _ in 0..<10 {
             view.navigationDelegate?.webView?(view, didFinish: nil)
@@ -720,11 +720,11 @@ final class MailComposeWindowSessionTests: XCTestCase {
             scripts.onMailHandlerDeclaration = { declarations.append($0.serviceID) }
             let first = ServiceInstance(label: "First", url: "https://first.example.test")
             let second = ServiceInstance(label: "Second", url: "https://second.example.test")
-            pool.probeMailHandler(for: first)
-            pool.probeMailHandler(for: second)
+            pool.probeMailHandler(for: first, userRequested: true)
+            pool.probeMailHandler(for: second, userRequested: true)
             XCTAssertEqual(loaded.count, 1)
             XCTAssertTrue(loaded[0].configuration.websiteDataStore === stores.dataStore(for: first))
-            XCTAssertEqual(loaded[0].customUserAgent, UserAgentProvider.chromiumMailHandlerDiscovery)
+            XCTAssertEqual(loaded[0].customUserAgent, UserAgentProvider.safariDefault)
             let ready = await eventually { (try? await loaded[0].evaluateJavaScriptValue("window.fixtureReady === true")) as? Bool == true }
             XCTAssertTrue(ready)
             switch ending {
@@ -803,27 +803,15 @@ final class MailComposeWindowSessionTests: XCTestCase {
         XCTAssertEqual(loaded.count, 2, "A deliberate retry starts a fresh bounded attempt")
     }
 
-    func testRepeatProbeForOneServiceIsThrottledWhileAnotherServiceStillProbes() async throws {
-        let scripts = UserScriptManager()
-        let stores = DataStoreManager(makeStore: { _ in .nonPersistent() })
-        var loaded: [WKWebView] = []
+    func testImplicitProbeRequestsNeverLoadAService() {
+        var loads = 0
         let pool = WebViewPool(
-            dataStoreManager: stores, userScriptManager: scripts,
-            contentBlocker: ContentBlockerManager(),
-            loadMailProbe: { view, _ in loaded.append(view) }
-        )
-        let first = ServiceInstance(label: "First", url: "https://first.example.test")
-        let second = ServiceInstance(label: "Second", url: "https://second.example.test")
-        pool.probeMailHandler(for: first)
-        XCTAssertEqual(loaded.count, 1)
-        pool.probeMailHandler(for: first)
-        XCTAssertEqual(loaded.count, 1, "A repeat probe inside the window must be skipped")
-        pool.completeMailHandlerProbe(for: first.id)
-        pool.probeMailHandler(for: first)
-        XCTAssertEqual(loaded.count, 1, "Completing a probe must not reset the window")
-        pool.probeMailHandler(for: second)
-        XCTAssertEqual(loaded.count, 2, "Throttling one service must not block another")
-        pool.completeMailHandlerProbe(for: second.id)
+            dataStoreManager: DataStoreManager(makeStore: { _ in .nonPersistent() }),
+            userScriptManager: UserScriptManager(), contentBlocker: ContentBlockerManager(),
+            loadMailProbe: { _, _ in loads += 1 })
+        let service = ServiceInstance(label: "Gmail", url: "https://mail.google.com/mail/u/0/")
+        for _ in 0..<3 { pool.probeMailHandler(for: service) }
+        XCTAssertEqual(loads, 0)
     }
 
     func testStaleChooserActionsCannotExposeErrorsWhileLockedOrReplaceNewerRequests() throws {
