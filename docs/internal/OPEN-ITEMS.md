@@ -1,5 +1,19 @@
 # Open items
 
+## Open: the orange failed dot never showed, fixed on `fix/failed-service-dot`
+
+Found on 2026-10-11 while recording the status-marks clip. When a page failed to load, Chorus reported the failure, then loaded its own error page. That load put the rail back to loading, and the error page's finish was skipped so it would not read as healthy, so the service kept a grey ring forever and the orange dot never appeared. `WebViewCoordinator.didFinish` now clears `errorPageLoadInFlight` and reports `.failed` again. Commit `edbcb49` on `fix/failed-service-dot`, pushed, CI green on 14 and 15, with a CHANGELOG entry. Seen working live in Debug (the 5-status-marks clip shows it). Not merged and no PR yet; it should go in the next release. `feat/demo-load-setup` carries a copy of the same fix (`1d441a8`), so merge the fix branch first and rebase the demo branch on it.
+
+## Open: portfolio clips recorded from look-alike apps (`feat/demo-load-setup`)
+
+On 2026-10-11 five portfolio clips were recorded without real accounts. The clips, the mock apps and the scripts live in `~/dev/chorus-demo` (its own local git repo, not pushed anywhere). Final takes, each in readme, website and social sizes: `~/dev/chorus-demo/recordings/2026-10-11/FINAL/`, with `REVIEW.md`. Contact sheets and stills sit in the take folders (`mock-counts/after-t5`, `mock-mac-app/after-t2`, `mock-rail-resize/after-t3`, `mock-tabs/after-t4`, `mock-status/after-t5`). The write-up moved to a separate portfolio session.
+
+- **The clips:** 1-counts (grey count turns red and pulses), 2-mac-app (Salon, a demo SwiftUI app, docked and its Dock count on the rail), 3-rail-resize, 4-tabs, 5-status-marks (grey ring next to the orange dot).
+- **The mock apps:** a Python stdlib server on loopback only (`mockapps/server.py`, driven by `ctl.py`). Look-alikes of Slack, Discord, WhatsApp, Messenger, Instagram and Reddit, plus Inkwell, Folio and a Gradebook that points at a dead port so it fails. Each runs on its own loopback host and port (127.0.0.1, [::1], localhost) because Chorus tells services apart by host and App Transport Security refuses plain http to `*.localhost`. The server writes `(N)` into each page's title so the count is there from the first frame. Correspondents are authors; two portraits (Morrison, Atwood) need a credit line, listed in `mockapps/avatars/CREDITS.md`.
+- **Chorus changes on `feat/demo-load-setup`, all Debug-only:** `debugDemoSetupPath` makes a launch replace the whole Debug store with a setup file (`DemoControl.loadDemoSetupIfAsked`, with a test); `pollBadge <label>` reads one service's count at once instead of waiting up to 30 s; `debugHideAllTips` hides every TipKit tip. Commits `3869671`, `c586d93`, `1d441a8`, pushed, CI green on 14 and 15. Not merged; decide whether it goes in.
+- **Gotchas for the next take:** the attention pulse only fires 60 s after launch (`BadgeManager` settling time), so clips that need it wait 64 s. Each rebuild of the Debug app changes its cdhash and needs a fresh Accessibility grant before Mac-app docking works. Only the readme versions were checked frame by frame; the website and social versions were not.
+- **No clip yet** for data recovery, tips or live reorder.
+
 ## Shipped in 1.5.27: tabs for pages a service opens for itself
 
 A user reported on 2026-10-04 that opening a design in Canva opened a separate window. A Debug probe of `createWebViewWith` showed why. Canva opens a design with an unsized `window.open` to `canva.com/design/editor/shell?designId=…`, and its Google sign-in with a `window.open` to `canva.com/oauth/authorize/GOOGLE` asking for 580 by 700. A script-opened window to the same service always fell through to a popup window, because returning nil from `window.open` reads as "popup blocked" to a sign-in flow.
