@@ -34,6 +34,17 @@ enum WebViewDeparture {
         for window in NSApp.windows where window.isVisible {
             if let content = window.contentView { visit(content) }
         }
+        NSApp.hide(nil)
+        scheduleHideExit(in: webViews)
+    }
+
+    /// The hidden-state query is separate from AppKit so cancellation can be
+    /// exercised even when the window server ignores Hide (for example in CI).
+    @discardableResult
+    static func scheduleHideExit(
+        in webViews: [WKWebView],
+        isHidden: @escaping @MainActor () -> Bool = { NSApp.isHidden }
+    ) -> Task<Void, Never> {
         if unhideObserver == nil {
             unhideObserver = NotificationCenter.default.addObserver(
                 forName: NSApplication.willUnhideNotification, object: nil, queue: nil
@@ -43,15 +54,14 @@ enum WebViewDeparture {
         }
         cancelPendingHide()
         let generation = hideGeneration
-        NSApp.hide(nil)
-        hideTask = Task { @MainActor in
+        let task = Task { @MainActor in
             let activity = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiatedAllowingIdleSystemSleep],
                 reason: "Let recently started page work finish after Hide"
             )
             defer { ProcessInfo.processInfo.endActivity(activity) }
             await InputSettle.shared.waitForSettle(in: webViews)
-            guard !Task.isCancelled, generation == hideGeneration, NSApp.isHidden else { return }
+            guard !Task.isCancelled, generation == hideGeneration, isHidden() else { return }
             hideTask = nil
             for webView in webViews
                 where webView.window != nil && !webView.isHiddenOrHasHiddenAncestor
@@ -59,6 +69,8 @@ enum WebViewDeparture {
                 endHover(in: webView)
             }
         }
+        hideTask = task
+        return task
     }
 
     /// Let hover work run while visible, then release the pinned visibility

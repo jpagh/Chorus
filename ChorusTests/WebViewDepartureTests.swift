@@ -95,29 +95,29 @@ final class WebViewDepartureTests: XCTestCase {
 
     func testReturningFromHideDoesNotEndHoverOnTheRestoredPage() async throws {
         let (window, webView) = try await hoveredFixture()
-        let wasHidden = NSApp.isHidden
-        defer {
-            if wasHidden { NSApp.hide(nil) } else { NSApp.unhideWithoutActivation() }
-            window.close()
-        }
+        defer { window.close() }
         InputSettle.shared.recordDeparture(in: webView)
-        let started = ContinuousClock.now
-        WebViewDeparture.hideApplication()
-        XCTAssertLessThan(started.duration(to: .now), .seconds(1))
-
-        // AppKit orders hide asynchronously; return after that transition,
-        // rather than asking to unhide before Hide has taken effect.
-        try await Task.sleep(for: .milliseconds(100))
-        NSApp.unhideWithoutActivation()
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertFalse(NSApp.isHidden)
-        try await seedHover(in: webView, window: window)
+        // Keep the hidden-state guard true: only return cancellation can stop
+        // this exit, regardless of whether AppKit can hide on the runner.
+        let pendingExit = WebViewDeparture.scheduleHideExit(in: [webView], isHidden: { true })
+        await Task.yield()
+        NotificationCenter.default.post(name: NSApplication.willUnhideNotification, object: NSApp)
         let exitsBeforeWait = try await webView.evaluateJavaScriptValue("window.trustedExits") as? Int
-        try await Task.sleep(for: .seconds(2.6))
+        await pendingExit.value
+        try await Task.sleep(for: .milliseconds(100))
         let exits = try await webView.evaluateJavaScriptValue("window.trustedExits") as? Int
         XCTAssertEqual(exits, exitsBeforeWait, "A stale hide must not end hover after return")
         let hovered = try await webView.evaluateJavaScriptValue("document.getElementById('target').matches(':hover')")
         XCTAssertEqual(hovered as? Bool, true)
+    }
+
+    func testPendingHideEndsHoverWithoutReturn() async throws {
+        let (window, webView) = try await hoveredFixture()
+        defer { window.close() }
+        InputSettle.shared.recordDeparture(in: webView)
+        let pendingExit = WebViewDeparture.scheduleHideExit(in: [webView], isHidden: { true })
+        await pendingExit.value
+        try await waitUntil(webView, "window.trustedExits > 0 && !document.getElementById('target').matches(':hover')")
     }
 
     func testEmptyPageDoesNotWaitForAnotherPagesDeparture() async throws {
