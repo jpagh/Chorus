@@ -3,6 +3,14 @@
 All notable changes to Chorus are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Hiding Chorus and switching services happen at once. Chorus gives recent page actions a short time to finish before clearing hover or putting the page aside. This does not confirm a server save: reloading or quitting immediately after a click can still lose an unsent change.
+- Service tabs no longer cover the top of the page. Returning from Hide cancels its delayed hover exit, and repeated reload requests share one pending reload.
+- Chorus no longer crashes on macOS 14 when a page action returns no result.
+
 ## [1.5.28] - 2026-10-11
 
 ### Changed

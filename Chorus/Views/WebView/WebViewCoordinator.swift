@@ -52,6 +52,10 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// (`instanceID`), so AppState can honour that service's "open links in
     /// Chorus" choice. When nil the coordinator falls back to `NSWorkspace.open`
     /// directly.
+    var auxiliaryWebViews: [WKWebView] {
+        popups.map(\.webView) + closingTabs.map(\.webView)
+    }
+
     var externalLinkHandler: ((URL, UUID?) -> Void)?
 
     /// Whether some Chorus service owns a URL, so a page's `window.open` to it
@@ -449,7 +453,30 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// Reloads a web view, or loads `fallbackURL` when there is nothing to
     /// reload. A first load stopped before it committed leaves no page, and
     /// `reload()` on that does nothing, so Reload looked broken.
-    static func reload(_ webView: WKWebView, fallbackURL: URL?) {
+    @MainActor
+    private final class PendingReload {
+        var navigationStarted = false
+        var observation: NSKeyValueObservation?
+    }
+    private static var pendingReloads: [ObjectIdentifier: PendingReload] = [:]
+
+    static func reload(_ webView: WKWebView, fallbackURL: URL?) async {
+        let id = ObjectIdentifier(webView)
+        guard pendingReloads[id] == nil else { return }
+        let request = PendingReload()
+        pendingReloads[id] = request
+        // Loading a different document supersedes this request. A hash/history
+        // change does not: comparing URLs used to silently drop those reloads.
+        request.observation = webView.observe(\.isLoading, options: [.new]) { _, change in
+            guard change.newValue == true else { return }
+            MainActor.assumeIsolated { request.navigationStarted = true }
+        }
+        defer {
+            request.observation?.invalidate()
+            pendingReloads.removeValue(forKey: id)
+        }
+        await WebViewDeparture.prepareForDestruction(in: [webView])
+        guard !Task.isCancelled, !request.navigationStarted else { return }
         if webView.reload() == nil, let fallbackURL {
             webView.load(URLRequest(url: fallbackURL))
         }
@@ -863,7 +890,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         tab.webView.removeFromSuperview()
         closingTabs = closingTabs + [tab]
         Task { @MainActor [weak self] in
-            _ = try? await tab.webView.evaluateJavaScript(UserScriptManager.quitReleaseJS)
+            _ = try? await tab.webView.evaluateJavaScriptValue(UserScriptManager.quitReleaseJS)
             try? await Task.sleep(for: Self.tabSaveWindow)
             Self.tearDown(tab.webView)
             self?.closingTabs.removeAll { $0 === tab }
@@ -1019,16 +1046,19 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     /// the no-subject prompt), so a signed-in user clicking Send just saw nothing
     /// happen. Implementing all three restores the expected behaviour.
     ///
-    /// CRITICAL: `completionHandler` MUST be `@escaping @MainActor`. The WebKit
-    /// header annotates the block `WK_SWIFT_UI_ACTOR` (= `@MainActor`); drop it
-    /// and Swift silently declines to treat this as the protocol witness — the
-    /// method never reaches the Obj-C runtime, WebKit never calls it, and the
-    /// page hangs. Same trap as `runOpenPanelWith` above.
+    /// Match the SDK's optional witness exactly: newer SDKs annotate the
+    /// alert completion with MainActor; Xcode 16 imports it as Sendable.
+    #if compiler(>=6.4)
+    typealias JavaScriptAlertCompletion = @MainActor () -> Void
+    #else
+    typealias JavaScriptAlertCompletion = @Sendable () -> Void
+    #endif
+
     func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor () -> Void
+        completionHandler: @escaping JavaScriptAlertCompletion
     ) {
         AppLogger.webView.info("JS alert panel")
         let alert = NSAlert()
