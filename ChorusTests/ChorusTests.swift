@@ -1,4 +1,5 @@
 import XCTest
+import CoreData
 import SwiftData
 import SQLite3
 import JavaScriptCore
@@ -4972,42 +4973,66 @@ final class ChorusTests: XCTestCase {
         }
     }
 
-    /// Opens a COPY of a real store through the migration plan and reports what
-    /// came through. Skipped unless `CHORUS_REAL_STORE_COPY` names a directory.
-    ///
-    /// Every synthetic migration test here builds its own fixture, so they prove
-    /// the stages are correct about stores this file wrote. They cannot prove
-    /// anything about the store a real install has accumulated across versions,
-    /// and that is the store a release actually has to migrate. This repo has
-    /// lost a user's spaces and services twice, so before shipping a schema
-    /// change the release check is: copy the live store triple somewhere else,
-    /// point this at it, and read the counts.
-    ///
-    /// Copy all three files. A store copied without its `-wal` and `-shm` cannot
-    /// be opened read-only (`CANTOPEN`), which is the trap that once made the
-    /// auto-restore blind to perfectly good backups.
-    ///
-    ///     CHORUS_REAL_STORE_COPY=/tmp/copy xcodebuild test … \
-    ///       -only-testing:ChorusTests/ChorusTests/testMigratesARealStoreCopy
-    ///
-    /// Never point it at the live store. It opens read-write through the plan,
-    /// which migrates in place.
+    /// The marker names a prepared store triple, never the live store. Each run
+    /// opens a fresh disposable copy and reports whether its stored shape changed.
     func testMigratesARealStoreCopy() throws {
-        // A file rather than an environment variable. These tests are app-hosted,
-        // and neither a bare nor a TEST_RUNNER_-prefixed variable on the
-        // xcodebuild command line reaches the hosted process — both were tried.
-        // A path in a file always arrives.
         let marker = "/tmp/chorus-real-store-copy"
-        guard let raw = try? String(contentsOfFile: marker, encoding: .utf8) else {
-            throw XCTSkip("write a directory holding a COPY of default.store to \(marker)")
+        guard let raw = try? String(contentsOfFile: marker, encoding: .utf8),
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw XCTSkip("write a prepared store directory to \(marker)")
         }
-        let dir = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = URL(fileURLWithPath: dir).appending(path: "default.store")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "no default.store in \(dir)")
+        let source = URL(fileURLWithPath: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        _ = try checkPreparedStoreCopy(source)
+    }
 
+    private let preparedStoreFiles = ["default.store", "default.store-wal", "default.store-shm"]
+
+    private func preparedStoreBytes(_ directory: URL) throws -> [Data] {
+        try preparedStoreFiles.map { try Data(contentsOf: directory.appending(path: $0)) }
+    }
+
+    private func storeShape(_ url: URL) throws -> [String: Data] {
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType, at: url, options: [NSReadOnlyPersistentStoreOption: true]
+        )
+        return try XCTUnwrap(metadata[NSStoreModelVersionHashesKey] as? [String: Data])
+    }
+
+    /// Metadata is read only from the disposable copy: even a read-only SQLite
+    /// connection can update SHM. Entity hashes identify shape, not a version label.
+    @discardableResult
+    private func checkPreparedStoreCopy(_ source: URL) throws -> Bool {
+        let original = try preparedStoreBytes(source)
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "chorus-real-store-check-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for file in preparedStoreFiles {
+            try FileManager.default.copyItem(at: source.appending(path: file), to: directory.appending(path: file))
+        }
+        defer {
+            do { XCTAssertEqual(try preparedStoreBytes(source), original, "prepared store changed") }
+            catch { XCTFail("could not verify prepared store: \(error)") }
+        }
+        let url = directory.appending(path: "default.store")
+        let before = try storeShape(url)
         let schema = Schema(versionedSchema: ChorusSchemaVCurrent.self)
         let config = ModelConfiguration(schema: schema, url: url)
-        let container = try ModelContainer(for: schema, migrationPlan: ChorusMigrationPlan.self, configurations: [config])
+        print("REAL STORE SOURCE SHAPE: \(before.mapValues { $0.base64EncodedString() })")
+        let container: ModelContainer
+        do {
+            container = try ModelContainer(for: schema, migrationPlan: ChorusMigrationPlan.self, configurations: [config])
+        } catch {
+            throw NSError(domain: "RealStoreMigrationCheck", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Prepared source cannot open through the migration plan targeting \(ChorusSchemaVCurrent.versionIdentifier). A newer or unsupported source shape is not migration evidence. Underlying error: \(error)"
+            ])
+        }
+        let after = try storeShape(url)
+        let migrated = before != after
+        print("REAL STORE PROVENANCE: source hashes=\(before.mapValues { $0.base64EncodedString() }); target hashes=\(after.mapValues { $0.base64EncodedString() })")
+        print(migrated
+              ? "REAL STORE RESULT: migration occurred; stored shape changed"
+              : "REAL STORE RESULT: source already matches current shape; NO MIGRATION occurred; open-integrity check only")
         let ctx = container.mainContext
 
         let spaces = try ctx.fetch(FetchDescriptor<Space>())
@@ -5015,11 +5040,6 @@ final class ChorusTests: XCTestCase {
         let links = try ctx.fetch(FetchDescriptor<SpaceServiceLink>())
 
         print("REAL STORE: \(spaces.count) spaces, \(services.count) services, \(links.count) links")
-        for space in spaces.sorted(by: { $0.sortOrder < $1.sortOrder }) {
-            let members = space.serviceLinks.compactMap(\.liveService).map(\.label)
-            print("  \(space.emoji) \(space.name): \(members.joined(separator: ", "))")
-        }
-
         XCTAssertFalse(spaces.isEmpty, "the migration must not empty the store")
         XCTAssertFalse(services.isEmpty, "the migration must not empty the store")
 
@@ -5031,6 +5051,30 @@ final class ChorusTests: XCTestCase {
             dangling.isEmpty,
             "\(dangling.count) of \(links.count) links lost an end in the migration"
         )
+        return migrated
+    }
+
+    func testRealStoreCopyIsolationAndRepeatedCurrentShapeCheck() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "chorus-prepared-store-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let schema = Schema(versionedSchema: ChorusSchemaVCurrent.self)
+        let config = ModelConfiguration(schema: schema, url: directory.appending(path: "default.store"))
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let space = Space(name: "Fixture", emoji: "🧪", sortOrder: 0)
+        let service = ServiceInstance(label: "Fixture", url: "https://example.com")
+        container.mainContext.insert(space)
+        container.mainContext.insert(service)
+        let link = SpaceServiceLink(sortOrder: 0, space: space, service: service)
+        if link.modelContext == nil { container.mainContext.insert(link) }
+        try container.mainContext.save()
+        let original = try preparedStoreBytes(directory)
+        XCTAssertFalse(try checkPreparedStoreCopy(directory))
+        XCTAssertEqual(try preparedStoreBytes(directory), original)
+        XCTAssertFalse(try checkPreparedStoreCopy(directory))
+        XCTAssertEqual(try preparedStoreBytes(directory), original)
+        withExtendedLifetime(container) {}
     }
 
     /// The REAL production provenance. Every field store today was written by the
