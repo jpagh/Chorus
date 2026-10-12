@@ -9,6 +9,10 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 - A count badge with no name beside it (on the icon-only rail, a space's tile, or in the space switcher) is now grey when you already know about the messages, and red only when something new has arrived since you last looked, the same as a count next to a name. Before, these badges were always red.
 
+### Fixed
+
+- A service whose page failed to load kept a grey loading ring on its icon and never showed the orange dot that marks a failure. It now shows the dot, and the ring goes away.
+
 ## [1.5.27] - 2026-10-05
 
 ### Added
