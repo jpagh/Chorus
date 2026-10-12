@@ -7,7 +7,7 @@ All notable changes to Chorus are documented here. Format loosely follows
 
 ### Added
 
-- Chorus can open mail links from macOS in a floating window for a chosen account. Choose Save and detect mail links in that service’s settings, then approve its page for new drafts. Links clicked inside services still use the Mac’s default mail app.
+- Chorus can open mail links from macOS in a floating window for the account you choose. Choose Save and detect mail links in that service’s settings, then approve its page for new drafts. Links clicked inside services still use the Mac’s default mail app.
 
 ### Changed
 

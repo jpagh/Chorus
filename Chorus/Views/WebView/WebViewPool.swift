@@ -315,8 +315,8 @@ final class WebViewPool {
     /// Runs a serial, invisible compatibility load with the service's existing
     /// session. The page must still make a standards declaration; the probe does
     /// not infer providers or compose URLs. Duplicate requests are coalesced.
-    func probeMailHandler(for instance: ServiceInstance, userRequested: Bool = false) {
-        guard userRequested, instance.nativeAppBundleID == nil, instance.mailtoHandlerEnabledEffective,
+    func probeMailHandler(for instance: ServiceInstance) {
+        guard instance.nativeAppBundleID == nil, instance.mailtoHandlerEnabledEffective,
               let url = URL(string: instance.url), url.scheme?.lowercased() == "https",
               Origin(url) != nil else { return }
         let id = instance.id

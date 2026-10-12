@@ -420,6 +420,7 @@ final class AppState {
         !isStoreInMemoryFallback && !storeWasDamagedAtLaunch && !storeWasRestoredAtLaunch
     }
 
+    #if DEBUG
     /// Isolated application wiring without launch-time persistence, observers,
     /// preloading, or recovery. Callers own the container and account stores.
     init(
@@ -437,6 +438,7 @@ final class AppState {
         isStoreInMemoryFallback = true
         setupExternalLinkRouting()
     }
+    #endif
 
     init() {
         // The current shipping shape, pinned as an explicit `VersionedSchema`.
@@ -1017,7 +1019,7 @@ final class AppState {
             return
         }
         declinedMailHandlers.removeValue(forKey: serviceID)
-        webViewPool.probeMailHandler(for: service, userRequested: true)
+        webViewPool.probeMailHandler(for: service)
     }
 
     private func currentMailRegistrations() -> [MailLinkRegistration] {

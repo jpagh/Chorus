@@ -11,9 +11,15 @@ final class DataStoreManager {
     private var cache: [UUID: WKWebsiteDataStore] = [:]
     private let makeStore: (UUID) -> WKWebsiteDataStore
 
-    init(makeStore: @escaping (UUID) -> WKWebsiteDataStore = { WKWebsiteDataStore(forIdentifier: $0) }) {
+    init() {
+        makeStore = { WKWebsiteDataStore(forIdentifier: $0) }
+    }
+
+    #if DEBUG
+    init(makeStore: @escaping (UUID) -> WKWebsiteDataStore) {
         self.makeStore = makeStore
     }
+    #endif
 
     func dataStore(for instance: ServiceInstance) -> WKWebsiteDataStore {
         dataStore(forIdentifier: instance.dataStoreIdentifier)

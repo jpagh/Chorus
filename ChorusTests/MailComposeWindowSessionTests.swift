@@ -691,8 +691,8 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let first = ServiceInstance(label: "First", url: "https://first.example.test")
         let second = ServiceInstance(label: "Second", url: "https://second.example.test")
         defer { pool.removeWebView(for: first.id); pool.removeWebView(for: second.id) }
-        pool.probeMailHandler(for: first, userRequested: true)
-        pool.probeMailHandler(for: second, userRequested: true)
+        pool.probeMailHandler(for: first)
+        pool.probeMailHandler(for: second)
         let view = try XCTUnwrap(loaded.first)
         for _ in 0..<10 {
             view.navigationDelegate?.webView?(view, didFinish: nil)
@@ -720,8 +720,8 @@ final class MailComposeWindowSessionTests: XCTestCase {
             scripts.onMailHandlerDeclaration = { declarations.append($0.serviceID) }
             let first = ServiceInstance(label: "First", url: "https://first.example.test")
             let second = ServiceInstance(label: "Second", url: "https://second.example.test")
-            pool.probeMailHandler(for: first, userRequested: true)
-            pool.probeMailHandler(for: second, userRequested: true)
+            pool.probeMailHandler(for: first)
+            pool.probeMailHandler(for: second)
             XCTAssertEqual(loaded.count, 1)
             XCTAssertTrue(loaded[0].configuration.websiteDataStore === stores.dataStore(for: first))
             XCTAssertEqual(loaded[0].customUserAgent, UserAgentProvider.safariDefault)
@@ -761,7 +761,7 @@ final class MailComposeWindowSessionTests: XCTestCase {
         let draft = try XCTUnwrap(composed)
         XCTAssertNil(pool.liveWebView(for: service.id), "Composing must not create an inbox")
         XCTAssertTrue(pool.liveWebViews.contains { $0 === draft }, "Quit must give floating drafts the same bounded grace")
-        pool.probeMailHandler(for: service, userRequested: true)
+        pool.probeMailHandler(for: service)
         let probe = try XCTUnwrap(probed)
         XCTAssertFalse(pool.liveWebViews.contains { $0 === probe }, "Discovery owns no user draft")
         draft.window?.close()
@@ -778,11 +778,11 @@ final class MailComposeWindowSessionTests: XCTestCase {
             ServiceInstance(label: $0, url: "https://\($0).example.test")
         }
         defer { accounts.forEach { pool.removeWebView(for: $0.id) } }
-        pool.probeMailHandler(for: accounts[0], userRequested: true)
-        pool.probeMailHandler(for: accounts[1], userRequested: true)
+        pool.probeMailHandler(for: accounts[0])
+        pool.probeMailHandler(for: accounts[1])
         pool.setMailComposersLocked(true)
         pool.setMailComposersLocked(false)
-        pool.probeMailHandler(for: accounts[2], userRequested: true)
+        pool.probeMailHandler(for: accounts[2])
         XCTAssertEqual(loaded, [URL(string: accounts[0].url)!, URL(string: accounts[2].url)!],
                        "Lock discards hidden loads without restarting the waiting account")
     }
@@ -795,23 +795,43 @@ final class MailComposeWindowSessionTests: XCTestCase {
             loadMailProbe: { _, url in loaded.append(url) })
         let service = ServiceInstance(label: "Account", url: "https://fixture.example.test")
         defer { pool.removeWebView(for: service.id) }
-        pool.probeMailHandler(for: service, userRequested: true)
-        pool.probeMailHandler(for: service, userRequested: true)
+        pool.probeMailHandler(for: service)
+        pool.probeMailHandler(for: service)
         XCTAssertEqual(loaded.count, 1, "Repeated clicks still coalesce an active probe")
         pool.completeMailHandlerProbe(for: service.id)
-        pool.probeMailHandler(for: service, userRequested: true)
+        pool.probeMailHandler(for: service)
         XCTAssertEqual(loaded.count, 2, "A deliberate retry starts a fresh bounded attempt")
     }
 
-    func testImplicitProbeRequestsNeverLoadAService() {
+    func testDetectionGuardsNeverLoadAService() throws {
         var loads = 0
-        let pool = WebViewPool(
+        let container = try ModelContainer(for: Schema(versionedSchema: ChorusSchemaVCurrent.self), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let app = AppState(
+            modelContainer: container,
             dataStoreManager: DataStoreManager(makeStore: { _ in .nonPersistent() }),
-            userScriptManager: UserScriptManager(), contentBlocker: ContentBlockerManager(),
             loadMailProbe: { _, _ in loads += 1 })
-        let service = ServiceInstance(label: "Gmail", url: "https://mail.google.com/mail/u/0/")
-        for _ in 0..<3 { pool.probeMailHandler(for: service) }
-        XCTAssertEqual(loads, 0)
+        let service = ServiceInstance(label: "Account", url: "https://fixture.example.test")
+        container.mainContext.insert(service)
+
+        app.detectMailHandler(for: UUID())
+        XCTAssertEqual(loads, 0, "Missing services cannot start detection")
+        service.url = NativeApp.serviceURL(forBundleID: "com.example.native")
+        app.detectMailHandler(for: service.id)
+        XCTAssertEqual(loads, 0, "Native apps cannot start detection")
+        service.url = "https://fixture.example.test"
+        service.mailtoHandlerEnabled = false
+        app.detectMailHandler(for: service.id)
+        XCTAssertEqual(loads, 0, "Disabled mail links cannot start detection")
+        service.mailtoHandlerEnabled = true
+        service.url = "http://fixture.example.test"
+        app.detectMailHandler(for: service.id)
+        XCTAssertEqual(loads, 0, "Non-HTTPS services cannot start detection")
+        service.url = "https://fixture.example.test"
+        app.appLockEnabled = true
+        app.lock()
+        XCTAssertTrue(app.isLocked)
+        app.detectMailHandler(for: service.id)
+        XCTAssertEqual(loads, 0, "Locked apps cannot start detection")
     }
 
     func testStaleChooserActionsCannotExposeErrorsWhileLockedOrReplaceNewerRequests() throws {
