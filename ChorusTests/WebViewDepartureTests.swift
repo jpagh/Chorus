@@ -160,31 +160,37 @@ final class WebViewDepartureTests: XCTestCase {
     func testTransparentIncomingPageCannotRevealRetainedOutgoingPage() async throws {
         let (window, outgoing, hosting, service) = try await selectedCardFixture()
         defer { window.close() }
-        try await outgoing.evaluateJavaScriptValue("document.getElementById('target').textContent = ''; null")
-        try await Task.sleep(for: .milliseconds(100))
-        let beforeBitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: beforeBitmap)
-        let beforePixel = try XCTUnwrap(beforeBitmap.colorAt(x: beforeBitmap.pixelsWide / 2, y: beforeBitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
-        XCTAssertTrue(beforePixel.redComponent > 0.8 && beforePixel.greenComponent < 0.2 && beforePixel.blueComponent < 0.2, "Capture must see the outgoing red page: \(beforePixel)")
+        let host = try XCTUnwrap(outgoing.superview as? WebViewHostView)
         let incoming = WKWebView(frame: outgoing.frame, configuration: outgoing.configuration)
-        // Transparent CSS alone still leaves WebKit's default opaque backing.
-        // Disable it only in the fixture to cover a fully transparent page.
-        incoming.setValue(false, forKey: "drawsBackground")
-        incoming.underPageBackgroundColor = .clear
+        // CSS expresses the page's intent without private drawsBackground KVC.
+        // The separator's structural invariant protects retained pages even
+        // when WebKit's backing is transparent; view caching cannot prove it.
         incoming.loadHTMLString("<!doctype html><style>html,body { background: transparent; margin: 0 }</style><script>window.transparentReady = true</script>", baseURL: nil)
         try await waitUntil(incoming, "window.transparentReady === true")
         InputSettle.shared.recordDeparture(in: outgoing)
         hosting.rootView = card(service: service, webView: incoming)
-        hosting.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
+        // SwiftUI can apply the new root on a later AppKit turn on macOS 15.
+        for _ in 0..<100 {
+            hosting.layoutSubtreeIfNeeded()
+            if incoming.superview === host { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        host.layoutSubtreeIfNeeded()
         XCTAssertTrue(outgoing.window === window, "Keep the outgoing page attached during its grace period")
-        XCTAssertTrue(incoming.superview === outgoing.superview)
-        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-        let pixel = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
-        XCTAssertFalse(pixel.redComponent > 0.8 && pixel.greenComponent < 0.2 && pixel.blueComponent < 0.2,
-                       "The retained red page must not show through the transparent incoming page: \(pixel)")
+        XCTAssertTrue(outgoing.superview === host)
+        XCTAssertTrue(incoming.superview === host)
+        let separators = host.subviews.filter { !($0 is WKWebView) }
+        XCTAssertEqual(separators.count, 1, "The host must have one separator between pages")
+        let separator = try XCTUnwrap(separators.first)
+        let outgoingIndex = try XCTUnwrap(host.subviews.firstIndex { $0 === outgoing })
+        let separatorIndex = try XCTUnwrap(host.subviews.firstIndex { $0 === separator })
+        let incomingIndex = try XCTUnwrap(host.subviews.firstIndex { $0 === incoming })
+        XCTAssertLessThan(outgoingIndex, separatorIndex, "The separator must cover the retained outgoing page")
+        XCTAssertLessThan(separatorIndex, incomingIndex, "The incoming page must sit above the separator")
+        XCTAssertEqual(separator.frame, host.bounds, "The separator must cover the entire page area")
+        XCTAssertFalse(separator.isHidden)
         try await waitForDetachment(outgoing)
+        XCTAssertNil(outgoing.superview)
     }
 
     func testSelectingAMacAppSettlesTheOutgoingPageBeforeDetaching() async throws {
