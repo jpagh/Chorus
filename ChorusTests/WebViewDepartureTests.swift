@@ -163,8 +163,6 @@ final class WebViewDepartureTests: XCTestCase {
         let host = try XCTUnwrap(outgoing.superview as? WebViewHostView)
         let incoming = WKWebView(frame: outgoing.frame, configuration: outgoing.configuration)
         // CSS expresses the page's intent without private drawsBackground KVC.
-        // The separator's structural invariant protects retained pages even
-        // when WebKit's backing is transparent; view caching cannot prove it.
         incoming.loadHTMLString("<!doctype html><style>html,body { background: transparent; margin: 0 }</style><script>window.transparentReady = true</script>", baseURL: nil)
         try await waitUntil(incoming, "window.transparentReady === true")
         InputSettle.shared.recordDeparture(in: outgoing)
@@ -189,6 +187,13 @@ final class WebViewDepartureTests: XCTestCase {
         XCTAssertLessThan(separatorIndex, incomingIndex, "The incoming page must sit above the separator")
         XCTAssertEqual(separator.frame, host.bounds, "The separator must cover the entire page area")
         XCTAssertFalse(separator.isHidden)
+        XCTAssertEqual(separator.alphaValue, 1)
+        // The separator has no WebKit subviews, so caching it alone avoids
+        // WKWebView compositing failures on macOS 14/15.
+        let bitmap = try XCTUnwrap(separator.bitmapImageRepForCachingDisplay(in: separator.bounds))
+        separator.cacheDisplay(in: separator.bounds, to: bitmap)
+        let centrePixel = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2))
+        XCTAssertEqual(centrePixel.alphaComponent, 1.0, "The separator must draw an opaque background")
         try await waitForDetachment(outgoing)
         XCTAssertNil(outgoing.superview)
     }
