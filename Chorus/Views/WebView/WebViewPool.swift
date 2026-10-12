@@ -8,6 +8,19 @@ final class WebViewPool {
     private var webViews: [UUID: WKWebView] = [:]
     private var lastAccessTimes: [UUID: Date] = [:]
     private var coordinators: [UUID: WebViewCoordinator] = [:]
+
+    /// Explicit standards discovery. Only Gmail gets a compatibility identity.
+    private var mailHandlerProbeQueue = MailHandlerProbeQueue()
+    private var mailHandlerProbeRequests: [UUID: (url: URL, instance: ServiceInstance, dataStore: WKWebsiteDataStore)] = [:]
+    private var activeMailHandlerProbe: ActiveMailHandlerProbe?
+    private let loadMailProbe: (WKWebView, URL) -> Void
+    private let mailProbeLifetime: Duration
+    private let mailProbeObservationWindow: Duration
+    var canProbeMailHandler: ((UUID, URL) -> Bool)?
+    var onMailHandlerProbeFailed: ((UUID) -> Void)?
+    private let loadMailComposer: (WKWebView, URL) -> Void
+    private var mailComposeWindows: [UUID: (serviceID: UUID, session: MailComposeWindowSession)] = [:]
+
     private var suspendedURLs: [UUID: String] = [:]
     private var snapshots: [UUID: NSImage] = [:]
     /// Snapshot ids in the order they were stored, oldest first. Drives the cap
@@ -161,6 +174,9 @@ final class WebViewPool {
     /// The app-wide download list. Passed to each coordinator.
     var downloadCenter: DownloadCenter?
 
+    /// The OS boundary for clicked system links. Nil uses NSWorkspace.
+    var systemLinkHandler: ((URL) -> Void)?
+
     /// Wired up at AppState init and applied to every coordinator. Resolves a
     /// camera/microphone capture request to a WebKit decision from the persisted
     /// per-service policy. The pool is a pass-through — it owns neither the policy
@@ -224,8 +240,16 @@ final class WebViewPool {
     init(
         dataStoreManager: DataStoreManager,
         userScriptManager: UserScriptManager,
-        contentBlocker: ContentBlockerManager
+        contentBlocker: ContentBlockerManager,
+        loadMailProbe: @escaping (WKWebView, URL) -> Void = { view, url in view.load(URLRequest(url: url)) },
+        mailProbeLifetime: Duration = .seconds(20),
+        mailProbeObservationWindow: Duration = .seconds(3),
+        loadMailComposer: @escaping (WKWebView, URL) -> Void = { view, url in view.load(URLRequest(url: url)) }
     ) {
+        self.loadMailProbe = loadMailProbe
+        self.mailProbeLifetime = mailProbeLifetime
+        self.mailProbeObservationWindow = mailProbeObservationWindow
+        self.loadMailComposer = loadMailComposer
         self.dataStoreManager = dataStoreManager
         self.userScriptManager = userScriptManager
         self.contentBlocker = contentBlocker
@@ -286,6 +310,85 @@ final class WebViewPool {
         }
 
         return webView
+    }
+
+    /// Runs a serial, invisible compatibility load with the service's existing
+    /// session. The page must still make a standards declaration; the probe does
+    /// not infer providers or compose URLs. Duplicate requests are coalesced.
+    func probeMailHandler(for instance: ServiceInstance, userRequested: Bool = false) {
+        guard userRequested, instance.nativeAppBundleID == nil, instance.mailtoHandlerEnabledEffective,
+              let url = URL(string: instance.url), url.scheme?.lowercased() == "https",
+              Origin(url) != nil else { return }
+        let id = instance.id
+        guard mailHandlerProbeQueue.enqueue(id) else { return }
+        mailHandlerProbeRequests[id] = (url, instance, dataStoreManager.dataStore(for: instance))
+        startNextMailHandlerProbe()
+    }
+
+    func isDetectingMailHandler(for instanceID: UUID) -> Bool {
+        mailHandlerProbeRequests[instanceID] != nil
+    }
+
+    /// Stops a successful probe as soon as AppState accepts its declaration.
+    func completeMailHandlerProbe(for instanceID: UUID) {
+        finishMailHandlerProbe(instanceID)
+    }
+
+    private func startNextMailHandlerProbe() {
+        guard let id = mailHandlerProbeQueue.beginNext(),
+              let request = mailHandlerProbeRequests[id]
+        else { return }
+        guard canProbeMailHandler?(id, request.url) ?? true,
+              URL(string: request.instance.url) == request.url,
+              request.instance.nativeAppBundleID == nil, request.instance.mailtoHandlerEnabledEffective else {
+            finishMailHandlerProbe(id)
+            return
+        }
+
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = request.dataStore
+        let controller = WKUserContentController()
+        userScriptManager.configureMailHandlerDiscovery(for: id, on: controller)
+        configuration.userContentController = controller
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let normalUserAgent = request.instance.userAgent ?? UserAgentProvider.safariDefault
+        webView.customUserAgent = UserAgentProvider.mailHandlerDiscovery(for: request.url, normalUserAgent: normalUserAgent)
+        let delegate = MailHandlerProbeDelegate(normalUserAgent: normalUserAgent,
+            allowsGmailCompatibility: UserAgentProvider.usesGmailMailHandlerCompatibility(for: request.url)) { [weak self] in
+            guard let self, self.activeMailHandlerProbe?.id == id else { return }
+            // Give late page startup code a brief window after didFinish to make
+            // its registration call, then release the duplicate web process.
+            self.activeMailHandlerProbe?.observationTimeout?.cancel()
+            let observationWindow = self.mailProbeObservationWindow
+            self.activeMailHandlerProbe?.observationTimeout = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: observationWindow)
+                guard !Task.isCancelled else { return }
+                self?.finishMailHandlerProbe(id, reportFailure: true)
+            }
+        }
+        webView.navigationDelegate = delegate
+        let probe = ActiveMailHandlerProbe(id: id, webView: webView, delegate: delegate)
+        activeMailHandlerProbe = probe
+        // Hard stop for a page that never finishes or fails its navigation.
+        let lifetime = mailProbeLifetime
+        probe.timeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: lifetime)
+            guard !Task.isCancelled else { return }
+            self?.finishMailHandlerProbe(id, reportFailure: true)
+        }
+        loadMailProbe(webView, request.url)
+    }
+
+    private func finishMailHandlerProbe(_ id: UUID, reportFailure: Bool = false) {
+        guard mailHandlerProbeQueue.finish(id) else { return }
+        if let probe = activeMailHandlerProbe, probe.id == id {
+            probe.cancel(using: userScriptManager)
+            activeMailHandlerProbe = nil
+        }
+        mailHandlerProbeRequests.removeValue(forKey: id)
+        if reportFailure { onMailHandlerProbeFailed?(id) }
+        startNextMailHandlerProbe()
     }
 
     /// Preloads a web view for a service in the background without making it active.
@@ -356,6 +459,11 @@ final class WebViewPool {
     }
 
     func removeWebView(for instanceID: UUID) {
+        // Release account-scoped composers before its data store can be deleted.
+        // Ordinary hibernation uses teardownWebView and leaves composers alone.
+        let composers = mailComposeWindows.values.filter { $0.serviceID == instanceID }
+        for composer in composers { composer.session.window.close() }
+        finishMailHandlerProbe(instanceID)
         teardownWebView(instanceID)
         suspendedURLs.removeValue(forKey: instanceID)
         hibernatedServiceIDs.remove(instanceID)
@@ -409,10 +517,12 @@ final class WebViewPool {
         }
     }
 
-    /// Every live service web view and open tab, for the quit handoff.
+    /// Account pages, tabs, floating drafts and their popups for quit.
+    /// Compatibility probes have no user work and stay outside this snapshot.
     var liveWebViews: [WKWebView] {
         webViews.keys.flatMap { allWebViews(for: $0) }
             + coordinators.values.flatMap { $0.auxiliaryWebViews }
+            + mailComposeWindows.values.flatMap { $0.session.liveWebViews }
     }
 
     /// Runs the call-detection JS for a service on the main actor, returning
@@ -458,6 +568,47 @@ final class WebViewPool {
     /// has no live web view (it will load the new URL when next opened).
     func navigate(_ id: UUID, to url: URL) {
         webViews[id]?.load(URLRequest(url: url))
+    }
+
+    /// Opens a provider-declared compose endpoint in its own window while sharing
+    /// the service's cookies and storage. The inbox web view is left untouched.
+    func openMailComposer(for instance: ServiceInstance, at url: URL) {
+        cancelMailComposerFocusRequests()
+        let sessionID = UUID()
+        let configuration = makeConfiguration(for: instance)
+        let session = MailComposeWindowSession(
+            dataStore: dataStoreManager.dataStore(for: instance),
+            userAgent: instance.userAgent ?? UserAgentProvider.safariDefault,
+            title: "New message: \(instance.label)",
+            url: url,
+            configuration: configuration,
+            coordinator: makeCoordinator(for: instance),
+            loadPage: loadMailComposer
+        ) { [weak self] in
+            self?.userScriptManager.removeMailHandler(on: configuration.userContentController)
+            self?.mailComposeWindows.removeValue(forKey: sessionID)
+        }
+        mailComposeWindows[sessionID] = (instance.id, session)
+        session.show()
+    }
+
+    /// Conceal drafts and descendants while retaining their page state.
+    func setMailComposersLocked(_ locked: Bool) {
+        if locked {
+            // Compatibility loads hold no drafts and must not propose handlers
+            // after lock has discarded the pending consent UI.
+            mailHandlerProbeQueue = MailHandlerProbeQueue()
+            mailHandlerProbeRequests.removeAll()
+            activeMailHandlerProbe?.cancel(using: userScriptManager)
+            activeMailHandlerProbe = nil
+        }
+        for composer in mailComposeWindows.values { composer.session.setLocked(locked) }
+    }
+
+    /// A chooser, lock screen, error, or newer request takes precedence
+    /// over delayed focus repair from a previously opened composer.
+    func cancelMailComposerFocusRequests() {
+        for composer in mailComposeWindows.values { composer.session.cancelPendingFocus() }
     }
 
     /// Update a live web view's user agent (e.g. the Mobile view toggle) and
@@ -749,6 +900,7 @@ final class WebViewPool {
     private func teardownWebView(_ instanceID: UUID) {
         coordinators[instanceID]?.closeAllTabs()
         if let webView = webViews[instanceID] {
+            userScriptManager.removeMailHandler(on: webView.configuration.userContentController)
             webView.configuration.userContentController.removeAllScriptMessageHandlers()
             webView.stopLoading()
             webView.navigationDelegate = nil
@@ -802,6 +954,7 @@ final class WebViewPool {
         coordinator.instanceID = instance.id
         coordinator.fallbackURL = URL(string: instance.url)
         coordinator.externalLinkHandler = externalLinkHandler
+        coordinator.systemLinkHandler = systemLinkHandler
         coordinator.serviceOwnsURL = serviceOwnsURL
         coordinator.downloadCenter = downloadCenter
         coordinator.mediaCapturePolicyProvider = mediaCapturePolicyProvider
@@ -1034,6 +1187,81 @@ final class WebViewPool {
             guard webViews.count > maxLoaded else { break }
             await hibernateIfStillIdle(id)
         }
+    }
+}
+
+@MainActor
+private final class ActiveMailHandlerProbe {
+    let id: UUID
+    let webView: WKWebView
+    let delegate: MailHandlerProbeDelegate
+    var timeout: Task<Void, Never>?
+    var observationTimeout: Task<Void, Never>?
+
+    init(id: UUID, webView: WKWebView, delegate: MailHandlerProbeDelegate) {
+        self.id = id
+        self.webView = webView
+        self.delegate = delegate
+    }
+
+    deinit {
+        timeout?.cancel()
+        observationTimeout?.cancel()
+    }
+
+    func cancel(using scripts: UserScriptManager) {
+        timeout?.cancel()
+        observationTimeout?.cancel()
+        timeout = nil
+        observationTimeout = nil
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        let controller = webView.configuration.userContentController
+        scripts.removeMailHandler(on: controller)
+        controller.removeAllScriptMessageHandlers()
+        controller.removeAllUserScripts()
+    }
+}
+
+@MainActor
+private final class MailHandlerProbeDelegate: NSObject, WKNavigationDelegate {
+    private let navigationEnded: () -> Void
+    private let normalUserAgent: String
+    private let allowsGmailCompatibility: Bool
+
+    init(normalUserAgent: String, allowsGmailCompatibility: Bool, navigationEnded: @escaping () -> Void) {
+        self.normalUserAgent = normalUserAgent
+        self.allowsGmailCompatibility = allowsGmailCompatibility
+        self.navigationEnded = navigationEnded
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        if navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url {
+            webView.customUserAgent = allowsGmailCompatibility
+                ? UserAgentProvider.mailHandlerDiscovery(for: url, normalUserAgent: normalUserAgent)
+                : normalUserAgent
+        }
+        return .allow
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        navigationEnded()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        navigationEnded()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        navigationEnded()
     }
 }
 
