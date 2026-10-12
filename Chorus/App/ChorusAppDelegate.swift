@@ -4,9 +4,20 @@ import AppKit
 /// `AppState.releasePagesForQuit`.
 @MainActor
 final class ChorusAppDelegate: NSObject, NSApplicationDelegate {
-    /// Set once the main window appears. Until then there are no pages to
-    /// release, and a quit goes straight through.
+    /// URL delivery stays outside the main scene so direct compose routes do
+    /// not bring the inbox window forward.
+    var onOpenURL: ((URL) -> Void)?
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls { onOpenURL?(url) }
+    }
+
+    /// Available before the main window appears: URL delivery may already
+    /// have opened a floating draft.
     weak var appState: AppState?
+    var terminationReply: @MainActor (NSApplication, Bool) -> Void = {
+        $0.reply(toApplicationShouldTerminate: $1)
+    }
 
     /// The handoff runs once. The second `terminate` it triggers, and any quit
     /// asked for while it runs, must not start it again.
@@ -57,7 +68,7 @@ final class ChorusAppDelegate: NSObject, NSApplicationDelegate {
         isReleasingPages = true
         Task { @MainActor in
             await appState.releasePagesForQuit()
-            sender.reply(toApplicationShouldTerminate: true)
+            terminationReply(sender, true)
         }
         return .terminateLater
     }
