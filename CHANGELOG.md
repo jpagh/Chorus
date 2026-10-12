@@ -3,11 +3,11 @@
 All notable changes to Chorus are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [1.5.28] - 2026-10-11
 
 ### Changed
 
-- A count badge with no name beside it (on the icon-only rail, a space's tile, or in the space switcher) is now grey when you already know about the messages, and red only when something new has arrived since you last looked, the same as a count next to a name. Before, these badges were always red.
+- A count badge with no name beside it, on the icon-only rail, a space's tile or the space switcher, is now grey when you already know about the messages. It turns red only when something new has arrived since you last looked, as a count next to a name does. Before, these badges were always red.
 
 ### Fixed
 
