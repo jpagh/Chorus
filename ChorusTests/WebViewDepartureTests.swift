@@ -157,6 +157,36 @@ final class WebViewDepartureTests: XCTestCase {
         XCTAssertTrue(replacement.superview === host)
     }
 
+    func testTransparentIncomingPageCannotRevealRetainedOutgoingPage() async throws {
+        let (window, outgoing, hosting, service) = try await selectedCardFixture()
+        defer { window.close() }
+        try await outgoing.evaluateJavaScriptValue("document.getElementById('target').textContent = ''; null")
+        try await Task.sleep(for: .milliseconds(100))
+        let beforeBitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: beforeBitmap)
+        let beforePixel = try XCTUnwrap(beforeBitmap.colorAt(x: beforeBitmap.pixelsWide / 2, y: beforeBitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+        XCTAssertTrue(beforePixel.redComponent > 0.8 && beforePixel.greenComponent < 0.2 && beforePixel.blueComponent < 0.2, "Capture must see the outgoing red page: \(beforePixel)")
+        let incoming = WKWebView(frame: outgoing.frame, configuration: outgoing.configuration)
+        // Transparent CSS alone still leaves WebKit's default opaque backing.
+        // Disable it only in the fixture to cover a fully transparent page.
+        incoming.setValue(false, forKey: "drawsBackground")
+        incoming.underPageBackgroundColor = .clear
+        incoming.loadHTMLString("<!doctype html><style>html,body { background: transparent; margin: 0 }</style><script>window.transparentReady = true</script>", baseURL: nil)
+        try await waitUntil(incoming, "window.transparentReady === true")
+        InputSettle.shared.recordDeparture(in: outgoing)
+        hosting.rootView = card(service: service, webView: incoming)
+        hosting.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(outgoing.window === window, "Keep the outgoing page attached during its grace period")
+        XCTAssertTrue(incoming.superview === outgoing.superview)
+        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        let pixel = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+        XCTAssertFalse(pixel.redComponent > 0.8 && pixel.greenComponent < 0.2 && pixel.blueComponent < 0.2,
+                       "The retained red page must not show through the transparent incoming page: \(pixel)")
+        try await waitForDetachment(outgoing)
+    }
+
     func testSelectingAMacAppSettlesTheOutgoingPageBeforeDetaching() async throws {
         let (window, webView, hosting, _) = try await selectedCardFixture()
         defer { window.close() }

@@ -19,6 +19,7 @@ struct WebViewContainer: NSViewRepresentable {
 /// rounded corners.
 final class WebViewHostView: NSView {
     private weak var currentWebView: WKWebView?
+    private let pageBackdrop = NSHostingView(rootView: ChorusColor.card)
     private var pendingDetachments: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     /// The size the page area last had, for the pool to make new web views at.
@@ -41,6 +42,15 @@ final class WebViewHostView: NSView {
         layer?.cornerRadius = ChorusCard.webCornerRadius
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
+        pageBackdrop.translatesAutoresizingMaskIntoConstraints = false
+        pageBackdrop.setAccessibilityHidden(true)
+        addSubview(pageBackdrop)
+        NSLayoutConstraint.activate([
+            pageBackdrop.topAnchor.constraint(equalTo: topAnchor),
+            pageBackdrop.bottomAnchor.constraint(equalTo: bottomAnchor),
+            pageBackdrop.leadingAnchor.constraint(equalTo: leadingAnchor),
+            pageBackdrop.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
     }
 
     @available(*, unavailable)
@@ -73,6 +83,10 @@ final class WebViewHostView: NSView {
         let transfersFocus = outgoing.map { focused === $0 || focused?.isDescendant(of: $0) == true } ?? false
         currentWebView = webView
 
+        // Separate the visible page from retained pages, including when the
+        // incoming document (or WebKit's backing) is transparent. Keep the
+        // outgoing page attached below this opaque card until departure ends.
+        addSubview(pageBackdrop)
         if let webView {
             let alreadyAttached = webView.superview === self
             webView.translatesAutoresizingMaskIntoConstraints = false
